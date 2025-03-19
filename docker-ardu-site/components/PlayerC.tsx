@@ -26,6 +26,9 @@ export default function PlayerC() {
             }
         };
 
+        // Получаем данные сразу при монтировании компонента
+        fetchData();
+
         // Запускаем fetchData каждые 3 секунды
         const intervalId = setInterval(fetchData, 3000);
 

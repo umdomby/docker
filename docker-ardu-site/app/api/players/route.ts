@@ -37,7 +37,7 @@ export async function GET() {
 
     // Сохраняем данные в кэше на 60 секунд
     await redisClient.set(cacheKey, JSON.stringify(updatedPlayers), {
-        EX: 60, // Время жизни кэша в секундах
+        EX: 10, // Время жизни кэша в секундах
     });
 
     return NextResponse.json(updatedPlayers);
