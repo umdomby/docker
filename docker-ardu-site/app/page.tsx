@@ -1,9 +1,14 @@
+"use server";
+
+import {Container} from "@/components/container";
+import PlayerC from "@/components/PlayerC";
+
+export default async function Home() {
 
 
-export default function Home() {
-  return (
-    <div>
-        11
-    </div>
-  );
+    return (
+        <Container className="w-[100%] relative">
+            <PlayerC/>
+        </Container>
+    );
 }
