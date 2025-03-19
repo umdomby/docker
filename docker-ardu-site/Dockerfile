@@ -13,6 +13,8 @@ COPY prisma ./prisma
 # Установите только production-зависимости
 RUN yarn install --production
 
+# RUN yarn install --frozen-lockfile
+
 # Скопируйте остальной код вашего приложения
 COPY . .
 

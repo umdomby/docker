@@ -7,13 +7,14 @@ services:
     volumes:
       - redis-data:/data
     networks:
-      - redis-net
+      - sharednetwork
 
 volumes:
   redis-data:
 
 networks:
-  redis-net:
+  sharednetwork:
+    external: true
 
 
 

@@ -1,9 +1,10 @@
 import { prisma } from '@/prisma/prisma-client';
 import { NextRequest, NextResponse } from 'next/server';
-import redisClient from '@/components/lib/redisClient';
+import { getRedisClient } from '@/components/lib/redisClient';
 
 export async function GET() {
     const cacheKey = 'players';
+    const redisClient = await getRedisClient();
 
     // Попробуйте получить данные из кэша
     const cachedPlayers = await redisClient.get(cacheKey);
@@ -42,7 +43,6 @@ export async function GET() {
 
     return NextResponse.json(updatedPlayers);
 }
-
 
 // export async function GET() {
 //     // Получаем всех игроков и сортируем по id

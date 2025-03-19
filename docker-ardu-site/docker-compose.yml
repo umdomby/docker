@@ -5,7 +5,7 @@ services:
     ports:
       - "3003:3000"
     volumes:
-      - .:/app
+      - .:/app2
     command: ["yarn", "start"]
     env_file:
       - .env
