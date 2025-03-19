@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from 'react';
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import KafkaNotifier from '@/components/KafkaNotifier';
 
 interface Player {
     id: number;
@@ -38,6 +39,7 @@ export default function PlayerC() {
 
     return (
         <div className="text-center">
+            <KafkaNotifier />
             <Table>
                 <TableBody>
                     <TableRow>
