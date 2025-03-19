@@ -1,6 +1,7 @@
 'use server'
 import { Nunito } from 'next/font/google';
 import './globals.css';
+import {Providers} from "@/components/providers";
 
 
 const nunito = Nunito({
@@ -21,7 +22,9 @@ export default async function RootLayout({
             {/*<link data-rh="true" rel="icon" href="/logo.webp" />*/}
         </head>
         <body className={nunito.className}>
+        <Providers>
             <main>{children}</main>
+        </Providers>
         </body>
         </html>
     );
