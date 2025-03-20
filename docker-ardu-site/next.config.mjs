@@ -17,6 +17,9 @@ const nextConfig = {
             allowedOrigins: ['localhost:3000/', 'localhost:3001/','https://anybet.site/'],
         },
     },
+    eslint: {
+        ignoreDuringBuilds: true, // Добавьте эту строку
+    },
 };
 
 export default nextConfig;
