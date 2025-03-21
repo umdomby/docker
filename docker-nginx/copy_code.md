@@ -55,7 +55,7 @@ http {
         }
     }
 
-    # Сайт 2
+###
     server {
         listen 80;
         server_name anybet.site www.anybet.site;
@@ -95,7 +95,7 @@ http {
         }
     }
 
-    # Сайт 3
+###
     server {
         listen 80;
         server_name anycoin.site www.anycoin.site;
@@ -132,54 +132,100 @@ http {
             proxy_read_timeout 3600;
         }
     }
-
-
-    # Сайт 4
 #     server {
 #         listen 80;
-#         server_name ardu.site www.ardu.site;
-#
+#         server_name anybet.site;
+#         location /.well-known/acme-challenge/ {
+#             (root) /var/www/certbot;
+#             allow all;
+#         }
 #         location / {
-#             return 301 https://ardu.site$request_uri;
+#             return 301 https://$host$request_uri;
+#         }
+#     }
+#     server {
+#         listen 443 ssl;
+#         server_name anybet.site;
+#         ssl_certificate /etc/letsencrypt/live/anybet.site/fullchain.pem;
+#         ssl_certificate_key /etc/letsencrypt/live/anybet.site/privkey.pem;
+#         (root) /usr/share/nginx/anybet;
+#         index index.html;
+#         location / {
+#             try_files $uri $uri/ =404;
 #         }
 #     }
 
+    # Сайт 3
 #     server {
-#         listen 443 ssl;
-#         server_name www.ardu.site;
-#
-#         ssl_certificate /etc/letsencrypt/live/ardu.site/fullchain.pem;
-#         ssl_certificate_key /etc/letsencrypt/live/ardu.site/privkey.pem;
-#
-#         return 301 https://ardu.site$request_uri;
-#     }
-#
-#     server {
-#         listen 443 ssl;
-#         server_name ardu.site;
-#
-#         ssl_certificate /etc/letsencrypt/live/ardu.site/fullchain.pem;
-#         ssl_certificate_key /etc/letsencrypt/live/ardu.site/privkey.pem;
-#
+#         listen 80;
+#         server_name anycoin.site;
+#         location /.well-known/acme-challenge/ {
+#             (root) /var/www/certbot;
+#             allow all;
+#         }
 #         location / {
-#             proxy_pass http://ardu1:3000;
-#             proxy_set_header Host $host;
-#             proxy_set_header X-Real-IP $remote_addr;
-#             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-#             proxy_set_header X-Forwarded-Proto $scheme;
-#             proxy_buffering off;
-#             proxy_read_timeout 3600;
+#             return 301 https://$host$request_uri;
 #         }
 #     }
+#     server {
+#         listen 443 ssl;
+#         server_name anycoin.site;
+#         ssl_certificate /etc/letsencrypt/live/anycoin.site/fullchain.pem;
+#         ssl_certificate_key /etc/letsencrypt/live/anycoin.site/privkey.pem;
+#         (root) /usr/share/nginx/anycoin;
+#         index index.html;
+#         location / {
+#             try_files $uri $uri/ =404;
+#         }
+#     }
+
+    # Сайт 4
+    server {
+        listen 80;
+        server_name ardu.site www.ardu.site;
+
+        location / {
+            return 301 https://ardu.site$request_uri;
+        }
+    }
+
+    server {
+        listen 443 ssl;
+        server_name www.ardu.site;
+
+        ssl_certificate /etc/letsencrypt/live/ardu.site/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/ardu.site/privkey.pem;
+
+        return 301 https://ardu.site$request_uri;
+    }
+
+    server {
+        listen 443 ssl;
+        server_name ardu.site;
+
+        ssl_certificate /etc/letsencrypt/live/ardu.site/fullchain.pem;
+        ssl_certificate_key /etc/letsencrypt/live/ardu.site/privkey.pem;
+
+        location / {
+            proxy_pass http://ardu1:3000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_buffering off;
+            proxy_read_timeout 3600;
+        }
+    }
 
     # Сайт 5
     server {
+     
           server_name it-startup.site www.it-startup.site;
-
+    
             location / {
                 return 301 https://it-startup.site$request_uri;
             }
-
+   
     }
     server {
         listen 443 ssl;
