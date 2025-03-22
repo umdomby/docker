@@ -1,14 +1,19 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-import { Kafka, Producer, Consumer, Partitioners } from 'kafkajs';
+import { Kafka, Producer, Consumer, Partitioners, logLevel } from 'kafkajs';
 
-const kafkaUrl = process.env.KAFKA_URL ?? "localhost:9092"; // Значение по умолчанию
+const kafkaUrl = process.env.KAFKA_URL ?? "kafka:9093"; // Значение по умолчанию
 
-// Создаем экземпляр Kafka
+// Создаем экземпляр Kafka с логированием
 const kafka = new Kafka({
     clientId: 'my-app',
-    brokers: [kafkaUrl]
+    brokers: [kafkaUrl],
+    connectionTimeout: 10000,
+    retry: {
+        retries: 5,
+    },
+    logLevel: logLevel.DEBUG, // Включаем логирование
 });
 
 // Создаем продюсера с LegacyPartitioner
@@ -21,27 +26,43 @@ export const consumer: Consumer = kafka.consumer({ groupId: 'test-group' });
 
 // Функция для подключения к Kafka
 export async function connectKafka(): Promise<void> {
-    await producer.connect(); // Подключаем продюсера
-    await consumer.connect(); // Подключаем консюмера
+    try {
+        await producer.connect(); // Подключаем продюсера
+        console.log('Producer connected successfully');
+        await consumer.connect(); // Подключаем консюмера
+        console.log('Consumer connected successfully');
+    } catch (error) {
+        console.error('Failed to connect to Kafka:', error);
+    }
 }
 
 // Функция для отправки сообщений
 export async function sendMessage(topic: string, message: string): Promise<void> {
     console.log(`Sending message to topic ${topic}: ${message}`);
-    await producer.send({
-        topic,
-        messages: [{ value: message }],
-    });
+    try {
+        await producer.send({
+            topic,
+            messages: [{ value: message }],
+        });
+        console.log('Message sent successfully');
+    } catch (error) {
+        console.error('Failed to send message:', error);
+    }
 }
 
 // Функция для получения сообщений
 export async function receiveMessages(topic: string): Promise<void> {
-    await consumer.subscribe({ topic, fromBeginning: true });
+    try {
+        await consumer.subscribe({ topic, fromBeginning: true });
+        console.log(`Subscribed to topic ${topic}`);
 
-    await consumer.run({
-        eachMessage: async ({ topic, partition, message }) => {
-            const value = message.value ? message.value.toString() : null;
-            console.log(`Received message from topic ${topic}: ${value}`);
-        },
-    });
+        await consumer.run({
+            eachMessage: async ({ topic, partition, message }) => {
+                const value = message.value ? message.value.toString() : null;
+                console.log(`Received message from topic ${topic}: ${value}`);
+            },
+        });
+    } catch (error) {
+        console.error('Failed to receive messages:', error);
+    }
 }

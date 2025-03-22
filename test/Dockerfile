@@ -10,8 +10,10 @@ COPY package.json yarn.lock ./
 # Скопируйте директорию prisma в контейнер
 COPY prisma ./prisma
 
-# Установите зависимости
-RUN yarn install --frozen-lockfile
+# Установите только production-зависимости
+RUN yarn install --production
+
+# RUN yarn install --frozen-lockfile
 
 # Скопируйте остальной код вашего приложения
 COPY . .
@@ -30,9 +32,11 @@ COPY --from=builder /app2/.next ./.next
 COPY --from=builder /app2/node_modules ./node_modules
 COPY --from=builder /app2/package.json ./package.json
 COPY --from=builder /app2/public ./public
+
+# Убедитесь, что директория prisma копируется
 COPY --from=builder /app2/prisma ./prisma
 
-# Установите переменные окружения
+# Установите переменные окружения, если необходимо
 ENV NODE_ENV=production
 
 # Запустите приложение

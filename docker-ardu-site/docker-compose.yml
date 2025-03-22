@@ -4,8 +4,9 @@ services:
     working_dir: /app2
     ports:
       - "3003:3000"
-    volumes:
-      - .:/app2
+    # Уберите volumes, чтобы не перезаписывать файлы сборки
+    # volumes:
+    #   - .:/app2
     command: ["yarn", "start"]
     env_file:
       - .env

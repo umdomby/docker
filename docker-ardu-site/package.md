@@ -4,9 +4,11 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev1": "concurrently \"next dev\" \"ts-node server.ts\"",
     "dev2": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
+    "start1": "concurrently \"next start\" \"ts-node server.ts\"",
     "lint": "next lint",
     "test": "jest",
     "prisma:push": "prisma db push",
