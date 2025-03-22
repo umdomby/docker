@@ -20,6 +20,7 @@ export default function PlayerC() {
                 if (!response.ok) {
                     throw new Error('Network response was not ok');
                 }
+                console.log("11111111")
                 const data = await response.json();
                 setPlayers(data);
             } catch (error) {
