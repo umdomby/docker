@@ -5,37 +5,59 @@ type MessageType = {
     type?: string;
     command?: string;
     deviceId?: string;
-    action?: string;
     message?: string;
     params?: any;
     clientId?: number;
     status?: string;
     timestamp?: string;
+    origin?: 'client' | 'esp' | 'server' | 'error';
+    reason?: string;
+};
+
+type LogEntry = {
+    message: string;
+    type: 'client' | 'esp' | 'server' | 'error';
 };
 
 export default function WebsocketController() {
-    const [log, setLog] = useState<string[]>([]);
+    const [log, setLog] = useState<LogEntry[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [isIdentified, setIsIdentified] = useState(false);
     const [angle, setAngle] = useState(90);
     const [deviceId, setDeviceId] = useState('123');
     const [inputDeviceId, setInputDeviceId] = useState('123');
+    const [espConnected, setEspConnected] = useState(false);
     const socketRef = useRef<WebSocket | null>(null);
+    const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const espWatchdogRef = useRef<NodeJS.Timeout | null>(null);
+    const reconnectAttemptRef = useRef(0);
 
-    const addLog = useCallback((msg: string) => {
-        setLog(prev => [...prev.slice(-100), `${new Date().toLocaleTimeString()}: ${msg}`]);
+    const addLog = useCallback((msg: string, type: LogEntry['type']) => {
+        setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}]);
     }, []);
+
+    const resetEspWatchdog = useCallback(() => {
+        if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+        espWatchdogRef.current = setTimeout(() => {
+            if (espConnected) {
+                setEspConnected(false);
+                addLog(`ESP[${deviceId}] connection lost (timeout)`, 'error');
+            }
+        }, 15000); // 15 секунд без ответа = потеря связи
+    }, [deviceId, addLog, espConnected]);
 
     const connectWebSocket = useCallback(() => {
         if (socketRef.current) {
             socketRef.current.close();
         }
 
+        reconnectAttemptRef.current = 0;
         const ws = new WebSocket('ws://192.168.0.151:8080');
 
         ws.onopen = () => {
             setIsConnected(true);
-            addLog("Connected to server");
+            reconnectAttemptRef.current = 0;
+            addLog("Connected to WebSocket server", 'server');
 
             // Отправляем тип клиента
             ws.send(JSON.stringify({
@@ -58,60 +80,87 @@ export default function WebsocketController() {
                     if (data.status === "connected") {
                         setIsIdentified(true);
                         setDeviceId(inputDeviceId);
+                        resetEspWatchdog();
                     }
-                    addLog(`System: ${data.message}`);
+                    addLog(`System: ${data.message}`, 'server');
                 }
                 else if (data.type === "error") {
-                    addLog(`Error: ${data.message}`);
+                    addLog(`Error: ${data.message}`, 'error');
                     setIsIdentified(false);
                 }
                 else if (data.type === "log") {
-                    addLog(`ESP[${data.deviceId}]: ${data.message}`);
+                    addLog(`ESP: ${data.message}`, 'esp');
+                    resetEspWatchdog();
                 }
                 else if (data.type === "esp_status") {
-                    addLog(`ESP[${data.deviceId}] ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}`);
+                    setEspConnected(data.status === "connected");
+                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
+                        data.status === "connected" ? 'esp' : 'error');
+                    if (data.status === "connected") resetEspWatchdog();
                 }
-                else {
-                    addLog(`Unknown message: ${event.data}`);
+                else if (data.type === "command_ack") {
+                    if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
+                    addLog(`ESP executed command: ${data.command}`, 'esp');
+                }
+                else if (data.type === "command_status") {
+                    addLog(`Command ${data.command} delivered to ESP`, 'server');
                 }
             } catch {
-                addLog(`Raw data: ${event.data}`);
+                addLog(`Received invalid message: ${event.data}`, 'error');
             }
         };
 
-        ws.onclose = () => {
+        ws.onclose = (event) => {
             setIsConnected(false);
             setIsIdentified(false);
-            addLog("Disconnected from server");
+            setEspConnected(false);
+            addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server');
+            if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+
+            // Автоматическое переподключение
+            if (reconnectAttemptRef.current < 5) {
+                reconnectAttemptRef.current += 1;
+                const delay = Math.min(1000 * reconnectAttemptRef.current, 5000);
+                addLog(`Attempting to reconnect in ${delay/1000} seconds...`, 'server');
+                setTimeout(connectWebSocket, delay);
+            }
         };
 
         ws.onerror = (error) => {
-            addLog(`WebSocket error: ${error.type}`);
+            addLog(`WebSocket error: ${error.type}`, 'error');
         };
 
         socketRef.current = ws;
-    }, [addLog, inputDeviceId]);
+    }, [addLog, inputDeviceId, resetEspWatchdog]);
 
     const disconnectWebSocket = useCallback(() => {
         if (socketRef.current) {
             socketRef.current.close();
             setIsConnected(false);
             setIsIdentified(false);
-            addLog("Disconnected manually");
+            setEspConnected(false);
+            addLog("Disconnected manually", 'server');
+            if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+            reconnectAttemptRef.current = 5; // Отключаем автореконнект
         }
     }, [addLog]);
 
     useEffect(() => {
+        // Автоподключение при монтировании
+        connectWebSocket();
+
         return () => {
             if (socketRef.current) {
                 socketRef.current.close();
             }
+            if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
         };
-    }, []);
+    }, [connectWebSocket]);
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
-            addLog("Cannot send command: not identified");
+            addLog("Cannot send command: not identified", 'error');
             return;
         }
 
@@ -120,14 +169,25 @@ export default function WebsocketController() {
                 command,
                 params,
                 deviceId,
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                expectAck: true
             });
+
             socketRef.current.send(msg);
-            addLog(`Sent command to ${deviceId}: ${command}`);
+            addLog(`Sent command to ${deviceId}: ${command}`, 'client');
+
+            // Таймаут на подтверждение команды
+            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
+            commandTimeoutRef.current = setTimeout(() => {
+                if (espConnected) {
+                    addLog(`Command ${command} not acknowledged by ESP`, 'error');
+                    setEspConnected(false);
+                }
+            }, 5000);
         } else {
-            addLog("WebSocket not ready!");
+            addLog("WebSocket not ready!", 'error');
         }
-    }, [addLog, deviceId, isIdentified]);
+    }, [addLog, deviceId, isIdentified, espConnected]);
 
     return (
         <div className="container">
@@ -135,8 +195,10 @@ export default function WebsocketController() {
 
             <div className="status">
                 Status: {isConnected ?
-                (isIdentified ? "✅ Connected & Identified" : "🟡 Connected (Pending)") :
+                (isIdentified ? `✅ Connected & Identified (ESP: ${espConnected ? '✅' : '❌'})` : "🟡 Connected (Pending)") :
                 "❌ Disconnected"}
+                {reconnectAttemptRef.current > 0 && reconnectAttemptRef.current < 5 &&
+                    ` (Reconnecting ${reconnectAttemptRef.current}/5)`}
             </div>
 
             <div className="connection-control">
@@ -169,12 +231,13 @@ export default function WebsocketController() {
             <div className="control-panel">
                 <div className="device-info">
                     <p>Current Device ID: <strong>{deviceId}</strong></p>
+                    <p>ESP Status: <strong>{espConnected ? 'Connected' : 'Disconnected'}</strong></p>
                 </div>
 
-                <button onClick={() => sendCommand("forward")} disabled={!isIdentified}>
+                <button onClick={() => sendCommand("forward")} disabled={!isIdentified || !espConnected}>
                     Forward
                 </button>
-                <button onClick={() => sendCommand("backward")} disabled={!isIdentified}>
+                <button onClick={() => sendCommand("backward")} disabled={!isIdentified || !espConnected}>
                     Backward
                 </button>
 
@@ -185,12 +248,12 @@ export default function WebsocketController() {
                         max="180"
                         value={angle}
                         onChange={(e) => setAngle(parseInt(e.target.value))}
-                        disabled={!isIdentified}
+                        disabled={!isIdentified || !espConnected}
                     />
                     <span>{angle}°</span>
                     <button
                         onClick={() => sendCommand("servo", { angle })}
-                        disabled={!isIdentified}
+                        disabled={!isIdentified || !espConnected}
                     >
                         Set Angle
                     </button>
@@ -201,8 +264,8 @@ export default function WebsocketController() {
                 <h3>Event Log</h3>
                 <div className="log-content">
                     {log.slice().reverse().map((entry, index) => (
-                        <div key={index} className="log-entry">
-                            {entry}
+                        <div key={index} className={`log-entry ${entry.type}`}>
+                            {entry.message}
                         </div>
                     ))}
                 </div>
@@ -219,10 +282,14 @@ export default function WebsocketController() {
                     margin: 10px 0;
                     padding: 10px;
                     background: ${isConnected ?
-                (isIdentified ? '#e6f7e6' : '#fff3e0') :
+                (isIdentified ?
+                    (espConnected ? '#e6f7e6' : '#fff3e0') :
+                    '#fff3e0') :
                 '#ffebee'};
                     border: 1px solid ${isConnected ?
-                (isIdentified ? '#4caf50' : '#ffa000') :
+                (isIdentified ?
+                    (espConnected ? '#4caf50' : '#ffa000') :
+                    '#ffa000') :
                 '#f44336'};
                     border-radius: 4px;
                 }
@@ -234,9 +301,6 @@ export default function WebsocketController() {
                     padding: 15px;
                     background: #f5f5f5;
                     border-radius: 8px;
-                }
-                .device-id-input {
-                    display: flex;
                 }
                 .device-id-input input {
                     flex-grow: 1;
@@ -263,13 +327,7 @@ export default function WebsocketController() {
                 .disconnect-btn {
                     background: #f44336;
                 }
-                .disconnect-btn:not(:disabled):hover {
-                    background: #d32f2f;
-                }
                 .control-panel {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
                     margin: 20px 0;
                     padding: 15px;
                     background: #f5f5f5;
@@ -279,11 +337,13 @@ export default function WebsocketController() {
                     padding: 10px;
                     background: white;
                     border-radius: 4px;
+                    margin-bottom: 10px;
                 }
                 .servo-control {
                     display: flex;
                     align-items: center;
                     gap: 10px;
+                    margin-top: 10px;
                 }
                 .log-container {
                     border: 1px solid #ddd;
@@ -302,6 +362,19 @@ export default function WebsocketController() {
                     border-bottom: 1px solid #eee;
                     font-family: monospace;
                     font-size: 14px;
+                }
+                .log-entry.client {
+                    color: #2196F3;
+                }
+                .log-entry.esp {
+                    color: #4CAF50;
+                }
+                .log-entry.server {
+                    color: #9C27B0;
+                }
+                .log-entry.error {
+                    color: #F44336;
+                    font-weight: bold;
                 }
             `}</style>
         </div>
