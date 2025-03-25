@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket, RawData } from 'ws';
 import { IncomingMessage } from 'http';
+import { getAllowedDeviceIds } from './app/actions';
 
 const PORT = 8080;
 
@@ -12,39 +13,36 @@ const wss = new WebSocketServer({
 });
 
 // Хранилище активных соединений
-const clients = new Map<number, WebSocket>();
+const clients = new Map<number, { ws: WebSocket, deviceId?: string }>();
 
-wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     const clientId = Date.now();
     const clientIp = req.socket.remoteAddress;
-    clients.set(clientId, ws);
+    clients.set(clientId, { ws });
 
     console.log(`New connection [ID: ${clientId}, IP: ${clientIp}]`);
 
-    // Отправка приветственного сообщения
-    ws.send(JSON.stringify({
-        type: "system",
-        message: "Connection established",
-        id: clientId,
-        clients: clients.size
-    }));
+    // Получение разрешенных идентификаторов из базы данных
+    const allowedDeviceIds = new Set(await getAllowedDeviceIds());
 
     ws.on('message', (data: RawData, isBinary: boolean) => {
         try {
             const message = isBinary ? data : data.toString();
             console.log(`[${clientId}] Received:`, message);
 
-            // Базовый парсинг для проверки JSON
             const parsed = JSON.parse(message.toString());
 
-            // Трансляция сообщения всем клиентам (кроме отправителя)
-            clients.forEach((client, id) => {
-                if (id !== clientId && client.readyState === client.OPEN) {
-                    client.send(message);
+            if (parsed.type === 'identify' && parsed.deviceId) {
+                if (allowedDeviceIds.has(parsed.deviceId)) {
+                    clients.get(clientId)!.deviceId = parsed.deviceId;
+                    console.log(`Client ${clientId} identified as device ${parsed.deviceId}`);
+                } else {
+                    console.log(`Client ${clientId} attempted to connect with invalid device ID: ${parsed.deviceId}`);
+                    ws.close(); // Закрыть соединение, если идентификатор устройства не разрешен
                 }
-            });
+            }
 
-            // Обработка специальных команд
+            // Обработка других сообщений
             if (parsed.command === 'ping') {
                 ws.send(JSON.stringify({
                     type: 'pong',

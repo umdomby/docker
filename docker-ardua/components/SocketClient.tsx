@@ -15,6 +15,7 @@ export default function WebsocketController() {
     const [log, setLog] = useState<string[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [angle, setAngle] = useState(90);
+    const [deviceId, setDeviceId] = useState<string>('');
     const socketRef = useRef<WebSocket | null>(null);
     const reconnectAttempt = useRef(0);
 
@@ -29,6 +30,9 @@ export default function WebsocketController() {
             reconnectAttempt.current = 0;
             setIsConnected(true);
             addLog("Connected to server");
+
+            // Отправка идентификатора устройства
+            ws.send(JSON.stringify({ type: 'identify', deviceId }));
         };
 
         ws.onmessage = (event) => {
@@ -56,8 +60,8 @@ export default function WebsocketController() {
             setIsConnected(false);
             addLog("Disconnected from server");
 
-            // Автопереподключение с экспоненциальной задержкой
-            const delay = Math.min(5000, 1000 * Math.pow(2, reconnectAttempt.current));
+            // Установите фиксированную задержку в 1 секунду
+            const delay = 1000;
             reconnectAttempt.current += 1;
             setTimeout(connectWebSocket, delay);
         };
@@ -67,14 +71,16 @@ export default function WebsocketController() {
         };
 
         socketRef.current = ws;
-    }, [addLog]);
+    }, [addLog, deviceId]);
 
     useEffect(() => {
-        connectWebSocket();
+        if (deviceId) {
+            connectWebSocket();
+        }
         return () => {
             socketRef.current?.close();
         };
-    }, [connectWebSocket]);
+    }, [connectWebSocket, deviceId]);
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -104,6 +110,12 @@ export default function WebsocketController() {
             </div>
 
             <div className="control-panel">
+                <input
+                    type="text"
+                    placeholder="Enter Device ID"
+                    value={deviceId}
+                    onChange={(e) => setDeviceId(e.target.value)}
+                />
                 <button onClick={() => sendCommand("forward")}>Forward</button>
                 <button onClick={() => sendCommand("backward")}>Backward</button>
 
@@ -116,7 +128,7 @@ export default function WebsocketController() {
                         onChange={(e) => setAngle(parseInt(e.target.value))}
                     />
                     <span>{angle}°</span>
-                    <button onClick={() => sendCommand("servo", {angle})}>
+                    <button onClick={() => sendCommand("servo", { angle })}>
                         Set Angle
                     </button>
                 </div>
