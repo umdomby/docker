@@ -1,8 +1,8 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
+import { getAllowedDeviceIds } from './app/actions';
 
 const PORT = 8080;
-const ALLOWED_DEVICE_IDS = new Set(['123','444','555','777']); // Замените на ваши реальные ID
 
 const wss = new WebSocketServer({
     port: PORT,
@@ -18,13 +18,16 @@ interface ClientInfo {
 
 const clients = new Map<number, ClientInfo>();
 
-wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
+wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     const clientId = Date.now();
     const clientIp = req.socket.remoteAddress || 'unknown';
     const client: ClientInfo = { ws, ip: clientIp, isIdentified: false };
     clients.set(clientId, client);
 
     console.log(`New connection [ID: ${clientId}, IP: ${clientIp}]`);
+
+    // Получаем разрешенные deviceId из базы данных
+    const allowedDeviceIds = new Set(await getAllowedDeviceIds());
 
     // Приветственное сообщение
     ws.send(JSON.stringify({
@@ -34,7 +37,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
         status: "awaiting_identification"
     }));
 
-    ws.on('message', (data: Buffer) => {
+    ws.on('message', async (data: Buffer) => {
         try {
             const message = data.toString();
             console.log(`[${clientId}] Received:`, message);
@@ -42,7 +45,7 @@ wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
 
             // Обработка идентификации
             if (parsed.type === 'identify') {
-                if (parsed.deviceId && ALLOWED_DEVICE_IDS.has(parsed.deviceId)) {
+                if (parsed.deviceId && allowedDeviceIds.has(parsed.deviceId)) {
                     client.deviceId = parsed.deviceId;
                     client.isIdentified = true;
 
