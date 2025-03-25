@@ -89,6 +89,7 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
                         clients.forEach(targetClient => {
                             if (targetClient.clientType === 'browser' &&
                                 targetClient.deviceId === parsed.deviceId) {
+                                console.log(`Notifying browser client ${targetClient.deviceId} about ESP connection`);
                                 targetClient.ws.send(JSON.stringify({
                                     type: 'esp_status',
                                     status: 'connected',
@@ -185,6 +186,7 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     });
 
     ws.on('close', () => {
+        console.log(`Client ${clientId} disconnected`);
         if (client.clientType === 'esp' && client.deviceId) {
             clients.forEach(targetClient => {
                 if (targetClient.clientType === 'browser' &&
@@ -200,7 +202,6 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             });
         }
         clients.delete(clientId);
-        console.log(`Client ${clientId} disconnected`);
     });
 
     ws.on('error', (err) => {

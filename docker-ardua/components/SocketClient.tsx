@@ -36,6 +36,19 @@ export default function WebsocketController() {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}]);
     }, []);
 
+
+    const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+    const resetHeartbeatTimeout = useCallback(() => {
+        if (heartbeatTimeoutRef.current) clearTimeout(heartbeatTimeoutRef.current);
+        heartbeatTimeoutRef.current = setTimeout(() => {
+            setEspConnected(false);
+            addLog(`ESP[${deviceId}] connection lost (no heartbeat)`, 'error');
+        }, 3000); // 5 секунд без Heartbeat = потеря связи
+    }, [deviceId, addLog]);
+
+
+
     const resetEspWatchdog = useCallback(() => {
         if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
         espWatchdogRef.current = setTimeout(() => {
@@ -51,7 +64,7 @@ export default function WebsocketController() {
             socketRef.current.close();
         }
 
-        reconnectAttemptRef.current = 0;
+        reconnectAttemptRef.current = 0; // Сброс попыток переподключения
         const ws = new WebSocket('ws://192.168.0.151:8080');
 
         ws.onopen = () => {
@@ -71,10 +84,10 @@ export default function WebsocketController() {
                 deviceId: inputDeviceId
             }));
         };
-
         ws.onmessage = (event) => {
             try {
                 const data: MessageType = JSON.parse(event.data);
+                console.log("Received message:", data);
 
                 if (data.type === "system") {
                     if (data.status === "connected") {
@@ -91,8 +104,13 @@ export default function WebsocketController() {
                 else if (data.type === "log") {
                     addLog(`ESP: ${data.message}`, 'esp');
                     resetEspWatchdog();
+                    if (data.message.includes("Heartbeat")) {
+                        setEspConnected(true);
+                        resetHeartbeatTimeout();
+                    }
                 }
                 else if (data.type === "esp_status") {
+                    console.log(`Received ESP status: ${data.status}`);
                     setEspConnected(data.status === "connected");
                     addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
                         data.status === "connected" ? 'esp' : 'error');
@@ -105,7 +123,8 @@ export default function WebsocketController() {
                 else if (data.type === "command_status") {
                     addLog(`Command ${data.command} delivered to ESP`, 'server');
                 }
-            } catch {
+            } catch (error) {
+                console.error("Error processing message:", error);
                 addLog(`Received invalid message: ${event.data}`, 'error');
             }
         };
@@ -117,13 +136,13 @@ export default function WebsocketController() {
             addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server');
             if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
 
-            // Автоматическое переподключение
-            if (reconnectAttemptRef.current < 5) {
-                reconnectAttemptRef.current += 1;
-                const delay = Math.min(1000 * reconnectAttemptRef.current, 5000);
-                addLog(`Attempting to reconnect in ${delay/1000} seconds...`, 'server');
-                setTimeout(connectWebSocket, delay);
-            }
+            // Удаляем логику автоматического переподключения
+            // if (reconnectAttemptRef.current < 5) {
+            //     reconnectAttemptRef.current += 1;
+            //     const delay = Math.min(1000 * reconnectAttemptRef.current, 5000);
+            //     addLog(`Attempting to reconnect in ${delay/1000} seconds...`, 'server');
+            //     setTimeout(connectWebSocket, delay);
+            // }
         };
 
         ws.onerror = (error) => {
@@ -133,22 +152,23 @@ export default function WebsocketController() {
         socketRef.current = ws;
     }, [addLog, inputDeviceId, resetEspWatchdog]);
 
+
     const disconnectWebSocket = useCallback(() => {
         if (socketRef.current) {
             socketRef.current.close();
+            socketRef.current = null;
             setIsConnected(false);
             setIsIdentified(false);
             setEspConnected(false);
             addLog("Disconnected manually", 'server');
             if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+            if (heartbeatTimeoutRef.current) clearTimeout(heartbeatTimeoutRef.current);
             reconnectAttemptRef.current = 5; // Отключаем автореконнект
         }
     }, [addLog]);
 
     useEffect(() => {
-        // Автоподключение при монтировании
-        connectWebSocket();
-
+        // Удаляем автоподключение
         return () => {
             if (socketRef.current) {
                 socketRef.current.close();
@@ -156,7 +176,19 @@ export default function WebsocketController() {
             if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
             if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
         };
-    }, [connectWebSocket]);
+    }, []);
+    // useEffect(() => {
+    //     // Автоподключение при монтировании
+    //     connectWebSocket();
+    //
+    //     return () => {
+    //         if (socketRef.current) {
+    //             socketRef.current.close();
+    //         }
+    //         if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
+    //         if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
+    //     };
+    // }, [connectWebSocket]);
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
@@ -252,7 +284,7 @@ export default function WebsocketController() {
                     />
                     <span>{angle}°</span>
                     <button
-                        onClick={() => sendCommand("servo", { angle })}
+                        onClick={() => sendCommand("servo", {angle})}
                         disabled={!isIdentified || !espConnected}
                     >
                         Set Angle
@@ -278,21 +310,23 @@ export default function WebsocketController() {
                     padding: 20px;
                     font-family: Arial;
                 }
+
                 .status {
                     margin: 10px 0;
                     padding: 10px;
                     background: ${isConnected ?
-                (isIdentified ?
-                    (espConnected ? '#e6f7e6' : '#fff3e0') :
-                    '#fff3e0') :
-                '#ffebee'};
+                            (isIdentified ?
+                                    (espConnected ? '#e6f7e6' : '#fff3e0') :
+                                    '#fff3e0') :
+                            '#ffebee'};
                     border: 1px solid ${isConnected ?
-                (isIdentified ?
-                    (espConnected ? '#4caf50' : '#ffa000') :
-                    '#ffa000') :
-                '#f44336'};
+                            (isIdentified ?
+                                    (espConnected ? '#4caf50' : '#ffa000') :
+                                    '#ffa000') :
+                            '#f44336'};
                     border-radius: 4px;
                 }
+
                 .connection-control {
                     display: flex;
                     flex-direction: column;
@@ -302,16 +336,19 @@ export default function WebsocketController() {
                     background: #f5f5f5;
                     border-radius: 8px;
                 }
+
                 .device-id-input input {
                     flex-grow: 1;
                     padding: 8px;
                     border: 1px solid #ddd;
                     border-radius: 4px;
                 }
+
                 .connection-buttons {
                     display: flex;
                     gap: 10px;
                 }
+
                 button {
                     padding: 10px 15px;
                     background: #2196f3;
@@ -320,42 +357,50 @@ export default function WebsocketController() {
                     border-radius: 4px;
                     cursor: pointer;
                 }
+
                 button:disabled {
                     background: #b0bec5;
                     cursor: not-allowed;
                 }
+
                 .disconnect-btn {
                     background: #f44336;
                 }
+
                 .control-panel {
                     margin: 20px 0;
                     padding: 15px;
                     background: #f5f5f5;
                     border-radius: 8px;
                 }
+
                 .device-info {
                     padding: 10px;
                     background: white;
                     border-radius: 4px;
                     margin-bottom: 10px;
                 }
+
                 .servo-control {
                     display: flex;
                     align-items: center;
                     gap: 10px;
                     margin-top: 10px;
                 }
+
                 .log-container {
                     border: 1px solid #ddd;
                     border-radius: 8px;
                     overflow: hidden;
                 }
+
                 .log-content {
                     height: 300px;
                     overflow-y: auto;
                     padding: 10px;
                     background: #fafafa;
                 }
+
                 .log-entry {
                     margin: 5px 0;
                     padding: 5px;
@@ -363,15 +408,19 @@ export default function WebsocketController() {
                     font-family: monospace;
                     font-size: 14px;
                 }
+
                 .log-entry.client {
                     color: #2196F3;
                 }
+
                 .log-entry.esp {
                     color: #4CAF50;
                 }
+
                 .log-entry.server {
                     color: #9C27B0;
                 }
+
                 .log-entry.error {
                     color: #F44336;
                     font-weight: bold;
