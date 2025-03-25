@@ -1,54 +1,92 @@
-import { WebSocketServer, WebSocket, RawData } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
-import { getAllowedDeviceIds } from './app/actions';
 
 const PORT = 8080;
+const ALLOWED_DEVICE_IDS = new Set(['123','444','555','777']); // Замените на ваши реальные ID
 
 const wss = new WebSocketServer({
     port: PORT,
-    clientTracking: true,
-    perMessageDeflate: {
-        zlibDeflateOptions: { level: 3 }
-    }
+    clientTracking: true
 });
 
-// Хранилище активных соединений
-const clients = new Map<number, { ws: WebSocket, deviceId?: string }>();
+interface ClientInfo {
+    ws: WebSocket;
+    deviceId?: string;
+    ip: string;
+    isIdentified: boolean;
+}
 
-wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+const clients = new Map<number, ClientInfo>();
+
+wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const clientId = Date.now();
-    const clientIp = req.socket.remoteAddress;
-    clients.set(clientId, { ws });
+    const clientIp = req.socket.remoteAddress || 'unknown';
+    const client: ClientInfo = { ws, ip: clientIp, isIdentified: false };
+    clients.set(clientId, client);
 
     console.log(`New connection [ID: ${clientId}, IP: ${clientIp}]`);
 
-    // Получение разрешенных идентификаторов из базы данных
-    const allowedDeviceIds = new Set(await getAllowedDeviceIds());
+    // Приветственное сообщение
+    ws.send(JSON.stringify({
+        type: "system",
+        message: "Connection established",
+        clientId,
+        status: "awaiting_identification"
+    }));
 
-    ws.on('message', (data: RawData, isBinary: boolean) => {
+    ws.on('message', (data: Buffer) => {
         try {
-            const message = isBinary ? data : data.toString();
+            const message = data.toString();
             console.log(`[${clientId}] Received:`, message);
+            const parsed = JSON.parse(message);
 
-            const parsed = JSON.parse(message.toString());
+            // Обработка идентификации
+            if (parsed.type === 'identify') {
+                if (parsed.deviceId && ALLOWED_DEVICE_IDS.has(parsed.deviceId)) {
+                    client.deviceId = parsed.deviceId;
+                    client.isIdentified = true;
 
-            if (parsed.type === 'identify' && parsed.deviceId) {
-                if (allowedDeviceIds.has(parsed.deviceId)) {
-                    clients.get(clientId)!.deviceId = parsed.deviceId;
+                    ws.send(JSON.stringify({
+                        type: "system",
+                        message: "Identification successful",
+                        clientId,
+                        deviceId: parsed.deviceId,
+                        status: "connected"
+                    }));
+
                     console.log(`Client ${clientId} identified as device ${parsed.deviceId}`);
                 } else {
-                    console.log(`Client ${clientId} attempted to connect with invalid device ID: ${parsed.deviceId}`);
-                    ws.close(); // Закрыть соединение, если идентификатор устройства не разрешен
+                    ws.send(JSON.stringify({
+                        type: "error",
+                        message: "Invalid device ID",
+                        clientId,
+                        status: "rejected"
+                    }));
+                    ws.close();
                 }
+                return;
             }
 
-            // Обработка других сообщений
-            if (parsed.command === 'ping') {
+            // Проверка идентификации для команд
+            if (!client.isIdentified) {
                 ws.send(JSON.stringify({
-                    type: 'pong',
-                    timestamp: Date.now(),
-                    original: parsed
+                    type: "error",
+                    message: "Please identify first",
+                    clientId,
+                    status: "unidentified"
                 }));
+                return;
+            }
+
+            // Маршрутизация сообщений для ESP8266
+            if (parsed.command && parsed.deviceId) {
+                clients.forEach((targetClient, id) => {
+                    if (targetClient.deviceId === parsed.deviceId &&
+                        targetClient.isIdentified &&
+                        id !== clientId) {
+                        targetClient.ws.send(message);
+                    }
+                });
             }
 
         } catch (err) {
@@ -56,18 +94,19 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             ws.send(JSON.stringify({
                 type: "error",
                 message: "Invalid message format",
-                error: (err as Error).message
+                error: (err as Error).message,
+                clientId
             }));
         }
     });
 
     ws.on('close', () => {
         clients.delete(clientId);
-        console.log(`Client ${clientId} disconnected [Remaining: ${clients.size}]`);
+        console.log(`Client ${clientId} disconnected`);
     });
 
-    ws.on('error', (err: Error) => {
-        console.error(`[${clientId}] Error:`, err);
+    ws.on('error', (err) => {
+        console.error(`[${clientId}] WebSocket error:`, err);
     });
 });
 
