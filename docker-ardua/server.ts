@@ -14,6 +14,7 @@ interface ClientInfo {
     deviceId?: string;
     ip: string;
     isIdentified: boolean;
+    clientType?: 'browser' | 'esp';
 }
 
 const clients = new Map<number, ClientInfo>();
@@ -26,10 +27,8 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 
     console.log(`New connection [ID: ${clientId}, IP: ${clientIp}]`);
 
-    // Получаем разрешенные deviceId из базы данных
     const allowedDeviceIds = new Set(await getAllowedDeviceIds());
 
-    // Приветственное сообщение
     ws.send(JSON.stringify({
         type: "system",
         message: "Connection established",
@@ -43,7 +42,11 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             console.log(`[${clientId}] Received:`, message);
             const parsed = JSON.parse(message);
 
-            // Обработка идентификации
+            if (parsed.type === 'client_type') {
+                client.clientType = parsed.clientType;
+                return;
+            }
+
             if (parsed.type === 'identify') {
                 if (parsed.deviceId && allowedDeviceIds.has(parsed.deviceId)) {
                     client.deviceId = parsed.deviceId;
@@ -58,6 +61,19 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
                     }));
 
                     console.log(`Client ${clientId} identified as device ${parsed.deviceId}`);
+
+                    // Уведомляем всех браузерных клиентов с этим deviceId
+                    clients.forEach((targetClient, id) => {
+                        if (targetClient.clientType === 'browser' &&
+                            targetClient.deviceId === parsed.deviceId) {
+                            targetClient.ws.send(JSON.stringify({
+                                type: "esp_status",
+                                status: "connected",
+                                deviceId: parsed.deviceId,
+                                timestamp: new Date().toISOString()
+                            }));
+                        }
+                    });
                 } else {
                     ws.send(JSON.stringify({
                         type: "error",
@@ -70,7 +86,6 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
                 return;
             }
 
-            // Проверка идентификации для команд
             if (!client.isIdentified) {
                 ws.send(JSON.stringify({
                     type: "error",
@@ -81,11 +96,28 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
                 return;
             }
 
-            // Маршрутизация сообщений для ESP8266
+            // Пересылка логов от ESP клиентам браузера
+            if (parsed.type === 'log' && client.clientType === 'esp') {
+                clients.forEach((targetClient, id) => {
+                    if (targetClient.clientType === 'browser' &&
+                        targetClient.deviceId === client.deviceId) {
+                        targetClient.ws.send(JSON.stringify({
+                            type: 'log',
+                            message: parsed.message,
+                            deviceId: client.deviceId,
+                            timestamp: new Date().toISOString()
+                        }));
+                    }
+                });
+                return;
+            }
+
+            // Маршрутизация команд для ESP8266
             if (parsed.command && parsed.deviceId) {
                 clients.forEach((targetClient, id) => {
                     if (targetClient.deviceId === parsed.deviceId &&
                         targetClient.isIdentified &&
+                        targetClient.clientType === 'esp' &&
                         id !== clientId) {
                         targetClient.ws.send(message);
                     }
@@ -104,6 +136,21 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     });
 
     ws.on('close', () => {
+        // Если отключается ESP, уведомляем браузерных клиентов
+        if (client.clientType === 'esp' && client.deviceId) {
+            clients.forEach((targetClient, id) => {
+                if (targetClient.clientType === 'browser' &&
+                    targetClient.deviceId === client.deviceId) {
+                    targetClient.ws.send(JSON.stringify({
+                        type: "esp_status",
+                        status: "disconnected",
+                        deviceId: client.deviceId,
+                        timestamp: new Date().toISOString()
+                    }));
+                }
+            });
+        }
+
         clients.delete(clientId);
         console.log(`Client ${clientId} disconnected`);
     });

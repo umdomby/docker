@@ -10,6 +10,7 @@ type MessageType = {
     params?: any;
     clientId?: number;
     status?: string;
+    timestamp?: string;
 };
 
 export default function WebsocketController() {
@@ -26,7 +27,6 @@ export default function WebsocketController() {
     }, []);
 
     const connectWebSocket = useCallback(() => {
-        // Закрываем предыдущее соединение если оно есть
         if (socketRef.current) {
             socketRef.current.close();
         }
@@ -37,7 +37,13 @@ export default function WebsocketController() {
             setIsConnected(true);
             addLog("Connected to server");
 
-            // Отправка идентификации с новым deviceId
+            // Отправляем тип клиента
+            ws.send(JSON.stringify({
+                type: 'client_type',
+                clientType: 'browser'
+            }));
+
+            // Идентификация
             ws.send(JSON.stringify({
                 type: 'identify',
                 deviceId: inputDeviceId
@@ -51,13 +57,22 @@ export default function WebsocketController() {
                 if (data.type === "system") {
                     if (data.status === "connected") {
                         setIsIdentified(true);
-                        setDeviceId(inputDeviceId); // Устанавливаем новый deviceId после успешной идентификации
+                        setDeviceId(inputDeviceId);
                     }
                     addLog(`System: ${data.message}`);
                 }
                 else if (data.type === "error") {
                     addLog(`Error: ${data.message}`);
                     setIsIdentified(false);
+                }
+                else if (data.type === "log") {
+                    addLog(`ESP[${data.deviceId}]: ${data.message}`);
+                }
+                else if (data.type === "esp_status") {
+                    addLog(`ESP[${data.deviceId}] ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}`);
+                }
+                else {
+                    addLog(`Unknown message: ${event.data}`);
                 }
             } catch {
                 addLog(`Raw data: ${event.data}`);
@@ -285,6 +300,8 @@ export default function WebsocketController() {
                     margin: 5px 0;
                     padding: 5px;
                     border-bottom: 1px solid #eee;
+                    font-family: monospace;
+                    font-size: 14px;
                 }
             `}</style>
         </div>
