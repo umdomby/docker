@@ -10,6 +10,8 @@ const nextConfig = {
             },
         ]
     },
+    // Конфигурация для standalone-режима
+    output: 'standalone',
     experimental: {
         serverActions: {
             bodySizeLimit: '5mb',
