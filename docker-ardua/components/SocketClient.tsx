@@ -65,7 +65,7 @@ export default function WebsocketController() {
         }
 
         reconnectAttemptRef.current = 0; // Сброс попыток переподключения
-        const ws = new WebSocket('ws://192.168.0.151:8080');
+        const ws = new WebSocket('ws://192.168.0.151:8085');
 
         ws.onopen = () => {
             setIsConnected(true);
@@ -104,7 +104,7 @@ export default function WebsocketController() {
                 else if (data.type === "log") {
                     addLog(`ESP: ${data.message}`, 'esp');
                     resetEspWatchdog();
-                    if (data.message && data.message.includes("Heartbeat")) {
+                    if (data.message.includes("Heartbeat")) {
                         setEspConnected(true);
                         resetHeartbeatTimeout();
                     }

@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import { getAllowedDeviceIds } from './app/actions';
 
-const PORT = 8080;
+const PORT = 8085;
 
 interface ClientInfo {
     ws: WebSocket;
