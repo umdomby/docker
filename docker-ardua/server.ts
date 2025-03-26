@@ -204,7 +204,7 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
         clients.delete(clientId);
     });
 
-    ws.on('error', (err) => {
+    ws.on('error', (err: Error) => {
         console.error(`[${clientId}] WebSocket error:`, err);
     });
 });

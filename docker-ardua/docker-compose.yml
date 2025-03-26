@@ -4,9 +4,9 @@ services:
     working_dir: /app2
     ports:
       - "3003:3000"
-    volumes:
-      - .:/app2
-    command: ["yarn", "start"]
+      - "8085:8085"
+    environment:
+      NODE_ENV: production
     env_file:
       - .env
     networks:

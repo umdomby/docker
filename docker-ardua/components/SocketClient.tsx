@@ -104,7 +104,7 @@ export default function WebsocketController() {
                 else if (data.type === "log") {
                     addLog(`ESP: ${data.message}`, 'esp');
                     resetEspWatchdog();
-                    if (data.message.includes("Heartbeat")) {
+                    if (data.message && data.message.includes("Heartbeat")) {
                         setEspConnected(true);
                         resetHeartbeatTimeout();
                     }
