@@ -28,7 +28,7 @@ WORKDIR /app2
 COPY --from=builder /app2 /app2
 
 RUN yarn install --production --frozen-lockfile
-RUN yarn global add ts-node typescript @types/node @types/ws concurrently
+RUN yarn global add ts-node typescript @types/node @types/ws concurrently path
 RUN yarn prisma generate
 
 # Установите переменные окружения
@@ -36,7 +36,7 @@ ENV NODE_ENV=production
 
 # Порты
 EXPOSE 3000
-EXPOSE 8085
+EXPOSE 1444
 
 # Запустите приложение
 #CMD ["yarn", "start"]

@@ -2,21 +2,15 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
 import { readFileSync } from 'fs';
 import { getAllowedDeviceIds } from './app/actions';
-import { createServer } from 'http';
-
-
-const PORT = 1444;
-const server = createServer();
+import { createServer } from 'https';
+const path = require('path');
+const PORT = 444;
+//const server = createServer();
 //Загрузите ваши SSL-сертификаты
-// const server = createServer({
-//     key: readFileSync('/etc/letsencrypt/live/ardu.site/privkey.pem'),
-//     cert: readFileSync('/etc/letsencrypt/live/ardu.site/fullchain.pem'),
-// });
-// Загрузите ваши SSL-сертификаты
-// const server = createServer({
-//     cert: readFileSync('/etc/letsencrypt/live/ardu.site/fullchain.pem'),
-//     key: readFileSync('/etc/letsencrypt/live/ardu.site/privkey.pem')
-// });
+const server = createServer({
+    key: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/privkey.pem')),
+    cert: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/fullchain.pem')),
+});
 
 const wss = new WebSocketServer({ server });
 
@@ -224,5 +218,5 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`WebSocket server running on ws://0.0.0.0:${PORT}`);
+    console.log(`WebSocket server running on wss://0.0.0.0:${PORT}`);
 });

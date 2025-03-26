@@ -7,6 +7,8 @@
     "dev2": "next dev --turbopack",
     "build": "next build",
     "start": "concurrently \"next start\" \"ts-node server.ts\"",
+    "SSL": "node client-ssl.js",
+    "SSL2": "ts-node server-ssl.ts",
     "lint": "next lint",
     "test": "jest",
     "prisma:push": "prisma db push",

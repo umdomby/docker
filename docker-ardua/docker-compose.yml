@@ -4,9 +4,11 @@ services:
     working_dir: /app2
     ports:
       - "3003:3000"
-      - "8085:8085"
+      #- "1444"
     environment:
       NODE_ENV: production
+    volumes:
+      - ./letsencrypt:/etc/letsencrypt
     env_file:
       - .env
     networks:

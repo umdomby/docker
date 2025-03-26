@@ -36,7 +36,6 @@ export default function WebsocketController() {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}]);
     }, []);
 
-
     const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const resetHeartbeatTimeout = useCallback(() => {
@@ -44,10 +43,8 @@ export default function WebsocketController() {
         heartbeatTimeoutRef.current = setTimeout(() => {
             setEspConnected(false);
             addLog(`ESP[${deviceId}] connection lost (no heartbeat)`, 'error');
-        }, 3000); // 5 секунд без Heartbeat = потеря связи
+        }, 3000); // 3 секунды без Heartbeat = потеря связи
     }, [deviceId, addLog]);
-
-
 
     const resetEspWatchdog = useCallback(() => {
         if (espWatchdogRef.current) clearTimeout(espWatchdogRef.current);
@@ -65,7 +62,7 @@ export default function WebsocketController() {
         }
 
         reconnectAttemptRef.current = 0; // Сброс попыток переподключения
-        const ws = new WebSocket('ws://192.168.0.151:8085');
+        const ws = new WebSocket('wss://ardu.site:444/');
 
         ws.onopen = () => {
             setIsConnected(true);
@@ -152,7 +149,6 @@ export default function WebsocketController() {
         socketRef.current = ws;
     }, [addLog, inputDeviceId, resetEspWatchdog]);
 
-
     const disconnectWebSocket = useCallback(() => {
         if (socketRef.current) {
             socketRef.current.close();
@@ -177,6 +173,7 @@ export default function WebsocketController() {
             if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
         };
     }, []);
+
     // useEffect(() => {
     //     // Автоподключение при монтировании
     //     connectWebSocket();
@@ -315,15 +312,15 @@ export default function WebsocketController() {
                     margin: 10px 0;
                     padding: 10px;
                     background: ${isConnected ?
-                            (isIdentified ?
-                                    (espConnected ? '#e6f7e6' : '#fff3e0') :
-                                    '#fff3e0') :
-                            '#ffebee'};
+                (isIdentified ?
+                    (espConnected ? '#e6f7e6' : '#fff3e0') :
+                    '#fff3e0') :
+                '#ffebee'};
                     border: 1px solid ${isConnected ?
-                            (isIdentified ?
-                                    (espConnected ? '#4caf50' : '#ffa000') :
-                                    '#ffa000') :
-                            '#f44336'};
+                (isIdentified ?
+                    (espConnected ? '#4caf50' : '#ffa000') :
+                    '#ffa000') :
+                '#f44336'};
                     border-radius: 4px;
                 }
 
