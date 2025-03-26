@@ -1,0 +1,18 @@
+services:
+  ardua:
+    build: .
+    working_dir: /app2
+    ports:
+      - "3003:3000"
+    volumes:
+      - .:/app2
+    command: ["yarn", "start"]
+    env_file:
+      - .env
+    networks:
+      - sharednetwork
+    restart: always
+
+networks:
+  sharednetwork:
+    external: true

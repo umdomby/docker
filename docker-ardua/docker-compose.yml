@@ -6,7 +6,7 @@ services:
       - "3003:3000"
     volumes:
       - .:/app2
-    command: ["yarn", "start"]
+    command: sh -c "yarn install && yarn prisma generate && concurrently \"yarn dev\" \"ts-node server.ts\""
     env_file:
       - .env
     networks:
