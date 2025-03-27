@@ -211,7 +211,7 @@ export default function WebsocketController() {
             if (isConnected && isIdentified) {
                 sendCommand("heartbeat2");
             }
-        }, 10000);
+        }, 1000);
 
         return () => clearInterval(heartbeatInterval);
     }, [isConnected, isIdentified, sendCommand]);
