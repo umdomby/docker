@@ -1,18 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
-import { readFileSync } from 'fs';
 import { getAllowedDeviceIds } from './app/actions';
 import { createServer } from 'http';
-import * as path from 'path';
 
 const PORT = 1444;
 const WS_PATH = '/ws';
 
-// Загрузите ваши SSL-сертификаты
-// const server = createServer({
-//     key: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/privkey.pem')),
-//     cert: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/fullchain.pem')),
-// });
 const server = createServer();
 const wss = new WebSocketServer({
     server,

@@ -27,10 +27,8 @@ export default function WebsocketController() {
     const [inputDeviceId, setInputDeviceId] = useState('123');
     const [espConnected, setEspConnected] = useState(false);
     const [controlVisible, setControlVisible] = useState(true);
-    const [motorASpeed, setMotorASpeed] = useState(0);
-    const [motorBSpeed, setMotorBSpeed] = useState(0);
-    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop');
-    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop');
+    const [speedA, setSpeedA] = useState(0);
+    const [speedB, setSpeedB] = useState(0);
     const socketRef = useRef<WebSocket | null>(null);
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const espWatchdogRef = useRef<NodeJS.Timeout | null>(null);
@@ -76,7 +74,7 @@ export default function WebsocketController() {
             socketRef.current.close();
         }
 
-        reconnectAttemptRef.current = 0;
+        reconnectAttemptRef.current = 0; // Сброс попыток переподключения
         const ws = new WebSocket('wss://ardu.site/ws');
 
         ws.onopen = () => {
@@ -84,17 +82,18 @@ export default function WebsocketController() {
             reconnectAttemptRef.current = 0;
             addLog("Connected to WebSocket server", 'server');
 
+            // Отправляем тип клиента
             ws.send(JSON.stringify({
                 type: 'client_type',
                 clientType: 'browser'
             }));
 
+            // Идентификация
             ws.send(JSON.stringify({
                 type: 'identify',
                 deviceId: inputDeviceId
             }));
         };
-
         ws.onmessage = (event) => {
             try {
                 const data: MessageType = JSON.parse(event.data);
@@ -158,7 +157,7 @@ export default function WebsocketController() {
             setIsIdentified(false);
             setEspConnected(false);
             addLog("Disconnected manually", 'server');
-            reconnectAttemptRef.current = 5;
+            reconnectAttemptRef.current = 5; // Отключаем автореконнект
         }
     }, [addLog]);
 
@@ -170,35 +169,13 @@ export default function WebsocketController() {
         };
     }, []);
 
-    const handleMotorAControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorASpeed(Math.abs(speed));
-        setMotorADirection(direction);
-
-        if (direction === 'stop') {
-            sendCommand("set_speed", { motor: 'A', speed: 0 });
+    const handleSpeedChange = useCallback((motor: 'A' | 'B', speed: number) => {
+        if (motor === 'A') {
+            setSpeedA(speed);
+            sendCommand("set_speed", { motor: 'A', speed });
         } else {
-            sendCommand("set_speed", { motor: 'A', speed: Math.abs(speed) });
-            if (direction === 'forward') {
-                sendCommand("motor_a_forward");
-            } else {
-                sendCommand("motor_a_backward");
-            }
-        }
-    }, [sendCommand]);
-
-    const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorBSpeed(Math.abs(speed));
-        setMotorBDirection(direction);
-
-        if (direction === 'stop') {
-            sendCommand("set_speed", { motor: 'B', speed: 0 });
-        } else {
-            sendCommand("set_speed", { motor: 'B', speed: Math.abs(speed) });
-            if (direction === 'forward') {
-                sendCommand("motor_b_forward");
-            } else {
-                sendCommand("motor_b_backward");
-            }
+            setSpeedB(speed);
+            sendCommand("set_speed", { motor: 'B', speed });
         }
     }, [sendCommand]);
 
@@ -211,7 +188,7 @@ export default function WebsocketController() {
             if (isConnected && isIdentified) {
                 sendCommand("heartbeat2");
             }
-        }, 10000);
+        }, 10000); // Отправка Heartbeat2 каждые 10 секунд
 
         return () => clearInterval(heartbeatInterval);
     }, [isConnected, isIdentified, sendCommand]);
@@ -266,61 +243,32 @@ export default function WebsocketController() {
                         <p>ESP Status: <strong>{espConnected ? 'Connected' : 'Disconnected'}</strong></p>
                     </div>
 
-                    <div className="tank-controls">
-                        <div className="motor-control motor-a">
-                            <div className="joystick">
-                                <input
-                                    type="range"
-                                    min="-255"
-                                    max="255"
-                                    value={motorADirection === 'forward' ? motorASpeed : (motorADirection === 'backward' ? -motorASpeed : 0)}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (value > 0) {
-                                            handleMotorAControl(value, 'forward');
-                                        } else if (value < 0) {
-                                            handleMotorAControl(-value, 'backward');
-                                        } else {
-                                            handleMotorAControl(0, 'stop');
-                                        }
-                                    }}
-                                    onMouseUp={() => handleMotorAControl(0, 'stop')}
-                                    onTouchEnd={() => handleMotorAControl(0, 'stop')}
-                                    className="vertical-slider"
-                                />
-                                <div className="motor-info">
-                                    <span>Motor A: {motorASpeed}</span>
-                                    <span>{motorADirection === 'forward' ? 'Forward' : motorADirection === 'backward' ? 'Backward' : 'Stopped'}</span>
-                                </div>
-                            </div>
+                    <div className="motor-control">
+                        <div className="motor-button"
+                             onMouseDown={() => handleSpeedChange('A', 255)}
+                             onMouseUp={() => handleSpeedChange('A', 0)}>
+                            <input
+                                type="range"
+                                min="0"
+                                max="255"
+                                value={speedA}
+                                onChange={(e) => handleSpeedChange('A', parseInt(e.target.value))}
+                                className="vertical-slider"
+                            />
+                            <span>Motor A Speed: {speedA}</span>
                         </div>
-
-                        <div className="motor-control motor-b">
-                            <div className="joystick">
-                                <input
-                                    type="range"
-                                    min="-255"
-                                    max="255"
-                                    value={motorBDirection === 'forward' ? motorBSpeed : (motorBDirection === 'backward' ? -motorBSpeed : 0)}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (value > 0) {
-                                            handleMotorBControl(value, 'forward');
-                                        } else if (value < 0) {
-                                            handleMotorBControl(-value, 'backward');
-                                        } else {
-                                            handleMotorBControl(0, 'stop');
-                                        }
-                                    }}
-                                    onMouseUp={() => handleMotorBControl(0, 'stop')}
-                                    onTouchEnd={() => handleMotorBControl(0, 'stop')}
-                                    className="vertical-slider"
-                                />
-                                <div className="motor-info">
-                                    <span>Motor B: {motorBSpeed}</span>
-                                    <span>{motorBDirection === 'forward' ? 'Forward' : motorBDirection === 'backward' ? 'Backward' : 'Stopped'}</span>
-                                </div>
-                            </div>
+                        <div className="motor-button"
+                             onMouseDown={() => handleSpeedChange('B', 255)}
+                             onMouseUp={() => handleSpeedChange('B', 0)}>
+                            <input
+                                type="range"
+                                min="0"
+                                max="255"
+                                value={speedB}
+                                onChange={(e) => handleSpeedChange('B', parseInt(e.target.value))}
+                                className="vertical-slider"
+                            />
+                            <span>Motor B Speed: {speedB}</span>
                         </div>
                     </div>
                 </div>
@@ -338,182 +286,146 @@ export default function WebsocketController() {
             </div>
 
             <style jsx>{`
-        .container {
-          max-width: 800px;
-          margin: 0 auto;
-          padding: 20px;
-          font-family: Arial;
-        }
+                .container {
+                    max-width: 800px;
+                    margin: 0 auto;
+                    padding: 20px;
+                    font-family: Arial;
+                }
 
-        .status {
-          margin: 10px 0;
-          padding: 10px;
-          background: ${isConnected ?
+                .status {
+                    margin: 10px 0;
+                    padding: 10px;
+                    background: ${isConnected ?
                 (isIdentified ?
                     (espConnected ? '#e6f7e6' : '#fff3e0') :
                     '#fff3e0') :
                 '#ffebee'};
-          border: 1px solid ${isConnected ?
+                    border: 1px solid ${isConnected ?
                 (isIdentified ?
                     (espConnected ? '#4caf50' : '#ffa000') :
                     '#ffa000') :
                 '#f44336'};
-          border-radius: 4px;
-        }
+                    border-radius: 4px;
+                }
 
-        .connection-control {
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
-          margin: 15px 0;
-          padding: 15px;
-          background: #f5f5f5;
-          border-radius: 8px;
-        }
+                .connection-control {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    margin: 15px 0;
+                    padding: 15px;
+                    background: #f5f5f5;
+                    border-radius: 8px;
+                }
 
-        .device-id-input input {
-          flex-grow: 1;
-          padding: 8px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-        }
+                .device-id-input input {
+                    flex-grow: 1;
+                    padding: 8px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                }
 
-        .connection-buttons {
-          display: flex;
-          gap: 10px;
-        }
+                .connection-buttons {
+                    display: flex;
+                    gap: 10px;
+                }
 
-        button {
-          padding: 10px 15px;
-          background: #2196f3;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-        }
+                button {
+                    padding: 10px 15px;
+                    background: #2196f3;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
 
-        button:disabled {
-          background: #b0bec5;
-          cursor: not-allowed;
-        }
+                button:disabled {
+                    background: #b0bec5;
+                    cursor: not-allowed;
+                }
 
-        .disconnect-btn {
-          background: #f44336;
-        }
+                .disconnect-btn {
+                    background: #f44336;
+                }
 
-        .control-panel {
-          margin: 20px 0;
-          padding: 15px;
-          background: #f5f5f5;
-          border-radius: 8px;
-        }
+                .control-panel {
+                    margin: 20px 0;
+                    padding: 15px;
+                    background: #f5f5f5;
+                    border-radius: 8px;
+                }
 
-        .device-info {
-          padding: 10px;
-          background: white;
-          border-radius: 4px;
-          margin-bottom: 10px;
-        }
+                .device-info {
+                    padding: 10px;
+                    background: white;
+                    border-radius: 4px;
+                    margin-bottom: 10px;
+                }
 
-        .tank-controls {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          height: 50vh;
-        }
+                .motor-control {
+                    display: flex;
+                    justify-content: space-between;
+                    height: 50vh;
+                }
 
-        .motor-control {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          align-items: center;
-        }
+                .motor-button {
+                    width: 45%;
+                    background: rgba(33, 150, 243, 0.5);
+                    border-radius: 8px;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                    align-items: center;
+                    cursor: pointer;
+                }
 
-        .joystick {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          width: 100%;
-          height: 100%;
-          background: rgba(33, 150, 243, 0.2);
-          border-radius: 8px;
-          padding: 20px;
-        }
+                .motor-button input {
+                    width: 80%;
+                    writing-mode: bt-lr; /* Вертикальный режим */
+                    -webkit-appearance: slider-vertical; /* Для браузеров на основе WebKit */
+                    height: 100px; /* Высота ползунка */
+                    margin: 10px 0; /* Отступы */
+                }
 
-        .vertical-slider {
-          width: 80px;
-          height: 100%;
-          -webkit-appearance: slider-vertical;
-          writing-mode: bt-lr;
-          opacity: 0.7;
-          transition: opacity 0.2s;
-        }
+                .log-container {
+                    border: 1px solid #ddd;
+                    border-radius: 8px;
+                    overflow: hidden;
+                }
 
-        .vertical-slider:hover {
-          opacity: 1;
-        }
+                .log-content {
+                    height: 300px;
+                    overflow-y: auto;
+                    padding: 10px;
+                    background: #fafafa;
+                }
 
-        .motor-info {
-          margin-top: 10px;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-        }
+                .log-entry {
+                    margin: 5px 0;
+                    padding: 5px;
+                    border-bottom: 1px solid #eee;
+                    font-family: monospace;
+                    font-size: 14px;
+                }
 
-        .log-container {
-          border: 1px solid #ddd;
-          border-radius: 8px;
-          overflow: hidden;
-        }
+                .log-entry.client {
+                    color: #2196F3;
+                }
 
-        .log-content {
-          height: 300px;
-          overflow-y: auto;
-          padding: 10px;
-          background: #fafafa;
-        }
+                .log-entry.esp {
+                    color: #4CAF50;
+                }
 
-        .log-entry {
-          margin: 5px 0;
-          padding: 5px;
-          border-bottom: 1px solid #eee;
-          font-family: monospace;
-          font-size: 14px;
-        }
+                .log-entry.server {
+                    color: #9C27B0;
+                }
 
-        .log-entry.client {
-          color: #2196F3;
-        }
-
-        .log-entry.esp {
-          color: #4CAF50;
-        }
-
-        .log-entry.server {
-          color: #9C27B0;
-        }
-
-        .log-entry.error {
-          color: #F44336;
-          font-weight: bold;
-        }
-
-        @media (max-width: 768px) {
-          .tank-controls {
-            flex-direction: column;
-            height: 70vh;
-          }
-          
-          .motor-control {
-            height: 50%;
-          }
-          
-          .vertical-slider {
-            height: 80%;
-          }
-        }
-      `}</style>
+                .log-entry.error {
+                    color: #F44336;
+                    font-weight: bold;
+                }
+            `}</style>
         </div>
     );
 }
