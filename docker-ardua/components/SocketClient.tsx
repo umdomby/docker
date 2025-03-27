@@ -62,7 +62,7 @@ export default function WebsocketController() {
         }
 
         reconnectAttemptRef.current = 0; // Сброс попыток переподключения
-        const ws = new WebSocket('wss://ardu.site:444/');
+        const ws = new WebSocket('wss://ardu.site/ws');
 
         ws.onopen = () => {
             setIsConnected(true);

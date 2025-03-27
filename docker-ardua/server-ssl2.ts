@@ -3,21 +3,16 @@ import { IncomingMessage } from 'http';
 import { readFileSync } from 'fs';
 import { getAllowedDeviceIds } from './app/actions';
 import { createServer } from 'https';
-import * as path from 'path';
-
-const PORT = 443;
-const WS_PATH = '/ws';
-
-// Загрузите ваши SSL-сертификаты
+const path = require('path');
+const PORT = 444;
+//const server = createServer();
+//Загрузите ваши SSL-сертификаты
 const server = createServer({
     key: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/privkey.pem')),
     cert: readFileSync(path.join(__dirname, './letsencrypt/live/ardu.site/fullchain.pem')),
 });
 
-const wss = new WebSocketServer({
-    server,
-    path: WS_PATH
-});
+const wss = new WebSocketServer({ server });
 
 interface ClientInfo {
     ws: WebSocket;
@@ -46,12 +41,6 @@ setInterval(() => {
 }, 30000);
 
 wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
-    // Проверяем путь подключения
-    if (req.url !== WS_PATH) {
-        ws.close(1002, 'Invalid path');
-        return;
-    }
-
     const clientId = Date.now();
     const ip = req.socket.remoteAddress || 'unknown';
     const client: ClientInfo = {
@@ -229,5 +218,5 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`WebSocket server running on wss://0.0.0.0:${PORT}${WS_PATH}`);
+    console.log(`WebSocket server running on wss://0.0.0.0:${PORT}`);
 });

@@ -4,7 +4,7 @@ services:
     working_dir: /app2
     ports:
       - "3003:3000"
-      #- "1444"
+      #- "1444:1444"  # WebSocket-порт
     environment:
       NODE_ENV: production
     volumes:
