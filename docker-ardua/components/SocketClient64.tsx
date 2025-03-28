@@ -36,28 +36,12 @@ export default function WebsocketController() {
     const espWatchdogRef = useRef<NodeJS.Timeout | null>(null);
     const reconnectAttemptRef = useRef(0);
     const heartbeatTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const motorAChangeRef = useRef<NodeJS.Timeout | null>(null);
+    const motorBChangeRef = useRef<NodeJS.Timeout | null>(null);
 
     const addLog = useCallback((msg: string, type: LogEntry['type']) => {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}]);
     }, []);
-
-    // Функция debounce
-    const useDebouncedCallback = <T extends (...args: any[]) => void>(
-        callback: T,
-        delay: number
-    ) => {
-        const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-        return useCallback((...args: Parameters<T>) => {
-            if (timeoutRef.current) {
-                clearTimeout(timeoutRef.current);
-            }
-
-            timeoutRef.current = setTimeout(() => {
-                callback(...args);
-            }, delay);
-        }, [callback, delay]);
-    };
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
@@ -185,15 +169,20 @@ export default function WebsocketController() {
             if (socketRef.current) {
                 socketRef.current.close();
             }
+            if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
+            if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
         };
     }, []);
 
-    // Дебаунс версии обработчиков моторов
-    const debouncedMotorAControl = useDebouncedCallback(
-        (speed: number, direction: 'forward' | 'backward' | 'stop') => {
-            setMotorASpeed(Math.abs(speed));
-            setMotorADirection(direction);
+    const handleMotorAControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
+        setMotorASpeed(Math.abs(speed));
+        setMotorADirection(direction);
 
+        if (motorAChangeRef.current) {
+            clearTimeout(motorAChangeRef.current);
+        }
+
+        motorAChangeRef.current = setTimeout(() => {
             if (direction === 'stop') {
                 sendCommand("set_speed", { motor: 'A', speed: 0 });
             } else {
@@ -204,15 +193,18 @@ export default function WebsocketController() {
                     sendCommand("motor_a_backward");
                 }
             }
-        },
-        50 // Задержка 50мс
-    );
+        }, 20); // Увеличьте задержку, например, до 200 мс
+    }, [sendCommand]);
 
-    const debouncedMotorBControl = useDebouncedCallback(
-        (speed: number, direction: 'forward' | 'backward' | 'stop') => {
-            setMotorBSpeed(Math.abs(speed));
-            setMotorBDirection(direction);
+    const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
+        setMotorBSpeed(Math.abs(speed));
+        setMotorBDirection(direction);
 
+        if (motorBChangeRef.current) {
+            clearTimeout(motorBChangeRef.current);
+        }
+
+        motorBChangeRef.current = setTimeout(() => {
             if (direction === 'stop') {
                 sendCommand("set_speed", { motor: 'B', speed: 0 });
             } else {
@@ -223,9 +215,9 @@ export default function WebsocketController() {
                     sendCommand("motor_b_backward");
                 }
             }
-        },
-        50 // Задержка 50мс
-    );
+        }, 20); // Увеличьте задержку, например, до 200 мс
+    }, [sendCommand]);
+
 
     const handleControlVisibility = useCallback(() => {
         setControlVisible(prev => !prev);
@@ -302,18 +294,20 @@ export default function WebsocketController() {
                                     onChange={(e) => {
                                         const value = parseInt(e.target.value);
                                         if (value > 0) {
-                                            debouncedMotorAControl(value, 'forward');
+                                            handleMotorAControl(value, 'forward');
                                         } else if (value < 0) {
-                                            debouncedMotorAControl(-value, 'backward');
+                                            handleMotorAControl(-value, 'backward');
                                         } else {
-                                            debouncedMotorAControl(0, 'stop');
+                                            handleMotorAControl(0, 'stop');
                                         }
                                     }}
                                     onMouseUp={() => {
-                                        debouncedMotorAControl(0, 'stop');
+                                        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
+                                        handleMotorAControl(0, 'stop');
                                     }}
                                     onTouchEnd={() => {
-                                        debouncedMotorAControl(0, 'stop');
+                                        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
+                                        handleMotorAControl(0, 'stop');
                                     }}
                                     className="vertical-slider"
                                 />
@@ -334,18 +328,20 @@ export default function WebsocketController() {
                                     onChange={(e) => {
                                         const value = parseInt(e.target.value);
                                         if (value > 0) {
-                                            debouncedMotorBControl(value, 'forward');
+                                            handleMotorBControl(value, 'forward');
                                         } else if (value < 0) {
-                                            debouncedMotorBControl(-value, 'backward');
+                                            handleMotorBControl(-value, 'backward');
                                         } else {
-                                            debouncedMotorBControl(0, 'stop');
+                                            handleMotorBControl(0, 'stop');
                                         }
                                     }}
                                     onMouseUp={() => {
-                                        debouncedMotorBControl(0, 'stop');
+                                        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
+                                        handleMotorBControl(0, 'stop');
                                     }}
                                     onTouchEnd={() => {
-                                        debouncedMotorBControl(0, 'stop');
+                                        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
+                                        handleMotorBControl(0, 'stop');
                                     }}
                                     className="vertical-slider"
                                 />
@@ -461,6 +457,7 @@ export default function WebsocketController() {
                     flex-direction: column;
                     justify-content: center;
                     align-items: center;
+                    position: relative;
                 }
 
                 .joystick {
@@ -472,15 +469,25 @@ export default function WebsocketController() {
                     background: rgba(33, 150, 243, 0.2);
                     border-radius: 8px;
                     padding: 20px;
+                    position: relative;
                 }
 
-                .vertical-slider {
-                    width: 80px;
+                .motor-control.motor-a .vertical-slider,
+                .motor-control.motor-b .vertical-slider {
+                    position: absolute;
+                    top: 0;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    width: 100%;
                     height: 100%;
-                    -webkit-appearance: slider-vertical;
-                    writing-mode: bt-lr;
+                    -webkit-appearance: none;
+                    background: transparent;
                     opacity: 0.7;
                     transition: opacity 0.2s;
+                    cursor: pointer;
+                    writing-mode: bt-lr; /* Вертикальное управление */
+                    transform: rotate(270deg); /* Поворот для вертикального управления */
                 }
 
                 .vertical-slider:hover {
@@ -537,15 +544,16 @@ export default function WebsocketController() {
                         flex-direction: column;
                         height: 70vh;
                     }
-                    
+
                     .motor-control {
                         height: 50%;
                     }
-                    
+
                     .vertical-slider {
                         height: 80%;
                     }
                 }
+
             `}</style>
         </div>
     );

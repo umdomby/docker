@@ -378,15 +378,15 @@ export default function WebsocketController() {
                     margin: 10px 0;
                     padding: 10px;
                     background: ${isConnected ?
-                (isIdentified ?
-                    (espConnected ? '#e6f7e6' : '#fff3e0') :
-                    '#fff3e0') :
-                '#ffebee'};
+                            (isIdentified ?
+                                    (espConnected ? '#e6f7e6' : '#fff3e0') :
+                                    '#fff3e0') :
+                            '#ffebee'};
                     border: 1px solid ${isConnected ?
-                (isIdentified ?
-                    (espConnected ? '#4caf50' : '#ffa000') :
-                    '#ffa000') :
-                '#f44336'};
+                            (isIdentified ?
+                                    (espConnected ? '#4caf50' : '#ffa000') :
+                                    '#ffa000') :
+                            '#f44336'};
                     border-radius: 4px;
                 }
 
@@ -457,6 +457,7 @@ export default function WebsocketController() {
                     flex-direction: column;
                     justify-content: center;
                     align-items: center;
+                    position: relative;
                 }
 
                 .joystick {
@@ -468,15 +469,25 @@ export default function WebsocketController() {
                     background: rgba(33, 150, 243, 0.2);
                     border-radius: 8px;
                     padding: 20px;
+                    position: relative;
                 }
 
-                .vertical-slider {
-                    width: 80px;
+                .motor-control.motor-a .vertical-slider,
+                .motor-control.motor-b .vertical-slider {
+                    position: absolute;
+                    top: 0;
+                    bottom: 0;
+                    left: 0;
+                    right: 0;
+                    width: 100%;
                     height: 100%;
-                    -webkit-appearance: slider-vertical;
-                    writing-mode: bt-lr;
+                    -webkit-appearance: none;
+                    background: transparent;
                     opacity: 0.7;
                     transition: opacity 0.2s;
+                    cursor: pointer;
+                    writing-mode: bt-lr; /* Вертикальное управление */
+                    transform: rotate(270deg); /* Поворот для вертикального управления */
                 }
 
                 .vertical-slider:hover {
@@ -533,15 +544,16 @@ export default function WebsocketController() {
                         flex-direction: column;
                         height: 70vh;
                     }
-                    
+
                     .motor-control {
                         height: 50%;
                     }
-                    
+
                     .vertical-slider {
                         height: 80%;
                     }
                 }
+
             `}</style>
         </div>
     );
