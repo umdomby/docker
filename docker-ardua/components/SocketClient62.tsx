@@ -193,7 +193,7 @@ export default function WebsocketController() {
                     sendCommand("motor_a_backward");
                 }
             }
-        }, 20); // Увеличьте задержку, например, до 200 мс
+        }, 20);
     }, [sendCommand]);
 
     const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
@@ -215,9 +215,8 @@ export default function WebsocketController() {
                     sendCommand("motor_b_backward");
                 }
             }
-        }, 20); // Увеличьте задержку, например, до 200 мс
+        }, 20);
     }, [sendCommand]);
-
 
     const handleControlVisibility = useCallback(() => {
         setControlVisible(prev => !prev);
