@@ -311,10 +311,10 @@ export default function WebsocketController() {
                                     }}
                                     className="vertical-slider"
                                 />
-                                <div className="motor-info">
-                                    <span>Motor A: {motorASpeed}</span>
-                                    <span>{motorADirection === 'forward' ? 'Forward' : motorADirection === 'backward' ? 'Backward' : 'Stopped'}</span>
-                                </div>
+                            </div>
+                            <div className="motor-info">
+                                <span>Motor A: {motorASpeed}</span>
+                                <span>{motorADirection === 'forward' ? 'Forward' : motorADirection === 'backward' ? 'Backward' : 'Stopped'}</span>
                             </div>
                         </div>
 
@@ -345,10 +345,10 @@ export default function WebsocketController() {
                                     }}
                                     className="vertical-slider"
                                 />
-                                <div className="motor-info">
-                                    <span>Motor B: {motorBSpeed}</span>
-                                    <span>{motorBDirection === 'forward' ? 'Forward' : motorBDirection === 'backward' ? 'Backward' : 'Stopped'}</span>
-                                </div>
+                            </div>
+                            <div className="motor-info">
+                                <span>Motor B: {motorBSpeed}</span>
+                                <span>{motorBDirection === 'forward' ? 'Forward' : motorBDirection === 'backward' ? 'Backward' : 'Stopped'}</span>
                             </div>
                         </div>
                     </div>
