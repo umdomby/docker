@@ -1,24 +1,16 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { IncomingMessage } from 'http';
-import { readFileSync } from 'fs';
 import { getAllowedDeviceIds } from './app/actions';
 import { createServer } from 'http';
 
-
 const PORT = 1444;
-const server = createServer();
-//Загрузите ваши SSL-сертификаты
-// const server = createServer({
-//     key: readFileSync('/etc/letsencrypt/live/ardu.site/privkey.pem'),
-//     cert: readFileSync('/etc/letsencrypt/live/ardu.site/fullchain.pem'),
-// });
-// Загрузите ваши SSL-сертификаты
-// const server = createServer({
-//     cert: readFileSync('/etc/letsencrypt/live/ardu.site/fullchain.pem'),
-//     key: readFileSync('/etc/letsencrypt/live/ardu.site/privkey.pem')
-// });
+const WS_PATH = '/ws';
 
-const wss = new WebSocketServer({ server });
+const server = createServer();
+const wss = new WebSocketServer({
+    server,
+    path: WS_PATH
+});
 
 interface ClientInfo {
     ws: WebSocket;
@@ -47,6 +39,12 @@ setInterval(() => {
 }, 30000);
 
 wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
+    // Проверяем путь подключения
+    if (req.url !== WS_PATH) {
+        ws.close(1002, 'Invalid path');
+        return;
+    }
+
     const clientId = Date.now();
     const ip = req.socket.remoteAddress || 'unknown';
     const client: ClientInfo = {
@@ -224,5 +222,5 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 });
 
 server.listen(PORT, () => {
-    console.log(`WebSocket server running on ws://0.0.0.0:${PORT}`);
+    console.log(`WebSocket server running on ws://0.0.0.0:${PORT}${WS_PATH}`);
 });
