@@ -285,9 +285,10 @@ export default function WebsocketController() {
                         {controlVisible ? "Hide Controls" : "Show Controls"}
                     </Button>
                 </DialogTrigger>
-                <DialogContent className="dialog-content">
-                    {/* Visually hidden title for accessibility */}
-                    <DialogTitle className="sr-only">Motor Controls</DialogTitle>
+                <DialogContent className="dialog-content" style={{zIndex: 1000}}>
+                    <DialogHeader>
+                        <DialogTitle className="sr-only">Motor Controls</DialogTitle>
+                    </DialogHeader>
 
                     <div className="control-panel">
                         <div className="tank-controls">
@@ -316,6 +317,8 @@ export default function WebsocketController() {
                                             if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
                                             handleMotorAControl(0, 'stop');
                                         }}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onTouchMove={(e) => e.stopPropagation()}
                                         className="vertical-slider"
                                     />
                                 </div>
@@ -350,6 +353,8 @@ export default function WebsocketController() {
                                             if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
                                             handleMotorBControl(0, 'stop');
                                         }}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onTouchMove={(e) => e.stopPropagation()}
                                         className="vertical-slider"
                                     />
                                 </div>
@@ -450,7 +455,6 @@ export default function WebsocketController() {
                     background: #f44336;
                 }
 
-                /* Dialog styles */
                 :global(.dialog-content) {
                     width: 100% !important;
                     max-width: 100% !important;
@@ -459,18 +463,23 @@ export default function WebsocketController() {
                     margin: 0 !important;
                     padding: 20px;
                     box-sizing: border-box;
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 1000;
+                    background: white;
+                    overflow: auto;
                 }
 
-                :global(.dialog-header) {
-                    position: relative;
-                    padding-right: 40px;
-                }
-
-                :global(.close-button) {
-                    position: absolute !important;
-                    top: 10px !important;
-                    right: 10px !important;
-                    margin: 0 !important;
+                :global(.dialog-overlay) {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: rgba(0, 0, 0, 0.5);
+                    z-index: 999;
                 }
 
                 .control-panel {
@@ -478,13 +487,6 @@ export default function WebsocketController() {
                     flex-direction: column;
                     height: calc(100% - 60px);
                     margin-top: 10px;
-                }
-
-                .device-info {
-                    padding: 10px;
-                    background: white;
-                    border-radius: 4px;
-                    margin-bottom: 10px;
                 }
 
                 .tank-controls {
@@ -512,7 +514,7 @@ export default function WebsocketController() {
                     display: flex;
                     justify-content: center;
                     align-items: center;
-                    touch-action: none;
+                    touch-action: pan-y;
                 }
 
                 .vertical-slider {
@@ -525,6 +527,7 @@ export default function WebsocketController() {
                     opacity: 0.7;
                     transition: opacity 0.2s;
                     cursor: pointer;
+                    touch-action: pan-y;
                 }
 
                 .vertical-slider:hover {
@@ -577,27 +580,37 @@ export default function WebsocketController() {
                 }
 
                 @media (max-width: 768px) {
+                    :global(.dialog-content) {
+                        height: 70vh;
+                        padding: 15px;
+                    }
+                    
                     .tank-controls {
                         flex-direction: row;
                         height: 300px;
                     }
-
+                    
                     .joystick-container {
-                        height: 250px;
-                    }
-
-                    :global(.dialog-content) {
-                        height: 70vh;
+                        height: 200px;
                     }
                 }
 
                 @media (max-width: 480px) {
+                    :global(.dialog-content) {
+                        height: 60vh;
+                        padding: 10px;
+                    }
+                    
                     .tank-controls {
                         gap: 10px;
                     }
-
+                    
                     .motor-control {
                         min-width: 100px;
+                    }
+                    
+                    .joystick-container {
+                        height: 150px;
                     }
                 }
             `}</style>

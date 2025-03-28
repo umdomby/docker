@@ -1,5 +1,13 @@
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { Button } from "@/components/ui/button";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogTrigger,
+} from "@/components/ui/dialog";
 
 type MessageType = {
     type?: string;
@@ -26,7 +34,7 @@ export default function WebsocketController() {
     const [deviceId, setDeviceId] = useState('123');
     const [inputDeviceId, setInputDeviceId] = useState('123');
     const [espConnected, setEspConnected] = useState(false);
-    const [controlVisible, setControlVisible] = useState(true);
+    const [controlVisible, setControlVisible] = useState(false);
     const [motorASpeed, setMotorASpeed] = useState(0);
     const [motorBSpeed, setMotorBSpeed] = useState(0);
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop');
@@ -193,7 +201,7 @@ export default function WebsocketController() {
                     sendCommand("motor_a_backward");
                 }
             }
-        }, 20); // Увеличьте задержку, например, до 200 мс
+        }, 20);
     }, [sendCommand]);
 
     const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
@@ -215,9 +223,8 @@ export default function WebsocketController() {
                     sendCommand("motor_b_backward");
                 }
             }
-        }, 20); // Увеличьте задержку, например, до 200 мс
+        }, 20);
     }, [sendCommand]);
-
 
     const handleControlVisibility = useCallback(() => {
         setControlVisible(prev => !prev);
@@ -272,79 +279,85 @@ export default function WebsocketController() {
                 </div>
             </div>
 
-            <button onClick={handleControlVisibility}>
-                {controlVisible ? "Hide Controls" : "Show Controls"}
-            </button>
+            <Dialog open={controlVisible} onOpenChange={setControlVisible}>
+                <DialogTrigger asChild>
+                    <Button onClick={handleControlVisibility}>
+                        {controlVisible ? "Hide Controls" : "Show Controls"}
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="dialog-content" style={{zIndex: 1000}}>
+                    <DialogHeader>
+                        <DialogTitle className="sr-only">Motor Controls</DialogTitle>
+                    </DialogHeader>
 
-            {controlVisible && (
-                <div className="control-panel">
-                    <div className="device-info">
-                        <p>Current Device ID: <strong>{deviceId}</strong></p>
-                        <p>ESP Status: <strong>{espConnected ? 'Connected' : 'Disconnected'}</strong></p>
-                    </div>
-
-                    <div className="tank-controls">
-                        <div className="motor-control motor-a">
-                            <div className="joystick">
-                                <input
-                                    type="range"
-                                    min="-255"
-                                    max="255"
-                                    value={motorADirection === 'forward' ? motorASpeed : (motorADirection === 'backward' ? -motorASpeed : 0)}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (value > 0) {
-                                            handleMotorAControl(value, 'forward');
-                                        } else if (value < 0) {
-                                            handleMotorAControl(-value, 'backward');
-                                        } else {
+                    <div className="control-panel">
+                        <div className="tank-controls">
+                            <div className="motor-control motor-a">
+                                <div className="joystick-container">
+                                    <input
+                                        type="range"
+                                        min="-255"
+                                        max="255"
+                                        value={motorADirection === 'forward' ? motorASpeed : (motorADirection === 'backward' ? -motorASpeed : 0)}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            if (value > 0) {
+                                                handleMotorAControl(value, 'forward');
+                                            } else if (value < 0) {
+                                                handleMotorAControl(-value, 'backward');
+                                            } else {
+                                                handleMotorAControl(0, 'stop');
+                                            }
+                                        }}
+                                        onMouseUp={() => {
+                                            if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
                                             handleMotorAControl(0, 'stop');
-                                        }
-                                    }}
-                                    onMouseUp={() => {
-                                        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
-                                        handleMotorAControl(0, 'stop');
-                                    }}
-                                    onTouchEnd={() => {
-                                        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
-                                        handleMotorAControl(0, 'stop');
-                                    }}
-                                    className="vertical-slider"
-                                />
+                                        }}
+                                        onTouchEnd={() => {
+                                            if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
+                                            handleMotorAControl(0, 'stop');
+                                        }}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onTouchMove={(e) => e.stopPropagation()}
+                                        className="vertical-slider"
+                                    />
+                                </div>
                                 <div className="motor-info">
                                     <span>Motor A: {motorASpeed}</span>
                                     <span>{motorADirection === 'forward' ? 'Forward' : motorADirection === 'backward' ? 'Backward' : 'Stopped'}</span>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="motor-control motor-b">
-                            <div className="joystick">
-                                <input
-                                    type="range"
-                                    min="-255"
-                                    max="255"
-                                    value={motorBDirection === 'forward' ? motorBSpeed : (motorBDirection === 'backward' ? -motorBSpeed : 0)}
-                                    onChange={(e) => {
-                                        const value = parseInt(e.target.value);
-                                        if (value > 0) {
-                                            handleMotorBControl(value, 'forward');
-                                        } else if (value < 0) {
-                                            handleMotorBControl(-value, 'backward');
-                                        } else {
+                            <div className="motor-control motor-b">
+                                <div className="joystick-container">
+                                    <input
+                                        type="range"
+                                        min="-255"
+                                        max="255"
+                                        value={motorBDirection === 'forward' ? motorBSpeed : (motorBDirection === 'backward' ? -motorBSpeed : 0)}
+                                        onChange={(e) => {
+                                            const value = parseInt(e.target.value);
+                                            if (value > 0) {
+                                                handleMotorBControl(value, 'forward');
+                                            } else if (value < 0) {
+                                                handleMotorBControl(-value, 'backward');
+                                            } else {
+                                                handleMotorBControl(0, 'stop');
+                                            }
+                                        }}
+                                        onMouseUp={() => {
+                                            if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
                                             handleMotorBControl(0, 'stop');
-                                        }
-                                    }}
-                                    onMouseUp={() => {
-                                        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
-                                        handleMotorBControl(0, 'stop');
-                                    }}
-                                    onTouchEnd={() => {
-                                        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
-                                        handleMotorBControl(0, 'stop');
-                                    }}
-                                    className="vertical-slider"
-                                />
+                                        }}
+                                        onTouchEnd={() => {
+                                            if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
+                                            handleMotorBControl(0, 'stop');
+                                        }}
+                                        onTouchStart={(e) => e.stopPropagation()}
+                                        onTouchMove={(e) => e.stopPropagation()}
+                                        className="vertical-slider"
+                                    />
+                                </div>
                                 <div className="motor-info">
                                     <span>Motor B: {motorBSpeed}</span>
                                     <span>{motorBDirection === 'forward' ? 'Forward' : motorBDirection === 'backward' ? 'Backward' : 'Stopped'}</span>
@@ -352,8 +365,8 @@ export default function WebsocketController() {
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                </DialogContent>
+            </Dialog>
 
             <div className="log-container">
                 <h3>Event Log</h3>
@@ -372,6 +385,18 @@ export default function WebsocketController() {
                     margin: 0 auto;
                     padding: 20px;
                     font-family: Arial;
+                }
+
+                .sr-only {
+                    position: absolute;
+                    width: 1px;
+                    height: 1px;
+                    padding: 0;
+                    margin: -1px;
+                    overflow: hidden;
+                    clip: rect(0, 0, 0, 0);
+                    white-space: nowrap;
+                    border-width: 0;
                 }
 
                 .status {
@@ -430,53 +455,79 @@ export default function WebsocketController() {
                     background: #f44336;
                 }
 
-                .control-panel {
-                    margin: 20px 0;
-                    padding: 15px;
-                    background: #f5f5f5;
-                    border-radius: 8px;
+                :global(.dialog-content) {
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    height: 80vh;
+                    max-height: 80vh !important;
+                    margin: 0 !important;
+                    padding: 20px;
+                    box-sizing: border-box;
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    z-index: 1000;
+                    background: white;
+                    overflow: auto;
                 }
 
-                .device-info {
-                    padding: 10px;
-                    background: white;
-                    border-radius: 4px;
-                    margin-bottom: 10px;
+                :global(.dialog-overlay) {
+                    position: fixed;
+                    top: 0;
+                    left: 0;
+                    right: 0;
+                    bottom: 0;
+                    background-color: rgba(0, 0, 0, 0.5);
+                    z-index: 999;
+                }
+
+                .control-panel {
+                    display: flex;
+                    flex-direction: column;
+                    height: calc(100% - 60px);
+                    margin-top: 10px;
                 }
 
                 .tank-controls {
                     display: flex;
                     justify-content: space-between;
                     gap: 20px;
-                    height: 50vh;
+                    height: 100%;
+                    min-height: 300px;
                 }
 
                 .motor-control {
                     flex: 1;
                     display: flex;
                     flex-direction: column;
-                    justify-content: center;
                     align-items: center;
+                    min-width: 120px;
                 }
 
-                .joystick {
-                    display: flex;
-                    flex-direction: column;
-                    align-items: center;
+                .joystick-container {
+                    position: relative;
                     width: 100%;
-                    height: 100%;
+                    height: 300px;
                     background: rgba(33, 150, 243, 0.2);
                     border-radius: 8px;
-                    padding: 20px;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    touch-action: pan-y;
                 }
 
                 .vertical-slider {
-                    width: 80px;
+                    position: absolute;
+                    width: 100%;
                     height: 100%;
                     -webkit-appearance: slider-vertical;
                     writing-mode: bt-lr;
+                    transform: rotate(0deg);
                     opacity: 0.7;
                     transition: opacity 0.2s;
+                    cursor: pointer;
+                    touch-action: pan-y;
                 }
 
                 .vertical-slider:hover {
@@ -529,17 +580,37 @@ export default function WebsocketController() {
                 }
 
                 @media (max-width: 768px) {
-                    .tank-controls {
-                        flex-direction: column;
+                    :global(.dialog-content) {
                         height: 70vh;
+                        padding: 15px;
+                    }
+                    
+                    .tank-controls {
+                        flex-direction: row;
+                        height: 300px;
+                    }
+                    
+                    .joystick-container {
+                        height: 200px;
+                    }
+                }
+
+                @media (max-width: 480px) {
+                    :global(.dialog-content) {
+                        height: 60vh;
+                        padding: 10px;
+                    }
+                    
+                    .tank-controls {
+                        gap: 10px;
                     }
                     
                     .motor-control {
-                        height: 50%;
+                        min-width: 100px;
                     }
                     
-                    .vertical-slider {
-                        height: 80%;
+                    .joystick-container {
+                        height: 150px;
                     }
                 }
             `}</style>
