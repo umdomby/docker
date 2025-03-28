@@ -285,21 +285,21 @@ export default function WebsocketController() {
                         {controlVisible ? "Hide Controls" : "Show Controls"}
                     </Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent style={{ width: '100vw', height: '100vh', padding: '0' }}>
                     <DialogHeader>
                         <DialogTitle>Control Panel</DialogTitle>
                         <Button onClick={handleControlVisibility} style={{ position: 'absolute', top: '10px', right: '10px' }}>
                             Hide Controls
                         </Button>
                     </DialogHeader>
-                    <div className="control-panel">
+                    <div className="control-panel" style={{ height: '100%' }}>
                         <div className="device-info">
                             <p>Current Device ID: <strong>{deviceId}</strong></p>
                             <p>ESP Status: <strong>{espConnected ? 'Connected' : 'Disconnected'}</strong></p>
                         </div>
 
-                        <div className="tank-controls">
-                            <div className="motor-control motor-a">
+                        <div className="tank-controls" style={{ height: 'calc(100% - 100px)' }}>
+                            <div className="motor-control motor-a" style={{ flex: '1' }}>
                                 <div className="joystick">
                                     <input
                                         type="range"
@@ -333,7 +333,7 @@ export default function WebsocketController() {
                                 </div>
                             </div>
 
-                            <div className="motor-control motor-b">
+                            <div className="motor-control motor-b" style={{ flex: '1' }}>
                                 <div className="joystick">
                                     <input
                                         type="range"
