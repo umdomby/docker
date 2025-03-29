@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import {
-    Dialog,
+    Dialog, DialogClose,
     DialogContent,
     DialogHeader,
     DialogTitle,
@@ -574,16 +574,19 @@ export default function WebsocketController() {
                     gap: 0
                 }}>
                     <DialogHeader>
-                        <DialogTitle asChild>
-                            <span style={{ display: 'none' }} />
-                        </DialogTitle>
+                        <DialogTitle></DialogTitle>
                     </DialogHeader>
+
+                    <DialogClose className="absolute left-1/2 -translate-x-1/2">
+                        X
+                    </DialogClose>
 
                     {/* Левый сенсор (A) */}
                     <div style={{
                         width: 'calc(50% - 10px)',
                         marginRight: 'auto',
-                        height: '100%'
+                        height: '50%',
+                        marginTop:'15%',
                     }}>
                         <Joystick
                             motor="A"
@@ -599,7 +602,8 @@ export default function WebsocketController() {
                     <div style={{
                         width: 'calc(50% - 10px)',
                         marginLeft: 'auto',
-                        height: '100%'
+                        height: '50%',
+                        marginTop:'15%',
                     }}>
                         <Joystick
                             motor="B"
