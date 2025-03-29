@@ -84,12 +84,14 @@ const Joystick = ({
         if (!isDragging.current) return
         isDragging.current = false
         touchId.current = null
+
         const container = containerRef.current
         if (container) {
             container.style.transition = 'background-color 0.3s'
             container.style.backgroundColor = motorStyles[motor].bg
         }
-        onChange(0) // Отправляем 0 при отпускании
+
+        onChange(0) // Важно: отправляем 0 при отпускании
     }, [motor, motorStyles, onChange])
 
     useEffect(() => {
@@ -264,45 +266,40 @@ export default function WebsocketController() {
         }
     }, [addLog, deviceId, isIdentified, espConnected])
 
-    const handleMotorAControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        // Отменяем предыдущие ожидающие команды
-        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current)
+    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
+        const changeRef = motor === 'A' ? motorAChangeRef : motorBChangeRef
+        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
+        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
 
-        setMotorASpeed(Math.abs(speed))
-        setMotorADirection(direction)
+        return (speed: number, direction: 'forward' | 'backward' | 'stop') => {
+            // 1. Отменить все предыдущие команды
+            if (changeRef.current) {
+                clearTimeout(changeRef.current)
+                changeRef.current = null
+            }
 
-        // Если скорость 0 (отпустили джойстик), отправляем команду остановки немедленно
-        if (speed === 0) {
-            sendCommand("set_speed", { motor: 'A', speed: 0 })
-            return
+            // 2. Обновить UI
+            setSpeed(Math.abs(speed))
+            setDirection(direction)
+
+            // 3. Если скорость 0 - мгновенная остановка
+            if (speed === 0) {
+                sendCommand("set_speed", { motor, speed: 0 })
+                return
+            }
+
+            // 4. Для движения - отправить команды с задержкой
+            changeRef.current = setTimeout(() => {
+                sendCommand("set_speed", { motor, speed: Math.abs(speed) })
+                sendCommand(direction === 'forward'
+                    ? `motor_${motor.toLowerCase()}_forward`
+                    : `motor_${motor.toLowerCase()}_backward`)
+            }, 20)
         }
-
-        // Иначе планируем отправку команды
-        motorAChangeRef.current = setTimeout(() => {
-            sendCommand("set_speed", { motor: 'A', speed: Math.abs(speed) })
-            sendCommand(direction === 'forward' ? "motor_a_forward" : "motor_a_backward")
-        }, 20)
     }, [sendCommand])
 
-    const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        // Отменяем предыдущие ожидающие команды
-        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current)
-
-        setMotorBSpeed(Math.abs(speed))
-        setMotorBDirection(direction)
-
-        // Если скорость 0 (отпустили джойстик), отправляем команду остановки немедленно
-        if (speed === 0) {
-            sendCommand("set_speed", { motor: 'B', speed: 0 })
-            return
-        }
-
-        // Иначе планируем отправку команды
-        motorBChangeRef.current = setTimeout(() => {
-            sendCommand("set_speed", { motor: 'B', speed: Math.abs(speed) })
-            sendCommand(direction === 'forward' ? "motor_b_forward" : "motor_b_backward")
-        }, 20)
-    }, [sendCommand])
+    const handleMotorAControl = createMotorHandler('A')
+    const handleMotorBControl = createMotorHandler('B')
 
     const connectWebSocket = useCallback(() => {
         if (socketRef.current) socketRef.current.close()
@@ -457,28 +454,19 @@ export default function WebsocketController() {
                     maxHeight: '80vh',
                     padding: '20px',
                     boxSizing: 'border-box',
-                    display: 'flex',
-                    flexDirection: 'row', // Фиксированное горизонтальное расположение
-                    justifyContent: 'space-evenly', // Равномерное распределение пространства
-                    alignItems: 'center',
-                    overflow: 'hidden'
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '20px',
+                    alignItems: 'center'
                 }}>
                     <DialogHeader style={{
-                        position: 'absolute',
-                        top: '20px',
-                        left: '0',
-                        right: '0',
+                        gridColumn: '1 / -1',
                         textAlign: 'center'
                     }}>
                         <DialogTitle>Motor Controls</DialogTitle>
                     </DialogHeader>
 
-                    {/* Джойстик A */}
-                    <div style={{
-                        width: '45%',
-                        height: '70%',
-                        minHeight: '250px'
-                    }}>
+                    <div style={{ height: '100%', minHeight: '250px' }}>
                         <Joystick
                             motor="A"
                             onChange={(value) => {
@@ -491,12 +479,7 @@ export default function WebsocketController() {
                         />
                     </div>
 
-                    {/* Джойстик B */}
-                    <div style={{
-                        width: '45%',
-                        height: '70%',
-                        minHeight: '250px'
-                    }}>
+                    <div style={{ height: '100%', minHeight: '250px' }}>
                         <Joystick
                             motor="B"
                             onChange={(value) => {
