@@ -458,55 +458,53 @@ export default function WebsocketController() {
                     padding: '20px',
                     boxSizing: 'border-box',
                     display: 'flex',
-                    flexDirection: 'row', // Фиксированное горизонтальное расположение
-                    justifyContent: 'space-evenly', // Равномерное распределение пространства
-                    alignItems: 'center',
-                    overflow: 'hidden'
+                    flexDirection: 'column'
                 }}>
-                    <DialogHeader style={{
-                        position: 'absolute',
-                        top: '20px',
-                        left: '0',
-                        right: '0',
-                        textAlign: 'center'
-                    }}>
-                        <DialogTitle>Motor Controls</DialogTitle>
+                    <DialogHeader>
+                        <DialogTitle style={{ textAlign: 'center' }}>Motor Controls</DialogTitle>
                     </DialogHeader>
 
-                    {/* Джойстик A */}
                     <div style={{
-                        width: '45%',
-                        height: '70%',
-                        minHeight: '250px'
+                        display: 'flex',
+                        flexDirection: isLandscape ? 'row' : 'column',
+                        gap: '20px',
+                        flex: 1,
+                        minHeight: '300px',
+                        overflow: 'auto'
                     }}>
-                        <Joystick
-                            motor="A"
-                            onChange={(value) => {
-                                if (value > 0) handleMotorAControl(value, 'forward')
-                                else if (value < 0) handleMotorAControl(-value, 'backward')
-                                else handleMotorAControl(0, 'stop')
-                            }}
-                            direction={motorADirection}
-                            speed={motorASpeed}
-                        />
-                    </div>
+                        <div style={{
+                            flex: 1,
+                            height: isLandscape ? '70%' : '45%',
+                            minHeight: '150px'
+                        }}>
+                            <Joystick
+                                motor="A"
+                                onChange={(value) => {
+                                    if (value > 0) handleMotorAControl(value, 'forward')
+                                    else if (value < 0) handleMotorAControl(-value, 'backward')
+                                    else handleMotorAControl(0, 'stop')
+                                }}
+                                direction={motorADirection}
+                                speed={motorASpeed}
+                            />
+                        </div>
 
-                    {/* Джойстик B */}
-                    <div style={{
-                        width: '45%',
-                        height: '70%',
-                        minHeight: '250px'
-                    }}>
-                        <Joystick
-                            motor="B"
-                            onChange={(value) => {
-                                if (value > 0) handleMotorBControl(value, 'forward')
-                                else if (value < 0) handleMotorBControl(-value, 'backward')
-                                else handleMotorBControl(0, 'stop')
-                            }}
-                            direction={motorBDirection}
-                            speed={motorBSpeed}
-                        />
+                        <div style={{
+                            flex: 1,
+                            height: isLandscape ? '70%' : '45%',
+                            minHeight: '150px'
+                        }}>
+                            <Joystick
+                                motor="B"
+                                onChange={(value) => {
+                                    if (value > 0) handleMotorBControl(value, 'forward')
+                                    else if (value < 0) handleMotorBControl(-value, 'backward')
+                                    else handleMotorBControl(0, 'stop')
+                                }}
+                                direction={motorBDirection}
+                                speed={motorBSpeed}
+                            />
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>
