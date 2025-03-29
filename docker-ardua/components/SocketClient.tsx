@@ -582,37 +582,29 @@ export default function WebsocketController() {
                     </DialogClose>
 
                     {/* Левый сенсор (A) */}
-                    <div style={{
-                        width: 'calc(50% - 10px)',
-                        marginRight: 'auto',
-                        height: '50%',
-                        marginTop:'15%',
-                    }}>
-                        <Joystick
-                            motor="A"
-                            onChange={(value) => {
-                                handleMotorAControl(value)
-                            }}
-                            direction={motorADirection}
-                            speed={motorASpeed}
-                        />
-                    </div>
+                    <div className="flex w-full justify-between">
+                        <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                            <Joystick
+                                motor="A"
+                                onChange={(value) => {
+                                    handleMotorAControl(value)
+                                }}
+                                direction={motorADirection}
+                                speed={motorASpeed}
+                            />
+                        </div>
 
-                    {/* Правый сенсор (B) */}
-                    <div style={{
-                        width: 'calc(50% - 10px)',
-                        marginLeft: 'auto',
-                        height: '50%',
-                        marginTop:'15%',
-                    }}>
-                        <Joystick
-                            motor="B"
-                            onChange={(value) => {
-                                handleMotorBControl(value)
-                            }}
-                            direction={motorBDirection}
-                            speed={motorBSpeed}
-                        />
+                        {/* Правый сенсор (B) */}
+                        <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                            <Joystick
+                                motor="B"
+                                onChange={(value) => {
+                                    handleMotorBControl(value)
+                                }}
+                                direction={motorBDirection}
+                                speed={motorBSpeed}
+                            />
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>
