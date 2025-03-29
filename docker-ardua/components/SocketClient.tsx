@@ -151,6 +151,27 @@ const Joystick = ({
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
+        // Добавляем глобальные обработчики для гарантированного завершения
+        const handleGlobalMouseUp = () => {
+            if (isDragging.current) {
+                handleEnd()
+            }
+        }
+
+        const handleGlobalTouchEnd = (e: TouchEvent) => {
+            if (isDragging.current && touchId.current !== null) {
+                const touch = Array.from(e.changedTouches).find(
+                    t => t.identifier === touchId.current
+                )
+                if (touch) {
+                    handleEnd()
+                }
+            }
+        }
+
+        document.addEventListener('mouseup', handleGlobalMouseUp)
+        document.addEventListener('touchend', handleGlobalTouchEnd)
+
         return () => {
             container.removeEventListener('touchstart', onTouchStart)
             container.removeEventListener('touchmove', onTouchMove)
@@ -161,6 +182,9 @@ const Joystick = ({
             document.removeEventListener('mousemove', onMouseMove)
             document.removeEventListener('mouseup', onMouseUp)
             container.removeEventListener('mouseleave', handleEnd)
+
+            document.removeEventListener('mouseup', handleGlobalMouseUp)
+            document.removeEventListener('touchend', handleGlobalTouchEnd)
         }
     }, [handleEnd, handleMove, handleStart])
 
@@ -273,13 +297,25 @@ export default function WebsocketController() {
         const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
         const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
 
-        return (speed: number, direction: 'forward' | 'backward' | 'stop') => {
+        return (value: number) => {
+            // Определяем направление и скорость
+            let direction: 'forward' | 'backward' | 'stop' = 'stop'
+            let speed = 0
+
+            if (value > 0) {
+                direction = 'forward'
+                speed = value
+            } else if (value < 0) {
+                direction = 'backward'
+                speed = -value
+            }
+
             // Обновляем UI сразу
-            setSpeed(Math.abs(speed))
+            setSpeed(speed)
             setDirection(direction)
 
             // Если команда не изменилась - ничего не делаем
-            const currentCommand = { speed: Math.abs(speed), direction }
+            const currentCommand = { speed, direction }
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
                 return
             }
@@ -287,29 +323,43 @@ export default function WebsocketController() {
             // Запоминаем последнюю команду
             lastCommandRef.current = currentCommand
 
-            // Отменяем предыдущий таймер, если он есть
+            // Отменяем предыдущий таймер
             if (throttleRef.current) {
                 clearTimeout(throttleRef.current)
             }
 
-            // Если скорость 0 - отправляем сразу
+            // Если скорость 0 (отпустили джойстик) - отправляем команду остановки немедленно
             if (speed === 0) {
                 sendCommand("set_speed", { motor, speed: 0 })
                 return
             }
 
-            // Для движения - отправляем с небольшой задержкой (50мс)
+            // Для движения - отправляем с задержкой (но гарантируем отправку последней команды)
             throttleRef.current = setTimeout(() => {
-                sendCommand("set_speed", { motor, speed: Math.abs(speed) })
+                sendCommand("set_speed", { motor, speed })
                 sendCommand(direction === 'forward'
                     ? `motor_${motor.toLowerCase()}_forward`
                     : `motor_${motor.toLowerCase()}_backward`)
-            }, 20)
+            }, 40)
         }
     }, [sendCommand])
 
     const handleMotorAControl = createMotorHandler('A')
     const handleMotorBControl = createMotorHandler('B')
+
+    const emergencyStop = useCallback(() => {
+        // Немедленная остановка без задержек
+        sendCommand("set_speed", { motor: 'A', speed: 0 })
+        sendCommand("set_speed", { motor: 'B', speed: 0 })
+        setMotorASpeed(0)
+        setMotorBSpeed(0)
+        setMotorADirection('stop')
+        setMotorBDirection('stop')
+
+        // Очищаем все pending команды
+        if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
+        if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
+    }, [sendCommand])
 
     const connectWebSocket = useCallback(() => {
         if (socketRef.current) {
@@ -488,6 +538,21 @@ export default function WebsocketController() {
                     >
                         Disconnect
                     </button>
+                    <button
+                        onClick={emergencyStop}
+                        disabled={!isConnected || !isIdentified}
+                        style={{
+                            padding: '10px 15px',
+                            background: '#ff9800',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            flex: 1
+                        }}
+                    >
+                        Emergency Stop
+                    </button>
                 </div>
             </div>
 
@@ -520,9 +585,7 @@ export default function WebsocketController() {
                         <Joystick
                             motor="A"
                             onChange={(value) => {
-                                if (value > 0) handleMotorAControl(value, 'forward');
-                                else if (value < 0) handleMotorAControl(-value, 'backward');
-                                else handleMotorAControl(0, 'stop');
+                                handleMotorAControl(value)
                             }}
                             direction={motorADirection}
                             speed={motorASpeed}
@@ -538,9 +601,7 @@ export default function WebsocketController() {
                         <Joystick
                             motor="B"
                             onChange={(value) => {
-                                if (value > 0) handleMotorBControl(value, 'forward');
-                                else if (value < 0) handleMotorBControl(-value, 'backward');
-                                else handleMotorBControl(0, 'stop');
+                                handleMotorBControl(value)
                             }}
                             direction={motorBDirection}
                             speed={motorBSpeed}
