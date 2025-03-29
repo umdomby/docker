@@ -8,6 +8,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog"
+import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 
 type MessageType = {
     type?: string
@@ -573,7 +574,9 @@ export default function WebsocketController() {
                     gap: 0
                 }}>
                     <DialogHeader>
-                        <DialogTitle></DialogTitle>
+                        <DialogTitle asChild>
+                            <span style={{ display: 'none' }} />
+                        </DialogTitle>
                     </DialogHeader>
 
                     {/* Левый сенсор (A) */}

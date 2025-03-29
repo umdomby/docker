@@ -41,7 +41,6 @@ const Joystick = ({
     const containerRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
-
     const motorStyles = {
         A: { bg: 'rgba(255, 87, 34, 0.2)', border: '2px solid #ff5722' },
         B: { bg: 'rgba(76, 175, 80, 0.2)', border: '2px solid #4caf50' }
@@ -84,12 +83,14 @@ const Joystick = ({
         if (!isDragging.current) return
         isDragging.current = false
         touchId.current = null
+
         const container = containerRef.current
         if (container) {
             container.style.transition = 'background-color 0.3s'
             container.style.backgroundColor = motorStyles[motor].bg
         }
-        onChange(0)
+
+        onChange(0) // Важно: отправляем 0 при отпускании
     }, [motor, motorStyles, onChange])
 
     useEffect(() => {
@@ -150,6 +151,27 @@ const Joystick = ({
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
+        // Добавляем глобальные обработчики для гарантированного завершения
+        const handleGlobalMouseUp = () => {
+            if (isDragging.current) {
+                handleEnd()
+            }
+        }
+
+        const handleGlobalTouchEnd = (e: TouchEvent) => {
+            if (isDragging.current && touchId.current !== null) {
+                const touch = Array.from(e.changedTouches).find(
+                    t => t.identifier === touchId.current
+                )
+                if (touch) {
+                    handleEnd()
+                }
+            }
+        }
+
+        document.addEventListener('mouseup', handleGlobalMouseUp)
+        document.addEventListener('touchend', handleGlobalTouchEnd)
+
         return () => {
             container.removeEventListener('touchstart', onTouchStart)
             container.removeEventListener('touchmove', onTouchMove)
@@ -160,6 +182,9 @@ const Joystick = ({
             document.removeEventListener('mousemove', onMouseMove)
             document.removeEventListener('mouseup', onMouseUp)
             container.removeEventListener('mouseleave', handleEnd)
+
+            document.removeEventListener('mouseup', handleGlobalMouseUp)
+            document.removeEventListener('touchend', handleGlobalTouchEnd)
         }
     }, [handleEnd, handleMove, handleStart])
 
@@ -170,7 +195,7 @@ const Joystick = ({
                 position: 'relative',
                 width: '100%',
                 height: '100%',
-                minHeight: '200px',
+                minHeight: '150px',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
@@ -213,9 +238,24 @@ export default function WebsocketController() {
     const [motorBSpeed, setMotorBSpeed] = useState(0)
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-
+    const [isLandscape, setIsLandscape] = useState(false)
+    const reconnectAttemptRef = useRef(0);
     const socketRef = useRef<WebSocket | null>(null)
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const lastMotorACommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
+    const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
+    const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
+    const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
+
+    useEffect(() => {
+        const checkOrientation = () => {
+            setIsLandscape(window.innerWidth > window.innerHeight)
+        }
+
+        checkOrientation()
+        window.addEventListener('resize', checkOrientation)
+        return () => window.removeEventListener('resize', checkOrientation)
+    }, [])
 
     const addLog = useCallback((msg: string, type: LogEntry['type']) => {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
@@ -251,87 +291,172 @@ export default function WebsocketController() {
         }
     }, [addLog, deviceId, isIdentified, espConnected])
 
-    const handleMotorAControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorASpeed(Math.abs(speed))
-        setMotorADirection(direction)
+    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
+        const lastCommandRef = motor === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
+        const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
+        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
+        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
 
-        // Мгновенная отправка команд
-        if (direction === 'stop') {
-            sendCommand("set_speed", { motor: 'A', speed: 0 })
-        } else {
-            sendCommand("set_speed", { motor: 'A', speed: Math.abs(speed) })
-            sendCommand(direction === 'forward' ? "motor_a_forward" : "motor_a_backward")
+        return (value: number) => {
+            // Определяем направление и скорость
+            let direction: 'forward' | 'backward' | 'stop' = 'stop'
+            let speed = 0
+
+            if (value > 0) {
+                direction = 'forward'
+                speed = value
+            } else if (value < 0) {
+                direction = 'backward'
+                speed = -value
+            }
+
+            // Обновляем UI сразу
+            setSpeed(speed)
+            setDirection(direction)
+
+            // Если команда не изменилась - ничего не делаем
+            const currentCommand = { speed, direction }
+            if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
+                return
+            }
+
+            // Запоминаем последнюю команду
+            lastCommandRef.current = currentCommand
+
+            // Отменяем предыдущий таймер
+            if (throttleRef.current) {
+                clearTimeout(throttleRef.current)
+            }
+
+            // Если скорость 0 (отпустили джойстик) - отправляем команду остановки немедленно
+            if (speed === 0) {
+                sendCommand("set_speed", { motor, speed: 0 })
+                return
+            }
+
+            // Для движения - отправляем с задержкой (но гарантируем отправку последней команды)
+            throttleRef.current = setTimeout(() => {
+                sendCommand("set_speed", { motor, speed })
+                sendCommand(direction === 'forward'
+                    ? `motor_${motor.toLowerCase()}_forward`
+                    : `motor_${motor.toLowerCase()}_backward`)
+            }, 40)
         }
     }, [sendCommand])
 
-    const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorBSpeed(Math.abs(speed))
-        setMotorBDirection(direction)
+    const handleMotorAControl = createMotorHandler('A')
+    const handleMotorBControl = createMotorHandler('B')
 
-        // Мгновенная отправка команд
-        if (direction === 'stop') {
-            sendCommand("set_speed", { motor: 'B', speed: 0 })
-        } else {
-            sendCommand("set_speed", { motor: 'B', speed: Math.abs(speed) })
-            sendCommand(direction === 'forward' ? "motor_b_forward" : "motor_b_backward")
-        }
+    const emergencyStop = useCallback(() => {
+        // Немедленная остановка без задержек
+        sendCommand("set_speed", { motor: 'A', speed: 0 })
+        sendCommand("set_speed", { motor: 'B', speed: 0 })
+        setMotorASpeed(0)
+        setMotorBSpeed(0)
+        setMotorADirection('stop')
+        setMotorBDirection('stop')
+
+        // Очищаем все pending команды
+        if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
+        if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
     }, [sendCommand])
 
     const connectWebSocket = useCallback(() => {
-        if (socketRef.current) socketRef.current.close()
+        if (socketRef.current) {
+            socketRef.current.close();
+        }
 
-        const ws = new WebSocket('wss://ardu.site/ws')
+        reconnectAttemptRef.current = 0;
+        const ws = new WebSocket('wss://ardu.site/ws');
 
         ws.onopen = () => {
-            setIsConnected(true)
-            addLog("Connected to WebSocket server", 'server')
-            ws.send(JSON.stringify({ type: 'client_type', clientType: 'browser' }))
-            ws.send(JSON.stringify({ type: 'identify', deviceId: inputDeviceId }))
-        }
+            setIsConnected(true);
+            reconnectAttemptRef.current = 0;
+            addLog("Connected to WebSocket server", 'server');
+
+            ws.send(JSON.stringify({
+                type: 'client_type',
+                clientType: 'browser'
+            }));
+
+            ws.send(JSON.stringify({
+                type: 'identify',
+                deviceId: inputDeviceId
+            }));
+        };
 
         ws.onmessage = (event) => {
             try {
-                const data: MessageType = JSON.parse(event.data)
-                if (data.type === "system" && data.status === "connected") {
-                    setIsIdentified(true)
-                    setDeviceId(inputDeviceId)
-                }
-                if (data.type === "esp_status") setEspConnected(data.status === "connected")
-                addLog(`${data.type === "error" ? "Error" : data.type === "log" ? "ESP" : "Server"}: ${data.message || data.status}`,
-                    data.type === "error" ? 'error' : data.type === "log" ? 'esp' : 'server')
-            } catch (error) {
-                addLog(`Invalid message: ${event.data}`, 'error')
-            }
-        }
+                const data: MessageType = JSON.parse(event.data);
+                console.log("Received message:", data);
 
-        ws.onclose = () => {
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog("Disconnected from server", 'server')
-        }
+                if (data.type === "system") {
+                    if (data.status === "connected") {
+                        setIsIdentified(true);
+                        setDeviceId(inputDeviceId);
+                    }
+                    addLog(`System: ${data.message}`, 'server');
+                }
+                else if (data.type === "error") {
+                    addLog(`Error: ${data.message}`, 'error');
+                    setIsIdentified(false);
+                }
+                else if (data.type === "log") {
+                    addLog(`ESP: ${data.message}`, 'esp');
+                    if (data.message && data.message.includes("Heartbeat")) {
+                        setEspConnected(true);
+                    }
+                }
+                else if (data.type === "esp_status") {
+                    console.log(`Received ESP status: ${data.status}`);
+                    setEspConnected(data.status === "connected");
+                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
+                        data.status === "connected" ? 'esp' : 'error');
+                }
+                else if (data.type === "command_ack") {
+                    if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
+                    addLog(`ESP executed command: ${data.command}`, 'esp');
+                }
+                else if (data.type === "command_status") {
+                    addLog(`Command ${data.command} delivered to ESP`, 'server');
+                }
+            } catch (error) {
+                console.error("Error processing message:", error);
+                addLog(`Received invalid message: ${event.data}`, 'error');
+            }
+        };
+
+        ws.onclose = (event) => {
+            setIsConnected(false);
+            setIsIdentified(false);
+            setEspConnected(false);
+            addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server');
+        };
 
         ws.onerror = (error) => {
-            addLog(`WebSocket error: ${error.type}`, 'error')
-        }
+            addLog(`WebSocket error: ${error.type}`, 'error');
+        };
 
-        socketRef.current = ws
-    }, [addLog, inputDeviceId])
+        socketRef.current = ws;
+    }, [addLog, inputDeviceId]);
 
     const disconnectWebSocket = useCallback(() => {
         if (socketRef.current) {
-            socketRef.current.close()
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog("Disconnected manually", 'server')
+            socketRef.current.close();
+            socketRef.current = null;
+            setIsConnected(false);
+            setIsIdentified(false);
+            setEspConnected(false);
+            addLog("Disconnected manually", 'server');
+            reconnectAttemptRef.current = 5;
         }
-    }, [addLog])
+    }, [addLog]);
 
     useEffect(() => {
         return () => {
             if (socketRef.current) socketRef.current.close()
-            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
+            if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
+            if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
         }
     }, [])
 
@@ -358,7 +483,7 @@ export default function WebsocketController() {
                 border: `1px solid ${isConnected ? (isIdentified ? (espConnected ? '#4caf50' : '#ffa000') : '#ffa000') : '#f44336'}`,
                 borderRadius: '4px'
             }}>
-                Status: {isConnected ? (isIdentified ? `✅ Connected (ESP: ${espConnected ? '✅' : '❌'})` : "🟡 Connecting") : "❌ Disconnected"}
+                Status: {isConnected ? (isIdentified ? `✅ Connected & Identified (ESP: ${espConnected ? '✅' : '❌'})` : "🟡 Connected (Pending)") : "❌ Disconnected"}
             </div>
 
             <div style={{
@@ -413,6 +538,21 @@ export default function WebsocketController() {
                     >
                         Disconnect
                     </button>
+                    <button
+                        onClick={emergencyStop}
+                        disabled={!isConnected || !isIdentified}
+                        style={{
+                            padding: '10px 15px',
+                            background: '#ff9800',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            flex: 1
+                        }}
+                    >
+                        Emergency Stop
+                    </button>
                 </div>
             </div>
 
@@ -424,59 +564,48 @@ export default function WebsocketController() {
                 </DialogTrigger>
                 <DialogContent style={{
                     width: '100%',
-                    maxWidth: '100%',
                     height: '80vh',
-                    maxHeight: '80vh',
-                    padding: '20px',
-                    boxSizing: 'border-box',
+                    padding: 0,
+                    margin: 0,
                     display: 'flex',
-                    flexDirection: 'column'
+                    justifyContent: 'space-between',
+                    alignItems: 'stretch',
+                    gap: 0
                 }}>
                     <DialogHeader>
-                        <DialogTitle style={{ textAlign: 'center' }}>Motor Controls</DialogTitle>
+                        <DialogTitle></DialogTitle>
                     </DialogHeader>
 
+                    {/* Левый сенсор (A) */}
                     <div style={{
-                        display: 'flex',
-                        flexDirection: 'row', // Всегда горизонтальное расположение
-                        gap: '20px',
-                        flex: 1,
-                        minHeight: '300px',
-                        overflow: 'auto'
+                        width: 'calc(50% - 10px)',
+                        marginRight: 'auto',
+                        height: '100%'
                     }}>
-                        <div style={{
-                            flex: 1,
-                            height: '70%',
-                            minHeight: '200px'
-                        }}>
-                            <Joystick
-                                motor="A"
-                                onChange={(value) => {
-                                    if (value > 0) handleMotorAControl(value, 'forward')
-                                    else if (value < 0) handleMotorAControl(-value, 'backward')
-                                    else handleMotorAControl(0, 'stop')
-                                }}
-                                direction={motorADirection}
-                                speed={motorASpeed}
-                            />
-                        </div>
+                        <Joystick
+                            motor="A"
+                            onChange={(value) => {
+                                handleMotorAControl(value)
+                            }}
+                            direction={motorADirection}
+                            speed={motorASpeed}
+                        />
+                    </div>
 
-                        <div style={{
-                            flex: 1,
-                            height: '70%',
-                            minHeight: '200px'
-                        }}>
-                            <Joystick
-                                motor="B"
-                                onChange={(value) => {
-                                    if (value > 0) handleMotorBControl(value, 'forward')
-                                    else if (value < 0) handleMotorBControl(-value, 'backward')
-                                    else handleMotorBControl(0, 'stop')
-                                }}
-                                direction={motorBDirection}
-                                speed={motorBSpeed}
-                            />
-                        </div>
+                    {/* Правый сенсор (B) */}
+                    <div style={{
+                        width: 'calc(50% - 10px)',
+                        marginLeft: 'auto',
+                        height: '100%'
+                    }}>
+                        <Joystick
+                            motor="B"
+                            onChange={(value) => {
+                                handleMotorBControl(value)
+                            }}
+                            direction={motorBDirection}
+                            speed={motorBSpeed}
+                        />
                     </div>
                 </DialogContent>
             </Dialog>
