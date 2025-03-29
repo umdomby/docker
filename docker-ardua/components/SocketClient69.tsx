@@ -1,167 +1,155 @@
 "use client"
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Button } from "@/components/ui/button"
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Button } from "@/components/ui/button";
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 
 type MessageType = {
-    type?: string
-    command?: string
-    deviceId?: string
-    message?: string
-    params?: any
-    clientId?: number
-    status?: string
-    timestamp?: string
-    origin?: 'client' | 'esp' | 'server' | 'error'
-    reason?: string
-}
+    type?: string;
+    command?: string;
+    deviceId?: string;
+    message?: string;
+    params?: any;
+    clientId?: number;
+    status?: string;
+    timestamp?: string;
+    origin?: 'client' | 'esp' | 'server' | 'error';
+    reason?: string;
+};
 
 type LogEntry = {
-    message: string
-    type: 'client' | 'esp' | 'server' | 'error'
-}
+    message: string;
+    type: 'client' | 'esp' | 'server' | 'error';
+};
 
 const Joystick = ({
                       motor,
+                      value,
                       onChange,
                       direction,
                       speed
                   }: {
-    motor: 'A' | 'B'
-    onChange: (value: number) => void
-    direction: 'forward' | 'backward' | 'stop'
-    speed: number
+    motor: 'A' | 'B';
+    value: number;
+    onChange: (value: number) => void;
+    direction: 'forward' | 'backward' | 'stop';
+    speed: number;
 }) => {
-    const containerRef = useRef<HTMLDivElement>(null)
-    const isDragging = useRef(false)
-    const touchId = useRef<number | null>(null)
+    const containerRef = useRef<HTMLDivElement>(null);
+    const isDragging = useRef(false);
+    const startY = useRef(0);
 
     const motorStyles = {
         A: { bg: 'rgba(255, 87, 34, 0.2)', border: '2px solid #ff5722' },
         B: { bg: 'rgba(76, 175, 80, 0.2)', border: '2px solid #4caf50' }
-    }
+    };
 
     const updateValue = useCallback((clientY: number) => {
-        const container = containerRef.current
-        if (!container) return
+        const container = containerRef.current;
+        if (!container) return;
 
-        const rect = container.getBoundingClientRect()
-        const y = clientY - rect.top
-        const height = rect.height
-        let value = ((height - y) / height) * 510 - 255
-        value = Math.max(-255, Math.min(255, value))
+        const rect = container.getBoundingClientRect();
+        const y = clientY - rect.top;
+        const height = rect.height;
+        let value = ((height - y) / height) * 510 - 255;
+        value = Math.max(-255, Math.min(255, value));
 
-        const intensity = Math.abs(value) / 255 * 0.3 + 0.2
+        const intensity = Math.abs(value) / 255 * 0.3 + 0.2;
         container.style.backgroundColor = `rgba(${
             motor === 'A' ? '255, 87, 34' : '76, 175, 80'
-        }, ${intensity})`
+        }, ${intensity})`;
 
-        onChange(value)
-    }, [motor, onChange])
+        onChange(value);
+    }, [motor, onChange]);
 
     const handleStart = useCallback((clientY: number) => {
-        isDragging.current = true
-        const container = containerRef.current
+        isDragging.current = true;
+        startY.current = clientY;
+        const container = containerRef.current;
         if (container) {
-            container.style.transition = 'none'
+            container.style.transition = 'none';
         }
-        updateValue(clientY)
-    }, [updateValue])
+        updateValue(clientY);
+    }, [updateValue]);
 
     const handleMove = useCallback((clientY: number) => {
         if (isDragging.current) {
-            updateValue(clientY)
+            updateValue(clientY);
         }
-    }, [updateValue])
+    }, [updateValue]);
 
     const handleEnd = useCallback(() => {
-        if (!isDragging.current) return
-        isDragging.current = false
-        touchId.current = null
-        const container = containerRef.current
+        if (!isDragging.current) return;
+        isDragging.current = false;
+        const container = containerRef.current;
         if (container) {
-            container.style.transition = 'background-color 0.3s'
-            container.style.backgroundColor = motorStyles[motor].bg
+            container.style.transition = 'background-color 0.3s';
+            container.style.backgroundColor = motorStyles[motor].bg;
         }
-        onChange(0)
-    }, [motor, motorStyles, onChange])
+        onChange(0);
+    }, [motor, motorStyles, onChange]);
 
     useEffect(() => {
-        const container = containerRef.current
-        if (!container) return
+        const container = containerRef.current;
+        if (!container) return;
 
-        const onTouchStart = (e: TouchEvent) => {
-            if (touchId.current === null) {
-                const touch = e.changedTouches[0]
-                touchId.current = touch.identifier
-                handleStart(touch.clientY)
-            }
-        }
-
-        const onTouchMove = (e: TouchEvent) => {
-            if (touchId.current !== null) {
-                const touch = Array.from(e.changedTouches).find(
-                    t => t.identifier === touchId.current
-                )
-                if (touch) {
-                    handleMove(touch.clientY)
-                }
-            }
-        }
-
-        const onTouchEnd = (e: TouchEvent) => {
-            if (touchId.current !== null) {
-                const touch = Array.from(e.changedTouches).find(
-                    t => t.identifier === touchId.current
-                )
-                if (touch) {
-                    handleEnd()
-                }
-            }
-        }
-
+        // Mouse events
         const onMouseDown = (e: MouseEvent) => {
-            e.preventDefault()
-            handleStart(e.clientY)
-        }
+            e.preventDefault();
+            handleStart(e.clientY);
+        };
 
         const onMouseMove = (e: MouseEvent) => {
-            e.preventDefault()
-            handleMove(e.clientY)
-        }
+            e.preventDefault();
+            handleMove(e.clientY);
+        };
 
         const onMouseUp = () => {
-            handleEnd()
-        }
+            handleEnd();
+        };
 
-        container.addEventListener('touchstart', onTouchStart, { passive: false })
-        container.addEventListener('touchmove', onTouchMove, { passive: false })
-        container.addEventListener('touchend', onTouchEnd, { passive: false })
-        container.addEventListener('touchcancel', onTouchEnd, { passive: false })
+        // Touch events
+        const onTouchStart = (e: TouchEvent) => {
+            e.preventDefault();
+            handleStart(e.touches[0].clientY);
+        };
 
-        container.addEventListener('mousedown', onMouseDown)
-        document.addEventListener('mousemove', onMouseMove)
-        document.addEventListener('mouseup', onMouseUp)
-        container.addEventListener('mouseleave', handleEnd)
+        const onTouchMove = (e: TouchEvent) => {
+            e.preventDefault();
+            handleMove(e.touches[0].clientY);
+        };
+
+        const onTouchEnd = () => {
+            handleEnd();
+        };
+
+        container.addEventListener('mousedown', onMouseDown);
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+        container.addEventListener('mouseleave', handleEnd);
+
+        container.addEventListener('touchstart', onTouchStart, { passive: false });
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
+        container.addEventListener('touchend', onTouchEnd, { passive: false });
+        container.addEventListener('touchcancel', onTouchEnd, { passive: false });
 
         return () => {
-            container.removeEventListener('touchstart', onTouchStart)
-            container.removeEventListener('touchmove', onTouchMove)
-            container.removeEventListener('touchend', onTouchEnd)
-            container.removeEventListener('touchcancel', onTouchEnd)
+            container.removeEventListener('mousedown', onMouseDown);
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            container.removeEventListener('mouseleave', handleEnd);
 
-            container.removeEventListener('mousedown', onMouseDown)
-            document.removeEventListener('mousemove', onMouseMove)
-            document.removeEventListener('mouseup', onMouseUp)
-            container.removeEventListener('mouseleave', handleEnd)
-        }
-    }, [handleEnd, handleMove, handleStart])
+            container.removeEventListener('touchstart', onTouchStart);
+            container.removeEventListener('touchmove', onTouchMove);
+            container.removeEventListener('touchend', onTouchEnd);
+            container.removeEventListener('touchcancel', onTouchEnd);
+        };
+    }, [handleEnd, handleMove, handleStart]);
 
     return (
         <div
@@ -169,8 +157,7 @@ const Joystick = ({
             style={{
                 position: 'relative',
                 width: '100%',
-                height: '100%',
-                minHeight: '150px',
+                height: '300px',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
@@ -198,46 +185,35 @@ const Joystick = ({
                 )}
             </div>
         </div>
-    )
-}
+    );
+};
 
 export default function WebsocketController() {
-    const [log, setLog] = useState<LogEntry[]>([])
-    const [isConnected, setIsConnected] = useState(false)
-    const [isIdentified, setIsIdentified] = useState(false)
-    const [deviceId, setDeviceId] = useState('123')
-    const [inputDeviceId, setInputDeviceId] = useState('123')
-    const [espConnected, setEspConnected] = useState(false)
-    const [controlVisible, setControlVisible] = useState(false)
-    const [motorASpeed, setMotorASpeed] = useState(0)
-    const [motorBSpeed, setMotorBSpeed] = useState(0)
-    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-    const [isLandscape, setIsLandscape] = useState(false)
+    const [log, setLog] = useState<LogEntry[]>([]);
+    const [isConnected, setIsConnected] = useState(false);
+    const [isIdentified, setIsIdentified] = useState(false);
+    const [deviceId, setDeviceId] = useState('123');
+    const [inputDeviceId, setInputDeviceId] = useState('123');
+    const [espConnected, setEspConnected] = useState(false);
+    const [controlVisible, setControlVisible] = useState(false);
+    const [motorASpeed, setMotorASpeed] = useState(0);
+    const [motorBSpeed, setMotorBSpeed] = useState(0);
+    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop');
+    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop');
 
-    const socketRef = useRef<WebSocket | null>(null)
-    const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const motorAChangeRef = useRef<NodeJS.Timeout | null>(null)
-    const motorBChangeRef = useRef<NodeJS.Timeout | null>(null)
-
-    useEffect(() => {
-        const checkOrientation = () => {
-            setIsLandscape(window.innerWidth > window.innerHeight)
-        }
-
-        checkOrientation()
-        window.addEventListener('resize', checkOrientation)
-        return () => window.removeEventListener('resize', checkOrientation)
-    }, [])
+    const socketRef = useRef<WebSocket | null>(null);
+    const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const motorAChangeRef = useRef<NodeJS.Timeout | null>(null);
+    const motorBChangeRef = useRef<NodeJS.Timeout | null>(null);
 
     const addLog = useCallback((msg: string, type: LogEntry['type']) => {
-        setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
-    }, [])
+        setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}]);
+    }, []);
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
-            addLog("Cannot send command: not identified", 'error')
-            return
+            addLog("Cannot send command: not identified", 'error');
+            return;
         }
 
         if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -247,118 +223,118 @@ export default function WebsocketController() {
                 deviceId,
                 timestamp: Date.now(),
                 expectAck: true
-            })
+            });
 
-            socketRef.current.send(msg)
-            addLog(`Sent command to ${deviceId}: ${command}`, 'client')
+            socketRef.current.send(msg);
+            addLog(`Sent command to ${deviceId}: ${command}`, 'client');
 
-            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
+            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
             commandTimeoutRef.current = setTimeout(() => {
                 if (espConnected) {
-                    addLog(`Command ${command} not acknowledged by ESP`, 'error')
-                    setEspConnected(false)
+                    addLog(`Command ${command} not acknowledged by ESP`, 'error');
+                    setEspConnected(false);
                 }
-            }, 5000)
+            }, 5000);
         } else {
-            addLog("WebSocket not ready!", 'error')
+            addLog("WebSocket not ready!", 'error');
         }
-    }, [addLog, deviceId, isIdentified, espConnected])
+    }, [addLog, deviceId, isIdentified, espConnected]);
 
     const handleMotorAControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorASpeed(Math.abs(speed))
-        setMotorADirection(direction)
+        setMotorASpeed(Math.abs(speed));
+        setMotorADirection(direction);
 
-        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current)
+        if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
         motorAChangeRef.current = setTimeout(() => {
             if (direction === 'stop') {
-                sendCommand("set_speed", { motor: 'A', speed: 0 })
+                sendCommand("set_speed", { motor: 'A', speed: 0 });
             } else {
-                sendCommand("set_speed", { motor: 'A', speed: Math.abs(speed) })
-                sendCommand(direction === 'forward' ? "motor_a_forward" : "motor_a_backward")
+                sendCommand("set_speed", { motor: 'A', speed: Math.abs(speed) });
+                sendCommand(direction === 'forward' ? "motor_a_forward" : "motor_a_backward");
             }
-        }, 20)
-    }, [sendCommand])
+        }, 20);
+    }, [sendCommand]);
 
     const handleMotorBControl = useCallback((speed: number, direction: 'forward' | 'backward' | 'stop') => {
-        setMotorBSpeed(Math.abs(speed))
-        setMotorBDirection(direction)
+        setMotorBSpeed(Math.abs(speed));
+        setMotorBDirection(direction);
 
-        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current)
+        if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
         motorBChangeRef.current = setTimeout(() => {
             if (direction === 'stop') {
-                sendCommand("set_speed", { motor: 'B', speed: 0 })
+                sendCommand("set_speed", { motor: 'B', speed: 0 });
             } else {
-                sendCommand("set_speed", { motor: 'B', speed: Math.abs(speed) })
-                sendCommand(direction === 'forward' ? "motor_b_forward" : "motor_b_backward")
+                sendCommand("set_speed", { motor: 'B', speed: Math.abs(speed) });
+                sendCommand(direction === 'forward' ? "motor_b_forward" : "motor_b_backward");
             }
-        }, 20)
-    }, [sendCommand])
+        }, 20);
+    }, [sendCommand]);
 
     const connectWebSocket = useCallback(() => {
-        if (socketRef.current) socketRef.current.close()
+        if (socketRef.current) socketRef.current.close();
 
-        const ws = new WebSocket('wss://ardu.site/ws')
+        const ws = new WebSocket('wss://ardu.site/ws');
 
         ws.onopen = () => {
-            setIsConnected(true)
-            addLog("Connected to WebSocket server", 'server')
-            ws.send(JSON.stringify({ type: 'client_type', clientType: 'browser' }))
-            ws.send(JSON.stringify({ type: 'identify', deviceId: inputDeviceId }))
-        }
+            setIsConnected(true);
+            addLog("Connected to WebSocket server", 'server');
+            ws.send(JSON.stringify({ type: 'client_type', clientType: 'browser' }));
+            ws.send(JSON.stringify({ type: 'identify', deviceId: inputDeviceId }));
+        };
 
         ws.onmessage = (event) => {
             try {
-                const data: MessageType = JSON.parse(event.data)
+                const data: MessageType = JSON.parse(event.data);
                 if (data.type === "system" && data.status === "connected") {
-                    setIsIdentified(true)
-                    setDeviceId(inputDeviceId)
+                    setIsIdentified(true);
+                    setDeviceId(inputDeviceId);
                 }
-                if (data.type === "esp_status") setEspConnected(data.status === "connected")
+                if (data.type === "esp_status") setEspConnected(data.status === "connected");
                 addLog(`${data.type === "error" ? "Error" : data.type === "log" ? "ESP" : "Server"}: ${data.message || data.status}`,
-                    data.type === "error" ? 'error' : data.type === "log" ? 'esp' : 'server')
+                    data.type === "error" ? 'error' : data.type === "log" ? 'esp' : 'server');
             } catch (error) {
-                addLog(`Invalid message: ${event.data}`, 'error')
+                addLog(`Invalid message: ${event.data}`, 'error');
             }
-        }
+        };
 
         ws.onclose = () => {
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog("Disconnected from server", 'server')
-        }
+            setIsConnected(false);
+            setIsIdentified(false);
+            setEspConnected(false);
+            addLog("Disconnected from server", 'server');
+        };
 
         ws.onerror = (error) => {
-            addLog(`WebSocket error: ${error.type}`, 'error')
-        }
+            addLog(`WebSocket error: ${error.type}`, 'error');
+        };
 
-        socketRef.current = ws
-    }, [addLog, inputDeviceId])
+        socketRef.current = ws;
+    }, [addLog, inputDeviceId]);
 
     const disconnectWebSocket = useCallback(() => {
         if (socketRef.current) {
-            socketRef.current.close()
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog("Disconnected manually", 'server')
+            socketRef.current.close();
+            setIsConnected(false);
+            setIsIdentified(false);
+            setEspConnected(false);
+            addLog("Disconnected manually", 'server');
         }
-    }, [addLog])
+    }, [addLog]);
 
     useEffect(() => {
         return () => {
-            if (socketRef.current) socketRef.current.close()
-            if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current)
-            if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current)
-        }
-    }, [])
+            if (socketRef.current) socketRef.current.close();
+            if (motorAChangeRef.current) clearTimeout(motorAChangeRef.current);
+            if (motorBChangeRef.current) clearTimeout(motorBChangeRef.current);
+        };
+    }, []);
 
     useEffect(() => {
         const interval = setInterval(() => {
-            if (isConnected && isIdentified) sendCommand("heartbeat2")
-        }, 1000)
-        return () => clearInterval(interval)
-    }, [isConnected, isIdentified, sendCommand])
+            if (isConnected && isIdentified) sendCommand("heartbeat2");
+        }, 1000);
+        return () => clearInterval(interval);
+    }, [isConnected, isIdentified, sendCommand]);
 
     return (
         <div style={{
@@ -456,40 +432,37 @@ export default function WebsocketController() {
 
                     <div style={{
                         display: 'flex',
-                        flexDirection: isLandscape ? 'row' : 'column',
+                        flexDirection: 'row',
                         gap: '20px',
                         flex: 1,
                         minHeight: '300px',
-                        overflow: 'auto'
+                        '@media (max-width: 768px)': {
+                            flexDirection: 'column',
+                            height: 'auto'
+                        }
                     }}>
-                        <div style={{
-                            flex: 1,
-                            height: isLandscape ? '70%' : '45%',
-                            minHeight: '150px'
-                        }}>
+                        <div style={{ flex: 1, minHeight: '300px' }}>
                             <Joystick
                                 motor="A"
+                                value={motorADirection === 'forward' ? motorASpeed : (motorADirection === 'backward' ? -motorASpeed : 0)}
                                 onChange={(value) => {
-                                    if (value > 0) handleMotorAControl(value, 'forward')
-                                    else if (value < 0) handleMotorAControl(-value, 'backward')
-                                    else handleMotorAControl(0, 'stop')
+                                    if (value > 0) handleMotorAControl(value, 'forward');
+                                    else if (value < 0) handleMotorAControl(-value, 'backward');
+                                    else handleMotorAControl(0, 'stop');
                                 }}
                                 direction={motorADirection}
                                 speed={motorASpeed}
                             />
                         </div>
 
-                        <div style={{
-                            flex: 1,
-                            height: isLandscape ? '70%' : '45%',
-                            minHeight: '150px'
-                        }}>
+                        <div style={{ flex: 1, minHeight: '300px' }}>
                             <Joystick
                                 motor="B"
+                                value={motorBDirection === 'forward' ? motorBSpeed : (motorBDirection === 'backward' ? -motorBSpeed : 0)}
                                 onChange={(value) => {
-                                    if (value > 0) handleMotorBControl(value, 'forward')
-                                    else if (value < 0) handleMotorBControl(-value, 'backward')
-                                    else handleMotorBControl(0, 'stop')
+                                    if (value > 0) handleMotorBControl(value, 'forward');
+                                    else if (value < 0) handleMotorBControl(-value, 'backward');
+                                    else handleMotorBControl(0, 'stop');
                                 }}
                                 direction={motorBDirection}
                                 speed={motorBSpeed}
@@ -531,5 +504,5 @@ export default function WebsocketController() {
                 </div>
             </div>
         </div>
-    )
+    );
 }
