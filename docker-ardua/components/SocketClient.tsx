@@ -305,7 +305,7 @@ export default function WebsocketController() {
                 sendCommand(direction === 'forward'
                     ? `motor_${motor.toLowerCase()}_forward`
                     : `motor_${motor.toLowerCase()}_backward`)
-            }, 50)
+            }, 20)
         }
     }, [sendCommand])
 
