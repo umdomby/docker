@@ -233,3 +233,50 @@
         font-size: 0.875rem;
     }
 }
+
+
+.status {
+    text-align: center;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 6px;
+    margin-top: 1rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.statusConnected {
+    color: #4CAF50;
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+.statusDisconnected {
+    color: #F44336;
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
+.statusPending {
+    color: #FF9800;
+    background-color: rgba(255, 152, 0, 0.1);
+}
+
+.buttonLoading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.buttonLoading::after {
+    content: "";
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
