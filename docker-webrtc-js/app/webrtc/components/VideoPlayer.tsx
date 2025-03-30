@@ -13,7 +13,7 @@ export default function VideoPlayer({
                                         stream,
                                         isMuted,
                                         label = '',
-                                        className
+                                        className = ''
                                     }: VideoPlayerProps) {
     const videoRef = useRef<HTMLVideoElement>(null);
 

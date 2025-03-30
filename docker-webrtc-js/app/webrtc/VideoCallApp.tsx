@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useWebRTC } from './hooks/useWebRTC';
 import VideoPlayer from './components/VideoPlayer';
 import styles from './styles.module.css';
@@ -21,16 +21,19 @@ export default function VideoCallApp() {
 
     useEffect(() => {
         setHasMounted(true);
-    }, []);
+        return () => endCall();
+    }, [endCall]);
 
     const handleStartCall = () => {
-        setRoomId(inputRoomId);
-        startCall();
+        if (inputRoomId.trim()) {
+            setRoomId(inputRoomId);
+            startCall();
+        }
     };
 
     const handleEndCall = () => {
         endCall();
-        setInputRoomId(roomId); // Сохраняем текущий roomId в input
+        setInputRoomId(roomId);
     };
 
     if (!hasMounted) {
@@ -39,14 +42,14 @@ export default function VideoCallApp() {
 
     return (
         <div className={styles.container}>
-            <div className={styles.roomControls}>
+            <div className={styles.controls}>
                 <input
                     type="text"
                     value={inputRoomId}
                     onChange={(e) => setInputRoomId(e.target.value)}
                     placeholder="Enter room ID"
                     disabled={isConnected}
-                    className={styles.roomInput}
+                    className={styles.input}
                 />
                 <button
                     onClick={isConnected ? handleEndCall : handleStartCall}
@@ -61,7 +64,8 @@ export default function VideoCallApp() {
 
             {error && (
                 <div className={styles.error}>
-                    Error: {error.message || error.toString()}
+                    <p>Error: {error}</p>
+                    <button onClick={() => setError(null)}>Dismiss</button>
                 </div>
             )}
 
@@ -71,19 +75,21 @@ export default function VideoCallApp() {
                     isMuted={true}
                     label="Your Camera"
                     className={styles.video}
-                    isConnected={isConnected}
                 />
                 <VideoPlayer
                     stream={remoteStream}
                     isMuted={false}
                     label="Remote Stream"
                     className={styles.video}
-                    isConnected={isConnected}
                 />
             </div>
 
             <div className={styles.status}>
-                Status: {isConnected ? `Connected to room: ${roomId}` : 'Disconnected'}
+                Status: {isConnected ? (
+                <span className={styles.connected}>Connected to room: {roomId}</span>
+            ) : (
+                <span className={styles.disconnected}>Disconnected</span>
+            )}
             </div>
         </div>
     );

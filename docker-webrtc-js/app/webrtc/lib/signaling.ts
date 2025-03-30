@@ -1,4 +1,6 @@
-type SignalingEvent = 'offer' | 'answer' | 'ice-candidate' | 'join' | 'leave';
+'use client';
+
+type SignalingEvent = 'offer' | 'answer' | 'ice-candidate' | 'join' | 'leave' | 'error';
 type EventCallback<T = any> = (data: T) => void;
 
 interface SignalingMessage {
@@ -13,10 +15,11 @@ export class SignalingClient {
     private messageQueue: SignalingMessage[] = [];
     private eventHandlers = new Map<SignalingEvent, Set<EventCallback>>();
     private connectionPromise: Promise<void> | null = null;
+    private reconnectAttempts = 0;
+    private maxReconnectAttempts = 3;
+    private reconnectDelay = 1000;
 
-    constructor(private readonly url: string) {
-        this.setupEventHandlers();
-    }
+    constructor(private readonly url: string) {}
 
     async connect(roomId: string): Promise<void> {
         if (this.connectionPromise) return this.connectionPromise;
@@ -31,28 +34,61 @@ export class SignalingClient {
             }
 
             this.ws.onopen = () => {
+                this.reconnectAttempts = 0;
                 this.send({ event: 'join', room: roomId });
                 this.flushMessageQueue();
                 resolve();
             };
 
             this.ws.onerror = (event) => {
-                reject(new Error(`WebSocket error: ${event.type}`));
-                this.cleanup();
+                console.error('WebSocket error details:', event);
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    setTimeout(() => {
+                        this.reconnectAttempts++;
+                        this.connect(roomId).catch(reject);
+                    }, this.reconnectDelay);
+                } else {
+                    reject(new Error(`WebSocket connection failed after ${this.maxReconnectAttempts} attempts`));
+                    this.triggerEvent('error', 'Connection failed');
+                }
             };
 
-            this.ws.onclose = () => {
-                this.send({ event: 'leave', room: roomId });
-                this.cleanup();
+            this.ws.onclose = (event) => {
+                if (event.code !== 1000) {
+                    console.warn(`WebSocket closed unexpectedly: ${event.code} ${event.reason}`);
+                    this.triggerEvent('error', `Connection closed: ${event.reason || 'Unknown reason'}`);
+                }
+            };
+
+            this.ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data) as SignalingMessage;
+                    this.handleMessage(msg);
+                } catch (error) {
+                    console.error('Error parsing message:', error);
+                    this.triggerEvent('error', 'Invalid message format');
+                }
             };
         });
 
         return this.connectionPromise;
     }
 
+    private triggerEvent(event: SignalingEvent, data: any): void {
+        const handlers = this.eventHandlers.get(event);
+        if (handlers) {
+            handlers.forEach(handler => handler(data));
+        }
+    }
+
     send<T>(message: SignalingMessage): void {
         if (this.ws?.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify(message));
+            try {
+                this.ws.send(JSON.stringify(message));
+            } catch (err) {
+                console.error('Send error:', err);
+                this.messageQueue.push(message);
+            }
         } else {
             this.messageQueue.push(message);
         }
@@ -63,7 +99,6 @@ export class SignalingClient {
             this.eventHandlers.set(event, new Set());
         }
         this.eventHandlers.get(event)?.add(callback);
-
         return () => this.off(event, callback);
     }
 
@@ -73,7 +108,7 @@ export class SignalingClient {
 
     close(): void {
         if (this.ws) {
-            this.ws.close();
+            this.ws.close(1000, 'Normal closure');
             this.cleanup();
         }
     }
@@ -88,24 +123,27 @@ export class SignalingClient {
             }
         } catch (error) {
             console.error('Error parsing signaling message:', error);
+            this.triggerEvent('error', 'Message parse error');
         }
     }
 
     private flushMessageQueue(): void {
         while (this.messageQueue.length > 0 && this.ws?.readyState === WebSocket.OPEN) {
             const msg = this.messageQueue.shift();
-            if (msg) this.ws.send(JSON.stringify(msg));
+            if (msg) {
+                try {
+                    this.ws.send(JSON.stringify(msg));
+                } catch (err) {
+                    console.error('Queue flush error:', err);
+                    this.messageQueue.unshift(msg);
+                    break;
+                }
+            }
         }
-    }
-
-    private setupEventHandlers(): void {
-        this.eventHandlers.set('offer', new Set());
-        this.eventHandlers.set('answer', new Set());
-        this.eventHandlers.set('ice-candidate', new Set());
     }
 
     private cleanup(): void {
         this.connectionPromise = null;
-        this.eventHandlers.forEach(handlers => handlers.clear());
+        this.messageQueue = [];
     }
 }
