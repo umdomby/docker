@@ -10,8 +10,9 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin:      func(r *http.Request) bool { return true },
-	HandshakeTimeout: 10 * time.Second,
+	ReadBufferSize:  1024,
+	WriteBufferSize: 1024,
+	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
 type Message struct {
@@ -37,8 +38,13 @@ func main() {
 		http.ServeFile(w, r, "index.html")
 	})
 
+	server := &http.Server{
+		Addr:              ":8080",
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
 	log.Println("WebRTC Signaling Server started on :8080")
-	if err := http.ListenAndServe(":8080", nil); err != nil {
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal("ListenAndServe error:", err)
 	}
 }
@@ -51,14 +57,41 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close()
 
+	// Set timeouts
+	ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	ws.SetPongHandler(func(string) error {
+		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	client := &Client{conn: ws}
 	registerClient(client)
+
+	// Start ping goroutine
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
+					log.Println("Ping error:", err)
+					return
+				}
+			case <-done:
+				return
+			}
+		}
+	}()
 
 	for {
 		var msg Message
 		err := ws.ReadJSON(&msg)
 		if err != nil {
 			log.Printf("Read error: %v", err)
+			close(done)
 			unregisterClient(client)
 			break
 		}
@@ -68,6 +101,9 @@ func handleConnections(w http.ResponseWriter, r *http.Request) {
 			handleJoin(client, msg.Room)
 		case "leave":
 			handleLeave(client)
+		case "ping":
+			// Respond to ping
+			ws.WriteJSON(Message{Event: "pong"})
 		case "offer", "answer", "candidate":
 			broadcastToRoom(client, msg)
 		}

@@ -6,14 +6,20 @@
     color: #333;
 }
 
-.roomControls {
+.title {
+    text-align: center;
+    margin-bottom: 2rem;
+    color: #2c3e50;
+}
+
+.controls {
     display: flex;
     gap: 1rem;
     margin-bottom: 2rem;
     align-items: center;
 }
 
-.roomInput {
+.input {
     flex: 1;
     padding: 0.75rem 1rem;
     border: 1px solid #ddd;
@@ -22,7 +28,7 @@
     transition: border-color 0.2s;
 }
 
-.roomInput:focus {
+.input:focus {
     outline: none;
     border-color: #4CAF50;
     box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
@@ -54,6 +60,7 @@
 .startButton:disabled {
     background: #a5d6a7;
     cursor: not-allowed;
+    opacity: 0.7;
 }
 
 .endButton {
@@ -63,6 +70,23 @@
 
 .endButton:hover {
     background: #d32f2f;
+}
+
+.buttonLoading {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.buttonLoading::after {
+    content: "";
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    animation: spin 1s ease-in-out infinite;
 }
 
 .videoContainer {
@@ -79,6 +103,12 @@
     overflow: hidden;
     aspect-ratio: 16/9;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    transition: opacity 0.3s ease;
+}
+
+.video.disconnected {
+    opacity: 0.6;
+    filter: grayscale(30%);
 }
 
 .video-label {
@@ -102,6 +132,16 @@
     font-weight: 500;
 }
 
+.statusConnected {
+    color: #4CAF50;
+    background-color: rgba(76, 175, 80, 0.1);
+}
+
+.statusDisconnected {
+    color: #F44336;
+    background-color: rgba(244, 67, 54, 0.1);
+}
+
 .error {
     padding: 1rem;
     background: #ffebee;
@@ -110,6 +150,25 @@
     margin: 1rem 0;
     text-align: center;
     border-left: 4px solid #c62828;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dismissButton {
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: rgba(198, 40, 40, 0.1);
+    border: 1px solid rgba(198, 40, 40, 0.2);
+    border-radius: 4px;
+    color: #c62828;
+    cursor: pointer;
+    font-size: 0.875rem;
+    transition: all 0.2s;
+}
+
+.dismissButton:hover {
+    background: rgba(198, 40, 40, 0.2);
 }
 
 .loading {
@@ -120,6 +179,7 @@
     padding: 2rem;
     gap: 1rem;
     color: #555;
+    min-height: 200px;
 }
 
 .spinner {
@@ -142,12 +202,34 @@
         padding: 1rem;
     }
 
-    .roomControls {
+    .controls {
         flex-direction: column;
         align-items: stretch;
     }
 
     .videoContainer {
         grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .button {
+        width: 100%;
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .container {
+        padding: 0.5rem;
+    }
+
+    .video-label {
+        font-size: 0.75rem;
+        padding: 0.15rem 0.3rem;
+    }
+
+    .status, .error {
+        padding: 0.75rem;
+        font-size: 0.875rem;
     }
 }
