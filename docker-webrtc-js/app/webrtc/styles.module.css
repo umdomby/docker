@@ -123,6 +123,105 @@
     z-index: 10;
 }
 
+.roomControls {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    align-items: center;
+    background: #f8f9fa;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.roomInput {
+    flex: 1;
+    padding: 0.75rem 1.25rem;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.3s ease;
+    background: white;
+    color: #495057;
+}
+
+.roomInput:focus {
+    outline: none;
+    border-color: #4dabf7;
+    box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.2);
+}
+
+.roomInput:disabled {
+    background-color: #e9ecef;
+    cursor: not-allowed;
+}
+
+.button {
+    padding: 0.75rem 1.75rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-width: 120px;
+}
+
+.startButton {
+    background: #40c057;
+    color: white;
+    box-shadow: 0 2px 4px rgba(64, 192, 87, 0.3);
+}
+
+.startButton:hover {
+    background: #37b24d;
+    transform: translateY(-1px);
+}
+
+.startButton:active {
+    transform: translateY(0);
+}
+
+.startButton:disabled {
+    background: #b2f2bb;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.endButton {
+    background: #fa5252;
+    color: white;
+    box-shadow: 0 2px 4px rgba(250, 82, 82, 0.3);
+}
+
+.endButton:hover {
+    background: #f03e3e;
+    transform: translateY(-1px);
+}
+
+.endButton:active {
+    transform: translateY(0);
+}
+
+/* Адаптивные стили */
+@media (max-width: 768px) {
+    .roomControls {
+        flex-direction: column;
+        align-items: stretch;
+        padding: 1rem;
+    }
+
+    .button {
+        width: 100%;
+        padding: 0.75rem;
+    }
+}
+
 .status {
     text-align: center;
     padding: 1rem;

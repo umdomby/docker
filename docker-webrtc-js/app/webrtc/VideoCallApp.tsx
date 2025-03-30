@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useWebRTC } from './hooks/useWebRTC';
 import VideoPlayer from './components/VideoPlayer';
 import styles from './styles.module.css';
@@ -9,15 +9,12 @@ export default function VideoCallApp() {
     const [roomId, setRoomId] = useState('default-room');
     const [inputRoomId, setInputRoomId] = useState('default-room');
     const [hasMounted, setHasMounted] = useState(false);
-    const [localError, setLocalError] = useState<string | null>(null); // Добавляем локальное состояние для ошибок
 
     const {
         localStream,
         remoteStream,
         isConnected,
-        isLoading,
-        error: rtcError, // Переименовываем error из useWebRTC
-        connectionStatus,
+        error,
         startCall,
         endCall
     } = useWebRTC(roomId);
@@ -29,22 +26,9 @@ export default function VideoCallApp() {
         };
     }, [endCall]);
 
-    // Объединяем ошибки из useWebRTC и локальные ошибки
-    const error = rtcError || localError;
-
-    const handleStartCall = async () => {
-        if (!inputRoomId.trim()) {
-            setLocalError('Please enter a room ID');
-            return;
-        }
-
-        setLocalError(null);
+    const handleStartCall = () => {
         setRoomId(inputRoomId);
-        try {
-            await startCall();
-        } catch (err) {
-            setLocalError(err instanceof Error ? err.message : 'Failed to start call');
-        }
+        startCall();
     };
 
     const handleEndCall = () => {
@@ -52,82 +36,35 @@ export default function VideoCallApp() {
         setInputRoomId(roomId);
     };
 
-    const getStatusMessage = () => {
-        switch (connectionStatus) {
-            case 'connecting':
-                return isLoading ? 'Establishing connection...' : 'Connecting...';
-            case 'connected':
-                return `Connected to room: ${roomId}`;
-            case 'disconnecting':
-                return 'Ending call...';
-            case 'disconnected':
-                return 'Disconnected';
-            default:
-                return 'Ready to connect';
-        }
-    };
-
-    const getStatusClass = () => {
-        switch (connectionStatus) {
-            case 'connected':
-                return styles.statusConnected;
-            case 'disconnected':
-                return styles.statusDisconnected;
-            default:
-                return styles.statusPending;
-        }
-    };
-
     if (!hasMounted) {
-        return (
-            <div className={styles.loading}>
-                <div className={styles.spinner} />
-                Initializing WebRTC...
-            </div>
-        );
+        return <div className={styles.loading}>Initializing WebRTC...</div>;
     }
 
     return (
         <div className={styles.container}>
-            <h1 className={styles.title}>WebRTC Video Call</h1>
-
-            <div className={styles.controls}>
+            <div className={styles.roomControls}>
                 <input
                     type="text"
                     value={inputRoomId}
                     onChange={(e) => setInputRoomId(e.target.value)}
                     placeholder="Enter room ID"
-                    disabled={isConnected || isLoading}
-                    className={styles.input}
-                    aria-label="Room ID"
+                    disabled={isConnected}
+                    className={styles.roomInput}
                 />
                 <button
                     onClick={isConnected ? handleEndCall : handleStartCall}
                     className={`${styles.button} ${
                         isConnected ? styles.endButton : styles.startButton
                     }`}
-                    disabled={!inputRoomId.trim() || isLoading}
-                    aria-label={isConnected ? 'End call' : 'Start call'}
+                    disabled={!inputRoomId.trim()}
                 >
-                    {isLoading ? (
-                        <span className={styles.buttonLoading}>Connecting...</span>
-                    ) : isConnected ? (
-                        'End Call'
-                    ) : (
-                        'Start Call'
-                    )}
+                    {isConnected ? 'End Call' : 'Start Call'}
                 </button>
             </div>
 
             {error && (
                 <div className={styles.error}>
-                    <p>Error: {error}</p>
-                    <button
-                        onClick={() => setLocalError(null)}
-                        className={styles.dismissButton}
-                    >
-                        Dismiss
-                    </button>
+                    Error: {error}
                 </div>
             )}
 
@@ -146,8 +83,8 @@ export default function VideoCallApp() {
                 />
             </div>
 
-            <div className={`${styles.status} ${getStatusClass()}`}>
-                Status: {getStatusMessage()}
+            <div className={styles.status}>
+                Status: {isConnected ? `Connected to room: ${roomId}` : 'Disconnected'}
             </div>
         </div>
     );

@@ -1,168 +1,135 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"sync"
-	"time"
 
 	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
-	CheckOrigin:     func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
-type Message struct {
-	Event string      `json:"event"`
-	Data  interface{} `json:"data"`
-	Room  string      `json:"room"`
+type SignalingMessage struct {
+	Event string          `json:"event"`
+	Data  json.RawMessage `json:"data"`
+	Room  string          `json:"room,omitempty"`
 }
 
-type Client struct {
-	conn *websocket.Conn
-	room string
+type Room struct {
+	clients map[*websocket.Conn]bool
 }
 
-var (
-	clients   = make(map[*Client]bool)
-	rooms     = make(map[string]map[*Client]bool)
-	clientsMu sync.Mutex
-)
+var rooms = make(map[string]*Room)
+var roomsLock sync.Mutex
 
 func main() {
-	http.HandleFunc("/ws", handleConnections)
+	http.HandleFunc("/ws", websocketHandler)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "index.html")
 	})
 
-	server := &http.Server{
-		Addr:              ":8080",
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	log.Println("WebRTC Signaling Server started on :8080")
-	if err := server.ListenAndServe(); err != nil {
-		log.Fatal("ListenAndServe error:", err)
-	}
+	fmt.Println("WebRTC Signaling Server running on :8080")
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func handleConnections(w http.ResponseWriter, r *http.Request) {
-	ws, err := upgrader.Upgrade(w, r, nil)
+func websocketHandler(w http.ResponseWriter, r *http.Request) {
+	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Println("Upgrade error:", err)
+		log.Print("Upgrade error:", err)
 		return
 	}
-	defer ws.Close()
-
-	// Set timeouts
-	ws.SetReadDeadline(time.Now().Add(60 * time.Second))
-	ws.SetPongHandler(func(string) error {
-		ws.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
-
-	client := &Client{conn: ws}
-	registerClient(client)
-
-	// Start ping goroutine
-	done := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				if err := ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(10*time.Second)); err != nil {
-					log.Println("Ping error:", err)
-					return
-				}
-			case <-done:
-				return
-			}
-		}
-	}()
+	defer conn.Close()
 
 	for {
-		var msg Message
-		err := ws.ReadJSON(&msg)
+		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("Read error: %v", err)
-			close(done)
-			unregisterClient(client)
+			log.Println("Read error:", err)
+			handleDisconnect(conn)
+			return
+		}
+
+		var message SignalingMessage
+		if err := json.Unmarshal(msg, &message); err != nil {
+			log.Println("Unmarshal error:", err)
+			continue
+		}
+
+		switch message.Event {
+		case "join":
+			handleJoin(conn, message.Room)
+		case "leave":
+			handleLeave(conn, message.Room)
+		case "offer", "answer", "ice-candidate":
+			broadcastToRoom(conn, message.Room, message.Event, message.Data)
+		default:
+			log.Println("Unknown event:", message.Event)
+		}
+	}
+}
+
+func handleJoin(conn *websocket.Conn, room string) {
+	roomsLock.Lock()
+	defer roomsLock.Unlock()
+
+	if _, exists := rooms[room]; !exists {
+		rooms[room] = &Room{clients: make(map[*websocket.Conn]bool)}
+	}
+
+	rooms[room].clients[conn] = true
+	log.Printf("Client joined room %s (total: %d)", room, len(rooms[room].clients))
+}
+
+func handleLeave(conn *websocket.Conn, room string) {
+	roomsLock.Lock()
+	defer roomsLock.Unlock()
+
+	if r, exists := rooms[room]; exists {
+		delete(r.clients, conn)
+		if len(r.clients) == 0 {
+			delete(rooms, room)
+		}
+	}
+}
+
+func handleDisconnect(conn *websocket.Conn) {
+	roomsLock.Lock()
+	defer roomsLock.Unlock()
+
+	for roomName, room := range rooms {
+		if room.clients[conn] {
+			delete(room.clients, conn)
+			log.Printf("Client disconnected from room %s (remaining: %d)", roomName, len(room.clients))
+			if len(room.clients) == 0 {
+				delete(rooms, roomName)
+			}
 			break
 		}
-
-		switch msg.Event {
-		case "join":
-			handleJoin(client, msg.Room)
-		case "leave":
-			handleLeave(client)
-		case "ping":
-			// Respond to ping
-			ws.WriteJSON(Message{Event: "pong"})
-		case "offer", "answer", "candidate":
-			broadcastToRoom(client, msg)
-		}
 	}
 }
 
-func registerClient(c *Client) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	clients[c] = true
-	log.Println("New client connected")
-}
+func broadcastToRoom(sender *websocket.Conn, room, event string, data json.RawMessage) {
+	roomsLock.Lock()
+	defer roomsLock.Unlock()
 
-func unregisterClient(c *Client) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-	handleLeave(c)
-	delete(clients, c)
-	log.Println("Client disconnected")
-}
-
-func handleJoin(c *Client, room string) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-
-	if c.room != "" {
-		delete(rooms[c.room], c)
+	roomObj, exists := rooms[room]
+	if !exists {
+		return
 	}
 
-	c.room = room
-	if rooms[room] == nil {
-		rooms[room] = make(map[*Client]bool)
-	}
-	rooms[room][c] = true
-
-	log.Printf("Client joined room: %s (Total in room: %d)", room, len(rooms[room]))
-}
-
-func handleLeave(c *Client) {
-	if c.room != "" {
-		if rooms[c.room] != nil {
-			delete(rooms[c.room], c)
-			log.Printf("Client left room: %s (Remaining: %d)", c.room, len(rooms[c.room]))
-		}
-		c.room = ""
-	}
-}
-
-func broadcastToRoom(sender *Client, msg Message) {
-	clientsMu.Lock()
-	defer clientsMu.Unlock()
-
-	for client := range rooms[sender.room] {
+	for client := range roomObj.clients {
 		if client != sender {
-			err := client.conn.WriteJSON(msg)
-			if err != nil {
-				log.Printf("Write error: %v", err)
-				client.conn.Close()
-				delete(rooms[sender.room], client)
+			if err := client.WriteJSON(SignalingMessage{
+				Event: event,
+				Data:  data,
+			}); err != nil {
+				log.Println("Write error:", err)
+				client.Close()
+				delete(roomObj.clients, client)
 			}
 		}
 	}
