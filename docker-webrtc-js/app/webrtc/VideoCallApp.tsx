@@ -70,7 +70,7 @@ export const VideoCallApp = () => {
 
             {error && <div className={styles.error}>{error}</div>}
 
-            <div className={styles.controls}>
+            <div>
                 <input
                     type="text"
                     value={username}

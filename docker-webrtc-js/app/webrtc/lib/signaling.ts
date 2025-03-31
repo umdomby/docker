@@ -65,6 +65,9 @@ export class SignalingClient {
                     case 'error':
                         this.onErrorCallback(message.data);
                         break;
+                    case 'ping':
+                        this.sendPong(); // Отправляем pong в ответ на ping
+                        break;
                     case 'pong':
                         console.log('Received pong from server');
                         break;

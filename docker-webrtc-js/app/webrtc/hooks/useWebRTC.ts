@@ -150,7 +150,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     const startCall = async (isInitiator: boolean, existingRoomId?: string) => {
         try {
             setIsCaller(isInitiator);
-            const stream = await getLocalMedia();
+            await getLocalMedia(); // Убедимся, что поток используется
 
             signalingClient.current = new SignalingClient('wss://anybet.site/ws');
 

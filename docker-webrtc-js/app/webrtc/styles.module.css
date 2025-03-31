@@ -458,3 +458,34 @@
 .connectionDot.disconnected {
     background-color: #dc3545;
 }
+
+.input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    font-size: 15px;
+    transition: all 0.25s ease;
+}
+
+.input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+}
+
+.button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    padding: 12px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 15px;
+    transition: all 0.25s ease;
+}
+
+.button:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+}
