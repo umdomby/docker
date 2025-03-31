@@ -1,4 +1,4 @@
-// app/webrtc/lib/signaling.ts
+// file: docker-webrtc-js/app/webrtc/lib/signaling.ts
 export class SignalingClient {
     private ws: WebSocket;
     private onOfferCallback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void = () => {};
@@ -13,14 +13,25 @@ export class SignalingClient {
     private reconnectAttempts = 0;
     private maxReconnectAttempts = 5;
     private reconnectDelay = 1000;
+    private connectionTimeout: NodeJS.Timeout | null = null;
 
     constructor(url: string) {
         this.ws = new WebSocket(url);
         this.setupEventListeners();
+
+        this.connectionTimeout = setTimeout(() => {
+            if (!this.isConnected) {
+                this.onErrorCallback('Connection timeout');
+                this.ws.close();
+            }
+        }, 5000);
     }
 
     private setupEventListeners() {
         this.ws.onopen = () => {
+            if (this.connectionTimeout) {
+                clearTimeout(this.connectionTimeout);
+            }
             this.isConnected = true;
             this.reconnectAttempts = 0;
             console.log('Signaling connection established');
@@ -66,7 +77,7 @@ export class SignalingClient {
                         this.onErrorCallback(message.data);
                         break;
                     case 'ping':
-                        this.sendPong(); // Отправляем pong в ответ на ping
+                        this.sendPong();
                         break;
                     case 'pong':
                         console.log('Received pong from server');
@@ -83,6 +94,9 @@ export class SignalingClient {
         this.ws.onclose = () => {
             this.isConnected = false;
             console.log('Signaling connection closed');
+            if (this.connectionTimeout) {
+                clearTimeout(this.connectionTimeout);
+            }
             this.attemptReconnect();
         };
 
@@ -208,6 +222,9 @@ export class SignalingClient {
     }
 
     close(): void {
+        if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+        }
         this.ws.close();
     }
 }
