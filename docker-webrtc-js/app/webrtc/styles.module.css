@@ -496,3 +496,18 @@
     flex-wrap: wrap;
     align-items: center;
 }
+
+.connectionStatus {
+    padding: 8px;
+    background: #f5f5f5;
+    border-radius: 4px;
+    margin: 10px 0;
+}
+
+.connectionDetails {
+    margin-top: 5px;
+    padding: 5px;
+    background: #eee;
+    border-radius: 3px;
+    font-size: 0.9em;
+}
