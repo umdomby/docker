@@ -1,3 +1,4 @@
+// file: server.go
 package main
 
 import (
@@ -30,7 +31,7 @@ type Message struct {
 }
 
 type Room struct {
-	clients    map[string]*Client // key: clientID
+	clients    map[string]*Client
 	broadcast  chan []byte
 	register   chan *Client
 	unregister chan *Client
@@ -75,7 +76,9 @@ func (c *Client) readPump() {
 	for {
 		_, msg, err := c.conn.ReadMessage()
 		if err != nil {
-			log.Println("Read error:", err)
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket error: %v", err)
+			}
 			break
 		}
 
@@ -108,13 +111,9 @@ func (c *Client) joinRoom(roomID, username string) {
 	roomsMu.Lock()
 	defer roomsMu.Unlock()
 
-	// Leave previous room if any
 	if c.roomID != "" {
 		if room, exists := rooms[c.roomID]; exists {
 			delete(room.clients, c.clientID)
-			if len(room.clients) == 0 {
-				delete(rooms, c.roomID)
-			}
 		}
 	}
 
@@ -134,7 +133,6 @@ func (c *Client) joinRoom(roomID, username string) {
 		go room.run()
 	}
 
-	// If client with same username exists, remove it
 	for _, client := range room.clients {
 		if client.username == username {
 			delete(room.clients, client.clientID)
@@ -158,7 +156,6 @@ func (c *Client) joinRoom(roomID, username string) {
 	}
 	c.conn.WriteJSON(response)
 
-	// Notify others about new client
 	c.broadcastToOthers(map[string]interface{}{
 		"event": "user_joined",
 		"data": map[string]interface{}{
@@ -185,9 +182,7 @@ func (c *Client) leaveRoom() {
 
 	if len(room.clients) == 0 {
 		delete(rooms, c.roomID)
-		log.Println("Room deleted (no clients):", c.roomID)
 	} else {
-		// Notify others about client leaving
 		c.broadcastToOthers(map[string]interface{}{
 			"event": "user_left",
 			"data": map[string]interface{}{
@@ -212,7 +207,7 @@ func (c *Client) handleRTCMessage(event string, data json.RawMessage) {
 
 	message := map[string]interface{}{
 		"event": event,
-		"data":  json.RawMessage(data),
+		"data":  data,
 		"from":  c.username,
 	}
 
@@ -275,11 +270,8 @@ func (r *Room) run() {
 		case client := <-r.register:
 			r.clients[client.clientID] = client
 		case client := <-r.unregister:
-			if _, ok := r.clients[client.clientID]; ok {
-				delete(r.clients, client.clientID)
-			}
+			delete(r.clients, client.clientID)
 		case <-ticker.C:
-			// Room maintenance
 			if len(r.clients) == 0 {
 				return
 			}

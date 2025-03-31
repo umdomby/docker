@@ -1,6 +1,6 @@
 // file: docker-webrtc-js/app/webrtc/lib/signaling.ts
 export class SignalingClient {
-    private ws: WebSocket;
+    private ws: WebSocket | null = null;
     private onOfferCallback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void = () => {};
     private onAnswerCallback: (data: { answer: RTCSessionDescriptionInit; from: string }) => void = () => {};
     private onCandidateCallback: (data: { candidate: RTCIceCandidateInit; from: string }) => void = () => {};
@@ -23,11 +23,15 @@ export class SignalingClient {
             this.resolveConnection = resolve;
         });
 
+        this.connect(url);
+    }
+
+    private connect(url: string) {
         this.ws = new WebSocket(url);
         this.setupEventListeners();
 
         this.connectionTimeout = setTimeout(() => {
-            if (!this.isConnected) {
+            if (!this.isConnected && this.ws) {
                 this.onErrorCallback('Connection timeout');
                 this.ws.close();
             }
@@ -35,6 +39,8 @@ export class SignalingClient {
     }
 
     private setupEventListeners() {
+        if (!this.ws) return;
+
         this.ws.onopen = () => {
             if (this.connectionTimeout) {
                 clearTimeout(this.connectionTimeout);
@@ -64,22 +70,13 @@ export class SignalingClient {
                         this.onRoomCreatedCallback(message.data);
                         break;
                     case 'offer':
-                        this.onOfferCallback({
-                            offer: message.data.offer,
-                            from: message.data.from
-                        });
+                        this.onOfferCallback(message.data);
                         break;
                     case 'answer':
-                        this.onAnswerCallback({
-                            answer: message.data.answer,
-                            from: message.data.from
-                        });
+                        this.onAnswerCallback(message.data);
                         break;
                     case 'candidate':
-                        this.onCandidateCallback({
-                            candidate: message.data.candidate,
-                            from: message.data.from
-                        });
+                        this.onCandidateCallback(message.data);
                         break;
                     case 'user_joined':
                         this.onUserJoinedCallback(message.data.username);
@@ -119,7 +116,7 @@ export class SignalingClient {
     }
 
     private async flushMessageQueue() {
-        while (this.messageQueue.length > 0 && this.isConnected) {
+        while (this.messageQueue.length > 0 && this.isConnected && this.ws) {
             const message = this.messageQueue.shift();
             if (message) {
                 await this.sendMessageInternal(message);
@@ -128,6 +125,10 @@ export class SignalingClient {
     }
 
     private async sendMessageInternal(message: { event: string; data: any }): Promise<void> {
+        if (!this.ws) {
+            throw new Error('WebSocket is not initialized');
+        }
+
         try {
             this.ws.send(JSON.stringify(message));
         } catch (error) {
@@ -158,8 +159,9 @@ export class SignalingClient {
             });
 
             setTimeout(() => {
-                this.ws = new WebSocket(this.ws.url);
-                this.setupEventListeners();
+                if (this.ws) {
+                    this.connect(this.ws.url);
+                }
             }, this.reconnectDelay);
         } else {
             this.onErrorCallback('Failed to reconnect to signaling server');
@@ -167,7 +169,7 @@ export class SignalingClient {
     }
 
     async sendMessage(message: { event: string; data: any }): Promise<void> {
-        if (!this.isConnected) {
+        if (!this.isConnected || !this.ws) {
             console.log('WebSocket not connected, adding message to queue');
             this.messageQueue.push(message);
             await this.connectionPromise;
@@ -256,15 +258,21 @@ export class SignalingClient {
     }
 
     private sendPing(): void {
-        this.sendMessage({ event: 'ping', data: null }).catch(console.error);
+        if (this.isConnected) {
+            this.sendMessage({ event: 'ping', data: null }).catch(console.error);
+        }
     }
 
     private sendPong(): void {
-        this.sendMessage({ event: 'pong', data: null }).catch(console.error);
+        if (this.isConnected) {
+            this.sendMessage({ event: 'pong', data: null }).catch(console.error);
+        }
     }
 
     close(): void {
         this.cleanupTimers();
-        this.ws.close();
+        if (this.ws) {
+            this.ws.close();
+        }
     }
 }
