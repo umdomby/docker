@@ -1,4 +1,4 @@
-//app\webrtc\components\DeviceSelector.tsx
+// app/webrtc/VideoCallApp.tsx
 import { useWebRTC } from './hooks/useWebRTC';
 import styles from './styles.module.css';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -29,8 +29,10 @@ export const VideoCallApp = () => {
 
     const loadDevices = async () => {
         try {
-            // Сначала запрашиваем разрешение
-            await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            // Сначала проверяем разрешения
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            stream.getTracks().forEach(track => track.stop()); // Освобождаем ресурсы
+
             setHasPermission(true);
 
             // Затем получаем устройства
