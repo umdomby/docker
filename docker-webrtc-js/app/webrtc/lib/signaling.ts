@@ -1,4 +1,4 @@
-// file: docker-webrtc-js/app/webrtc/lib/signaling.ts
+// app/webrtc/lib/signaling.ts
 export class SignalingClient {
     private ws: WebSocket;
     private onOfferCallback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void = () => {};
