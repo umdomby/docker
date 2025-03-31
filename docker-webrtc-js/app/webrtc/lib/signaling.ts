@@ -1,9 +1,11 @@
 export class SignalingClient {
     private ws: WebSocket;
-    private onOfferCallback: (offer: RTCSessionDescriptionInit) => void = () => {};
-    private onAnswerCallback: (answer: RTCSessionDescriptionInit) => void = () => {};
-    private onCandidateCallback: (candidate: RTCIceCandidateInit) => void = () => {};
-    private onRoomCreatedCallback: (roomId: string) => void = () => {};
+    private onOfferCallback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void = () => {};
+    private onAnswerCallback: (data: { answer: RTCSessionDescriptionInit; from: string }) => void = () => {};
+    private onCandidateCallback: (data: { candidate: RTCIceCandidateInit; from: string }) => void = () => {};
+    private onRoomCreatedCallback: (data: { roomId: string; clients: string[] }) => void = () => {};
+    private onUserJoinedCallback: (username: string) => void = () => {};
+    private onUserLeftCallback: (username: string) => void = () => {};
     private onErrorCallback: (error: string) => void = () => {};
     private messageQueue: Array<{event: string, data: any}> = [];
     private isConnected = false;
@@ -35,13 +37,28 @@ export class SignalingClient {
                         this.onRoomCreatedCallback(message.data);
                         break;
                     case 'offer':
-                        this.onOfferCallback(message.data as RTCSessionDescriptionInit);
+                        this.onOfferCallback({
+                            offer: message.data.offer,
+                            from: message.data.from
+                        });
                         break;
                     case 'answer':
-                        this.onAnswerCallback(message.data as RTCSessionDescriptionInit);
+                        this.onAnswerCallback({
+                            answer: message.data.answer,
+                            from: message.data.from
+                        });
                         break;
                     case 'candidate':
-                        this.onCandidateCallback(message.data as RTCIceCandidateInit);
+                        this.onCandidateCallback({
+                            candidate: message.data.candidate,
+                            from: message.data.from
+                        });
+                        break;
+                    case 'user_joined':
+                        this.onUserJoinedCallback(message.data.username);
+                        break;
+                    case 'user_left':
+                        this.onUserLeftCallback(message.data.username);
                         break;
                     case 'error':
                         this.onErrorCallback(message.data);
@@ -70,7 +87,89 @@ export class SignalingClient {
         };
     }
 
-    private attemptReconnect() {
+    createRoom(username: string): void {
+        this.sendMessage({
+            event: 'join',
+            data: {
+                roomId: '',
+                username
+            }
+        });
+    }
+
+    joinRoom(roomId: string, username: string): void {
+        this.sendMessage({
+            event: 'join',
+            data: {
+                roomId,
+                username
+            }
+        });
+    }
+
+    sendOffer(data: { offer: RTCSessionDescriptionInit; to: string }): void {
+        this.sendMessage({
+            event: 'offer',
+            data: {
+                offer: data.offer,
+                to: data.to
+            }
+        });
+    }
+
+    sendAnswer(data: { answer: RTCSessionDescriptionInit; to: string }): void {
+        this.sendMessage({
+            event: 'answer',
+            data: {
+                answer: data.answer,
+                to: data.to
+            }
+        });
+    }
+
+    sendCandidate(data: { candidate: RTCIceCandidateInit; to: string }): void {
+        this.sendMessage({
+            event: 'candidate',
+            data: {
+                candidate: data.candidate,
+                to: data.to
+            }
+        });
+    }
+
+    onOffer(callback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void): void {
+        this.onOfferCallback = callback;
+    }
+
+    onAnswer(callback: (data: { answer: RTCSessionDescriptionInit; from: string }) => void): void {
+        this.onAnswerCallback = callback;
+    }
+
+    onCandidate(callback: (data: { candidate: RTCIceCandidateInit; from: string }) => void): void {
+        this.onCandidateCallback = callback;
+    }
+
+    onRoomCreated(callback: (data: { roomId: string; clients: string[] }) => void): void {
+        this.onRoomCreatedCallback = callback;
+    }
+
+    onUserJoined(callback: (username: string) => void): void {
+        this.onUserJoinedCallback = callback;
+    }
+
+    onUserLeft(callback: (username: string) => void): void {
+        this.onUserLeftCallback = callback;
+    }
+
+    onError(callback: (error: string) => void): void {
+        this.onErrorCallback = callback;
+    }
+
+    private sendPong(): void {
+        this.sendMessage({ event: 'pong', data: null });
+    }
+
+    private attemptReconnect(): void {
         if (this.reconnectAttempts < this.maxReconnectAttempts) {
             this.reconnectAttempts++;
             console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
@@ -81,50 +180,6 @@ export class SignalingClient {
         } else {
             this.onErrorCallback('Failed to reconnect to signaling server');
         }
-    }
-
-    private sendPong() {
-        this.sendMessage({ event: 'pong', data: null });
-    }
-
-    createRoom(): void {
-        this.sendMessage({ event: 'join', data: '' });
-    }
-
-    joinRoom(roomId: string): void {
-        this.sendMessage({ event: 'join', data: roomId });
-    }
-
-    sendOffer(offer: RTCSessionDescriptionInit): void {
-        this.sendMessage({ event: 'offer', data: offer });
-    }
-
-    sendAnswer(answer: RTCSessionDescriptionInit): void {
-        this.sendMessage({ event: 'answer', data: answer });
-    }
-
-    sendCandidate(candidate: RTCIceCandidateInit): void {
-        this.sendMessage({ event: 'candidate', data: candidate });
-    }
-
-    onOffer(callback: (offer: RTCSessionDescriptionInit) => void): void {
-        this.onOfferCallback = callback;
-    }
-
-    onAnswer(callback: (answer: RTCSessionDescriptionInit) => void): void {
-        this.onAnswerCallback = callback;
-    }
-
-    onCandidate(callback: (candidate: RTCIceCandidateInit) => void): void {
-        this.onCandidateCallback = callback;
-    }
-
-    onRoomCreated(callback: (roomId: string) => void): void {
-        this.onRoomCreatedCallback = callback;
-    }
-
-    onError(callback: (error: string) => void): void {
-        this.onErrorCallback = callback;
     }
 
     private sendMessage(message: { event: string; data: any }): void {

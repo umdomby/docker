@@ -1,20 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { SignalingClient } from '../lib/signaling';
 
-export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
+interface User {
+    username: string;
+    stream?: MediaStream;
+}
+
+export const useWebRTC = (deviceIds: { video: string; audio: string }, username: string) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
-    const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+    const [remoteUsers, setRemoteUsers] = useState<User[]>([]);
     const [roomId, setRoomId] = useState<string | null>(null);
     const [isCaller, setIsCaller] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [error, setError] = useState<string | null>(null);
 
-    const peerConnection = useRef<RTCPeerConnection | null>(null);
+    const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
     const signalingClient = useRef<SignalingClient | null>(null);
-    const remoteStreamRef = useRef<MediaStream>(new MediaStream());
     const localStreamRef = useRef<MediaStream | null>(null);
 
-    const initPeerConnection = () => {
+    const initPeerConnection = (userId: string) => {
         try {
             const pc = new RTCPeerConnection({
                 iceServers: [
@@ -25,7 +29,10 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
 
             pc.onicecandidate = (event) => {
                 if (event.candidate && signalingClient.current) {
-                    signalingClient.current.sendCandidate(event.candidate.toJSON());
+                    signalingClient.current.sendCandidate({
+                        candidate: event.candidate,
+                        to: userId
+                    });
                 }
             };
 
@@ -37,19 +44,26 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             };
 
             pc.ontrack = (event) => {
-                if (!event.streams || event.streams.length === 0) return;
-                event.streams[0].getTracks().forEach(track => {
-                    remoteStreamRef.current.addTrack(track);
+                setRemoteUsers(prev => {
+                    const existingUser = prev.find(u => u.username === userId);
+                    if (existingUser) {
+                        if (!existingUser.stream) {
+                            existingUser.stream = new MediaStream();
+                        }
+                        event.streams[0].getTracks().forEach(track => {
+                            existingUser.stream?.addTrack(track);
+                        });
+                        return [...prev];
+                    }
+                    return [...prev, { username: userId, stream: event.streams[0] }];
                 });
-                setRemoteStream(new MediaStream(remoteStreamRef.current.getTracks()));
             };
 
-            peerConnection.current = pc;
+            peerConnections.current[userId] = pc;
             return pc;
         } catch (err) {
             console.error('Error initializing peer connection:', err);
-            setError('Failed to initialize connection');
-            throw err;
+            return null;
         }
     };
 
@@ -71,45 +85,82 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
         }
     };
 
+    const createOffer = async (toUsername: string) => {
+        const pc = initPeerConnection(toUsername);
+        if (!pc || !localStreamRef.current) return;
+
+        localStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, localStreamRef.current!);
+        });
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        signalingClient.current?.sendOffer({
+            offer,
+            to: toUsername
+        });
+    };
+
     const startCall = async (isInitiator: boolean, existingRoomId?: string) => {
         try {
             setIsCaller(isInitiator);
-            const pc = initPeerConnection();
             const stream = await getLocalMedia();
-
-            stream.getTracks().forEach(track => {
-                pc.addTrack(track, stream);
-            });
 
             signalingClient.current = new SignalingClient('wss://anybet.site/ws');
 
-            signalingClient.current.onRoomCreated((id) => {
-                setRoomId(id);
+            signalingClient.current.onRoomCreated((data) => {
+                setRoomId(data.roomId);
                 if (isInitiator && !existingRoomId) {
-                    pc.createOffer()
-                        .then(offer => pc.setLocalDescription(offer))
-                        .then(() => {
-                            signalingClient.current?.sendOffer(pc.localDescription!);
-                        });
+                    data.clients.forEach((clientUsername: string) => {
+                        createOffer(clientUsername);
+                    });
                 }
             });
 
-            signalingClient.current.onOffer(async (offer) => {
-                if (!peerConnection.current) return;
+            signalingClient.current.onUserJoined((username) => {
+                if (isCaller) {
+                    createOffer(username);
+                }
+                setRemoteUsers(prev => [...prev, { username }]);
+            });
+
+            signalingClient.current.onUserLeft((username) => {
+                setRemoteUsers(prev => prev.filter(u => u.username !== username));
+                if (peerConnections.current[username]) {
+                    peerConnections.current[username].close();
+                    delete peerConnections.current[username];
+                }
+            });
+
+            signalingClient.current.onOffer(async ({ offer, from }) => {
+                const pc = initPeerConnection(from);
+                if (!pc) return;
+
                 await pc.setRemoteDescription(offer);
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
-                signalingClient.current?.sendAnswer(answer);
+                signalingClient.current?.sendAnswer({
+                    answer,
+                    to: from
+                });
+
+                if (localStreamRef.current) {
+                    localStreamRef.current.getTracks().forEach(track => {
+                        pc.addTrack(track, localStreamRef.current!);
+                    });
+                }
             });
 
-            signalingClient.current.onAnswer(async (answer) => {
-                if (peerConnection.current) {
+            signalingClient.current.onAnswer(async ({ answer, from }) => {
+                const pc = peerConnections.current[from];
+                if (pc) {
                     await pc.setRemoteDescription(answer);
                 }
             });
 
-            signalingClient.current.onCandidate(async (candidate) => {
-                if (peerConnection.current && candidate) {
+            signalingClient.current.onCandidate(async ({ candidate, from }) => {
+                const pc = peerConnections.current[from];
+                if (pc && candidate) {
                     await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             });
@@ -119,9 +170,9 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             });
 
             if (existingRoomId) {
-                signalingClient.current.joinRoom(existingRoomId);
+                signalingClient.current.joinRoom(existingRoomId, username);
             } else {
-                signalingClient.current.createRoom();
+                signalingClient.current.createRoom(username);
             }
 
         } catch (err) {
@@ -143,10 +194,8 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
     };
 
     const cleanup = () => {
-        if (peerConnection.current) {
-            peerConnection.current.close();
-            peerConnection.current = null;
-        }
+        Object.values(peerConnections.current).forEach(pc => pc.close());
+        peerConnections.current = {};
 
         if (signalingClient.current) {
             signalingClient.current.close();
@@ -159,18 +208,18 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             setLocalStream(null);
         }
 
-        remoteStreamRef.current.getTracks().forEach(track => track.stop());
-        remoteStreamRef.current = new MediaStream();
-        setRemoteStream(null);
+        setRemoteUsers([]);
     };
 
     useEffect(() => {
-        return cleanup;
+        return () => {
+            cleanup();
+        };
     }, []);
 
     return {
         localStream,
-        remoteStream,
+        remoteUsers,
         roomId,
         connectionStatus,
         error,

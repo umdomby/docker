@@ -11,10 +11,11 @@ export const VideoCallApp = () => {
         audio: ''
     });
     const [roomIdInput, setRoomIdInput] = useState('');
+    const [username, setUsername] = useState('');
 
     const {
         localStream,
-        remoteStream,
+        remoteUsers,
         roomId,
         startCall,
         joinRoom,
@@ -22,7 +23,22 @@ export const VideoCallApp = () => {
         isConnected,
         connectionStatus,
         error
-    } = useWebRTC(selectedDevices);
+    } = useWebRTC(selectedDevices, username);
+
+    useEffect(() => {
+        // Load username from localStorage or generate random one
+        const savedUsername = localStorage.getItem('webrtc-username') ||
+            `User${Math.floor(Math.random() * 1000)}`;
+        setUsername(savedUsername);
+
+        // Load roomId from localStorage if exists
+        const savedRoomId = localStorage.getItem('webrtc-roomId');
+        if (savedRoomId) {
+            setRoomIdInput(savedRoomId);
+        }
+
+        refreshDevices();
+    }, []);
 
     const refreshDevices = async () => {
         try {
@@ -39,17 +55,10 @@ export const VideoCallApp = () => {
             });
 
             stream.getTracks().forEach(track => track.stop());
-
-            return newDevices;
         } catch (err) {
             console.error('Error refreshing devices:', err);
-            return [];
         }
     };
-
-    useEffect(() => {
-        refreshDevices();
-    }, []);
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({ ...prev, [type]: deviceId }));
@@ -60,6 +69,15 @@ export const VideoCallApp = () => {
             alert('Пожалуйста, выберите хотя бы одно устройство');
             return;
         }
+
+        if (!username.trim()) {
+            alert('Пожалуйста, введите имя пользователя');
+            return;
+        }
+
+        // Save to localStorage
+        localStorage.setItem('webrtc-username', username);
+        localStorage.setItem('webrtc-roomId', roomIdInput.trim());
 
         if (roomIdInput.trim()) {
             joinRoom(roomIdInput.trim());
@@ -78,6 +96,15 @@ export const VideoCallApp = () => {
                 <div className={styles.setupPanel}>
                     <div className={styles.deviceSelection}>
                         <h2>Настройки устройств</h2>
+                        <div className={styles.formGroup}>
+                            <label>Ваше имя:</label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                className={styles.input}
+                            />
+                        </div>
                         <DeviceSelector
                             devices={devices}
                             selectedDevices={selectedDevices}
@@ -105,6 +132,7 @@ export const VideoCallApp = () => {
                 <div className={styles.callPanel}>
                     <div className={styles.roomInfo}>
                         <p>ID комнаты: <strong>{roomId}</strong></p>
+                        <p>Ваше имя: <strong>{username}</strong></p>
                         <p>Статус: <span className={styles[connectionStatus]}>{connectionStatus}</span></p>
                         <button onClick={stopCall} className={styles.stopButton}>
                             Завершить звонок
@@ -114,12 +142,15 @@ export const VideoCallApp = () => {
                     <div className={styles.videoContainer}>
                         <div className={styles.videoWrapper}>
                             <VideoPlayer stream={localStream} muted className={styles.video} />
-                            <div className={styles.videoLabel}>Вы</div>
+                            <div className={styles.videoLabel}>Вы: {username}</div>
                         </div>
-                        <div className={styles.videoWrapper}>
-                            <VideoPlayer stream={remoteStream} className={styles.video} />
-                            <div className={styles.videoLabel}>Собеседник</div>
-                        </div>
+
+                        {remoteUsers.map(user => (
+                            <div key={user.username} className={styles.videoWrapper}>
+                                <VideoPlayer stream={user.stream} className={styles.video} />
+                                <div className={styles.videoLabel}>{user.username}</div>
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
