@@ -1,4 +1,4 @@
-// app/webrtc/hooks/useWebRTC.ts
+// file: docker-webrtc-js/app/webrtc/hooks/useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 import { SignalingClient } from '../lib/signaling';
 
@@ -172,6 +172,12 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
             setIsCaller(isInitiator);
             await getLocalMedia();
+
+            // const isProduction = process.env.NODE_ENV === 'production';
+            // const wsUrl = isProduction
+            //     ? 'wss://anybet.site/ws'
+            //     : 'ws://localhost:8080';
+            // signalingClient.current = new SignalingClient(wsUrl);
 
             signalingClient.current = new SignalingClient('wss://anybet.site/ws');
 
