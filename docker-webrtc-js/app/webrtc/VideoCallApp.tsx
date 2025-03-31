@@ -1,3 +1,4 @@
+// file: docker-webrtc-js/app/webrtc/VideoCallApp.tsx
 // app/webrtc/VideoCallApp.tsx
 import { useWebRTC } from './hooks/useWebRTC';
 import styles from './styles.module.css';
@@ -123,8 +124,8 @@ export const VideoCallApp = () => {
                 )}
 
                 {/* Удаленные видео */}
-                {remoteUsers.map(user => (
-                    <div key={user.username} className={styles.videoWrapper}>
+                {remoteUsers.map((user, index) => (
+                    <div key={`${user.username}-${index}`} className={styles.videoWrapper}>
                         {user.stream ? (
                             <>
                                 <VideoPlayer stream={user.stream} className={styles.video} />
