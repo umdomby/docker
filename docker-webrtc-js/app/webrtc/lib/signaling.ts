@@ -14,6 +14,7 @@ export class SignalingClient {
     private maxReconnectAttempts = 5;
     private reconnectDelay = 1000;
     private connectionTimeout: NodeJS.Timeout | null = null;
+    private pingInterval: NodeJS.Timeout | null = null;
 
     constructor(url: string) {
         this.ws = new WebSocket(url);
@@ -35,7 +36,11 @@ export class SignalingClient {
             this.isConnected = true;
             this.reconnectAttempts = 0;
             console.log('Signaling connection established');
-            this.sendPing();
+
+            // Установка интервала для пингов
+            this.pingInterval = setInterval(() => this.sendPing(), 30000);
+
+            // Отправка всех сообщений из очереди
             this.messageQueue.forEach(msg => this.sendMessage(msg));
             this.messageQueue = [];
         };
@@ -96,6 +101,9 @@ export class SignalingClient {
             console.log('Signaling connection closed');
             if (this.connectionTimeout) {
                 clearTimeout(this.connectionTimeout);
+            }
+            if (this.pingInterval) {
+                clearInterval(this.pingInterval);
             }
             this.attemptReconnect();
         };
@@ -224,6 +232,9 @@ export class SignalingClient {
     close(): void {
         if (this.connectionTimeout) {
             clearTimeout(this.connectionTimeout);
+        }
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
         }
         this.ws.close();
     }
