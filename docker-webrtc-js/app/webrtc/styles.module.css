@@ -489,3 +489,10 @@
     background-color: #2980b9;
     transform: translateY(-2px);
 }
+.controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+}
