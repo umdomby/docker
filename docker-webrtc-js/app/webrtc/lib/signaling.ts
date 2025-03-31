@@ -15,8 +15,14 @@ export class SignalingClient {
     private reconnectDelay = 1000;
     private connectionTimeout: NodeJS.Timeout | null = null;
     private pingInterval: NodeJS.Timeout | null = null;
+    private connectionPromise: Promise<void>;
+    private resolveConnection: (() => void) | null = null;
 
     constructor(url: string) {
+        this.connectionPromise = new Promise((resolve) => {
+            this.resolveConnection = resolve;
+        });
+
         this.ws = new WebSocket(url);
         this.setupEventListeners();
 
@@ -32,17 +38,20 @@ export class SignalingClient {
         this.ws.onopen = () => {
             if (this.connectionTimeout) {
                 clearTimeout(this.connectionTimeout);
+                this.connectionTimeout = null;
             }
+
             this.isConnected = true;
             this.reconnectAttempts = 0;
             console.log('Signaling connection established');
 
-            // Установка интервала для пингов
-            this.pingInterval = setInterval(() => this.sendPing(), 30000);
+            if (this.resolveConnection) {
+                this.resolveConnection();
+                this.resolveConnection = null;
+            }
 
-            // Отправка всех сообщений из очереди
-            this.messageQueue.forEach(msg => this.sendMessage(msg));
-            this.messageQueue = [];
+            this.pingInterval = setInterval(() => this.sendPing(), 30000);
+            this.flushMessageQueue();
         };
 
         this.ws.onmessage = (event) => {
@@ -99,12 +108,7 @@ export class SignalingClient {
         this.ws.onclose = () => {
             this.isConnected = false;
             console.log('Signaling connection closed');
-            if (this.connectionTimeout) {
-                clearTimeout(this.connectionTimeout);
-            }
-            if (this.pingInterval) {
-                clearInterval(this.pingInterval);
-            }
+            this.cleanupTimers();
             this.attemptReconnect();
         };
 
@@ -114,8 +118,67 @@ export class SignalingClient {
         };
     }
 
-    createRoom(username: string): void {
-        this.sendMessage({
+    private async flushMessageQueue() {
+        while (this.messageQueue.length > 0 && this.isConnected) {
+            const message = this.messageQueue.shift();
+            if (message) {
+                await this.sendMessageInternal(message);
+            }
+        }
+    }
+
+    private async sendMessageInternal(message: { event: string; data: any }): Promise<void> {
+        try {
+            this.ws.send(JSON.stringify(message));
+        } catch (error) {
+            console.error('Error sending message:', error);
+            this.messageQueue.unshift(message);
+            throw error;
+        }
+    }
+
+    private cleanupTimers() {
+        if (this.connectionTimeout) {
+            clearTimeout(this.connectionTimeout);
+            this.connectionTimeout = null;
+        }
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+    }
+
+    private attemptReconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+            this.connectionPromise = new Promise((resolve) => {
+                this.resolveConnection = resolve;
+            });
+
+            setTimeout(() => {
+                this.ws = new WebSocket(this.ws.url);
+                this.setupEventListeners();
+            }, this.reconnectDelay);
+        } else {
+            this.onErrorCallback('Failed to reconnect to signaling server');
+        }
+    }
+
+    async sendMessage(message: { event: string; data: any }): Promise<void> {
+        if (!this.isConnected) {
+            console.log('WebSocket not connected, adding message to queue');
+            this.messageQueue.push(message);
+            await this.connectionPromise;
+            return this.sendMessage(message);
+        }
+
+        return this.sendMessageInternal(message);
+    }
+
+    async createRoom(username: string): Promise<void> {
+        return this.sendMessage({
             event: 'join',
             data: {
                 roomId: '',
@@ -124,8 +187,8 @@ export class SignalingClient {
         });
     }
 
-    joinRoom(roomId: string, username: string): void {
-        this.sendMessage({
+    async joinRoom(roomId: string, username: string): Promise<void> {
+        return this.sendMessage({
             event: 'join',
             data: {
                 roomId,
@@ -134,8 +197,8 @@ export class SignalingClient {
         });
     }
 
-    sendOffer(data: { offer: RTCSessionDescriptionInit; to: string }): void {
-        this.sendMessage({
+    async sendOffer(data: { offer: RTCSessionDescriptionInit; to: string }): Promise<void> {
+        return this.sendMessage({
             event: 'offer',
             data: {
                 offer: data.offer,
@@ -144,8 +207,8 @@ export class SignalingClient {
         });
     }
 
-    sendAnswer(data: { answer: RTCSessionDescriptionInit; to: string }): void {
-        this.sendMessage({
+    async sendAnswer(data: { answer: RTCSessionDescriptionInit; to: string }): Promise<void> {
+        return this.sendMessage({
             event: 'answer',
             data: {
                 answer: data.answer,
@@ -154,8 +217,8 @@ export class SignalingClient {
         });
     }
 
-    sendCandidate(data: { candidate: RTCIceCandidateInit; to: string }): void {
-        this.sendMessage({
+    async sendCandidate(data: { candidate: RTCIceCandidateInit; to: string }): Promise<void> {
+        return this.sendMessage({
             event: 'candidate',
             data: {
                 candidate: data.candidate,
@@ -193,49 +256,15 @@ export class SignalingClient {
     }
 
     private sendPing(): void {
-        this.sendMessage({ event: 'ping', data: null });
+        this.sendMessage({ event: 'ping', data: null }).catch(console.error);
     }
 
     private sendPong(): void {
-        this.sendMessage({ event: 'pong', data: null });
-    }
-
-    private attemptReconnect(): void {
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-            setTimeout(() => {
-                this.ws = new WebSocket(this.ws.url);
-                this.setupEventListeners();
-            }, this.reconnectDelay);
-        } else {
-            this.onErrorCallback('Failed to reconnect to signaling server');
-        }
-    }
-
-    private sendMessage(message: { event: string; data: any }): void {
-        const messageString = JSON.stringify(message);
-
-        if (this.isConnected) {
-            try {
-                this.ws.send(messageString);
-            } catch (error) {
-                console.error('Error sending message:', error);
-                this.messageQueue.push(message);
-            }
-        } else {
-            console.log('WebSocket not connected, adding message to queue');
-            this.messageQueue.push(message);
-        }
+        this.sendMessage({ event: 'pong', data: null }).catch(console.error);
     }
 
     close(): void {
-        if (this.connectionTimeout) {
-            clearTimeout(this.connectionTimeout);
-        }
-        if (this.pingInterval) {
-            clearInterval(this.pingInterval);
-        }
+        this.cleanupTimers();
         this.ws.close();
     }
 }
