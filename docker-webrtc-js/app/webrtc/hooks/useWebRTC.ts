@@ -1,4 +1,4 @@
-// file: docker-webrtc-js/app/webrtc/hooks/useWebRTC.ts
+// app\webrtc\hooks\useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 import { SignalingClient } from '../lib/signaling';
 
