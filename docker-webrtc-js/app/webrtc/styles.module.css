@@ -417,3 +417,44 @@
     background-color: #e74c3c;
     box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.3);
 }
+
+.roomInfo {
+    background-color: #f8f9fa;
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin: 15px 0;
+    display: inline-block;
+}
+
+.roomInfo p {
+    margin: 0;
+    color: #6c757d;
+}
+
+.roomInfo strong {
+    color: #343a40;
+    font-weight: 600;
+}
+
+.connectionStatus {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+    font-size: 14px;
+    color: #495057;
+}
+
+.connectionDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.connectionDot.connected {
+    background-color: #28a745;
+}
+
+.connectionDot.disconnected {
+    background-color: #dc3545;
+}

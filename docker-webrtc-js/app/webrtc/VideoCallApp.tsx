@@ -1,5 +1,3 @@
-//app\webrtc\VideoCallApp.tsx
-
 import { useWebRTC } from './hooks/useWebRTC';
 import styles from './styles.module.css';
 import { VideoPlayer } from './components/VideoPlayer';
@@ -12,8 +10,9 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     });
-    const [roomIdInput, setRoomIdInput] = useState('123'); // Установим дефолтное значение для теста
+    const [roomIdInput, setRoomIdInput] = useState('123');
     const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
+    const [hasPermission, setHasPermission] = useState(false);
 
     const {
         localStream,
@@ -27,23 +26,28 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username);
 
-    // Загружаем устройства при монтировании
+    const loadDevices = async () => {
+        try {
+            // Сначала запрашиваем разрешение
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            setHasPermission(true);
+
+            // Затем получаем устройства
+            const devices = await navigator.mediaDevices.enumerateDevices();
+            setDevices(devices);
+
+            const videoDevice = devices.find(d => d.kind === 'videoinput');
+            const audioDevice = devices.find(d => d.kind === 'audioinput');
+
+            if (videoDevice) setSelectedDevices(prev => ({...prev, video: videoDevice.deviceId}));
+            if (audioDevice) setSelectedDevices(prev => ({...prev, audio: audioDevice.deviceId}));
+        } catch (err) {
+            console.error('Error loading devices:', err);
+            setHasPermission(false);
+        }
+    };
+
     useEffect(() => {
-        const loadDevices = async () => {
-            try {
-                const devices = await navigator.mediaDevices.enumerateDevices();
-                setDevices(devices);
-
-                const videoDevice = devices.find(d => d.kind === 'videoinput');
-                const audioDevice = devices.find(d => d.kind === 'audioinput');
-
-                if (videoDevice) setSelectedDevices(prev => ({...prev, video: videoDevice.deviceId}));
-                if (audioDevice) setSelectedDevices(prev => ({...prev, audio: audioDevice.deviceId}));
-            } catch (err) {
-                console.error('Error loading devices:', err);
-            }
-        };
-
         loadDevices();
     }, []);
 
@@ -53,6 +57,10 @@ export const VideoCallApp = () => {
         } else {
             startCall(true);
         }
+    };
+
+    const handleRefreshDevices = async () => {
+        await loadDevices();
     };
 
     return (
@@ -90,6 +98,18 @@ export const VideoCallApp = () => {
                 )}
             </div>
 
+            {roomId && (
+                <div className={styles.roomInfo}>
+                    <p>ID комнаты: <strong>{roomId}</strong></p>
+                </div>
+            )}
+
+            <div className={styles.connectionStatus}>
+                <span>Статус: </span>
+                <div className={`${styles.connectionDot} ${isConnected ? styles.connected : styles.disconnected}`} />
+                <span>{connectionStatus}</span>
+            </div>
+
             <div className={styles.videoContainer}>
                 {/* Локальное видео */}
                 {localStream && (
@@ -120,13 +140,23 @@ export const VideoCallApp = () => {
             {!isConnected && (
                 <div className={styles.deviceSelection}>
                     <h3>Выберите устройства:</h3>
-                    <DeviceSelector
-                        devices={devices}
-                        selectedDevices={selectedDevices}
-                        onChange={(type, deviceId) =>
-                            setSelectedDevices(prev => ({...prev, [type]: deviceId}))
-                        }
-                    />
+                    {!hasPermission ? (
+                        <button
+                            onClick={loadDevices}
+                            className={styles.refreshButton}
+                        >
+                            Запросить доступ к устройствам
+                        </button>
+                    ) : (
+                        <DeviceSelector
+                            devices={devices}
+                            selectedDevices={selectedDevices}
+                            onChange={(type, deviceId) =>
+                                setSelectedDevices(prev => ({...prev, [type]: deviceId}))
+                            }
+                            onRefresh={handleRefreshDevices}
+                        />
+                    )}
                 </div>
             )}
         </div>

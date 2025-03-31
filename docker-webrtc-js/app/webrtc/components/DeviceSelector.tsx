@@ -1,4 +1,3 @@
-// app\webrtc\components\DeviceSelector.tsx
 import { useState, useEffect } from 'react';
 import styles from '../styles.module.css';
 
@@ -9,7 +8,7 @@ interface DeviceSelectorProps {
         audio: string;
     };
     onChange: (type: 'video' | 'audio', deviceId: string) => void;
-    onRefresh?: () => Promise<MediaDeviceInfo[]>;
+    onRefresh?: () => Promise<void>;
 }
 
 export const DeviceSelector = ({
@@ -38,8 +37,7 @@ export const DeviceSelector = ({
 
         setIsRefreshing(true);
         try {
-            const newDevices = await onRefresh();
-            updateDeviceLists(newDevices);
+            await onRefresh();
         } catch (error) {
             console.error('Error refreshing devices:', error);
         } finally {
