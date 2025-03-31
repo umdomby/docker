@@ -1,3 +1,4 @@
+//app\webrtc\lib\webrtc.ts
 export function checkWebRTCSupport(): boolean {
     if (typeof window === 'undefined') return false;
 
