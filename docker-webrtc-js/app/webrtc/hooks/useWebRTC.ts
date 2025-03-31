@@ -5,6 +5,7 @@ import { SignalingClient } from '../lib/signaling';
 interface User {
     username: string;
     stream?: MediaStream;
+    peerConnection?: RTCPeerConnection;
 }
 
 export const useWebRTC = (deviceIds: { video: string; audio: string }, username: string) => {
@@ -15,7 +16,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [error, setError] = useState<string | null>(null);
 
-    const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
     const signalingClient = useRef<SignalingClient | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
 
@@ -37,89 +37,63 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
         }
     };
 
-    const initPeerConnection = (userId: string): RTCPeerConnection | null => {
-        try {
-            const pc = new RTCPeerConnection({
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' },
-                    { urls: 'stun:stun3.l.google.com:19302' },
-                    { urls: 'stun:stun4.l.google.com:19302' }
-                ],
-                iceCandidatePoolSize: 10,
-                bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require'
-            });
+    const initPeerConnection = (userId: string): RTCPeerConnection => {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' }
+            ],
+            iceCandidatePoolSize: 10,
+            bundlePolicy: 'max-bundle',
+            rtcpMuxPolicy: 'require'
+        });
 
-            pc.onicecandidate = (event) => {
-                if (event.candidate && signalingClient.current) {
-                    console.log('Sending ICE candidate:', event.candidate);
-                    signalingClient.current.sendCandidate({
-                        candidate: event.candidate,
-                        to: userId
-                    });
-                } else if (!event.candidate) {
-                    console.log('All ICE candidates have been sent');
-                }
-            };
-
-            pc.oniceconnectionstatechange = () => {
-                console.log(`ICE connection state changed to: ${pc.iceConnectionState}`);
-                setConnectionStatus(pc.iceConnectionState);
-                if (pc.iceConnectionState === 'failed') {
-                    console.log('Restarting ICE...');
-                    pc.restartIce();
-                }
-            };
-
-            pc.ontrack = (event) => {
-                console.log('Received remote track:', event.track.kind);
-                setRemoteUsers(prev => {
-                    const existingUser = prev.find(u => u.username === userId);
-                    if (existingUser) {
-                        if (!existingUser.stream) {
-                            existingUser.stream = new MediaStream();
-                        }
-                        event.streams[0].getTracks().forEach(track => {
-                            if (!existingUser.stream!.getTracks().some(t => t.id === track.id)) {
-                                existingUser.stream!.addTrack(track);
-                            }
-                        });
-                        return [...prev];
-                    }
-                    return [...prev, {
-                        username: userId,
-                        stream: event.streams[0]
-                    }];
+        pc.onicecandidate = (event) => {
+            if (event.candidate && signalingClient.current) {
+                console.log('Sending ICE candidate:', event.candidate);
+                signalingClient.current.sendCandidate({
+                    candidate: event.candidate,
+                    to: userId
                 });
-            };
+            }
+        };
 
-            pc.onnegotiationneeded = async () => {
-                console.log('Negotiation needed for:', userId);
-                try {
-                    const offer = await pc.createOffer({
-                        offerToReceiveAudio: true,
-                        offerToReceiveVideo: true
+        pc.oniceconnectionstatechange = () => {
+            console.log(`ICE connection state changed to: ${pc.iceConnectionState}`);
+            setConnectionStatus(pc.iceConnectionState);
+            if (pc.iceConnectionState === 'failed') {
+                console.log('Restarting ICE...');
+                pc.restartIce();
+            }
+        };
+
+        pc.ontrack = (event) => {
+            console.log('Received remote track:', event.track.kind);
+            setRemoteUsers(prev => {
+                const existingUser = prev.find(u => u.username === userId);
+                if (existingUser) {
+                    if (!existingUser.stream) {
+                        existingUser.stream = new MediaStream();
+                    }
+                    event.streams[0].getTracks().forEach(track => {
+                        if (!existingUser.stream!.getTracks().some(t => t.id === track.id)) {
+                            existingUser.stream!.addTrack(track);
+                        }
                     });
-                    await pc.setLocalDescription(offer);
-                    signalingClient.current?.sendOffer({
-                        offer,
-                        to: userId
-                    });
-                } catch (err) {
-                    console.error('Negotiation error:', err);
-                    setError('Failed to negotiate connection');
+                    return [...prev];
                 }
-            };
+                return [...prev, {
+                    username: userId,
+                    stream: event.streams[0],
+                    peerConnection: pc
+                }];
+            });
+        };
 
-            peerConnections.current[userId] = pc;
-            return pc;
-        } catch (err) {
-            console.error('Error initializing peer connection:', err);
-            setError('Failed to initialize connection');
-            return null;
-        }
+        return pc;
     };
 
     const getLocalMedia = async () => {
@@ -143,7 +117,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     const createOffer = async (toUsername: string) => {
         console.log('Creating offer for:', toUsername);
         const pc = initPeerConnection(toUsername);
-        if (!pc || !localStreamRef.current) return;
+        if (!localStreamRef.current) return;
 
         localStreamRef.current.getTracks().forEach(track => {
             pc.addTrack(track, localStreamRef.current!);
@@ -159,6 +133,18 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
                 offer,
                 to: toUsername
             });
+
+            setRemoteUsers(prev => {
+                const existingUser = prev.find(u => u.username === toUsername);
+                if (existingUser) {
+                    existingUser.peerConnection = pc;
+                    return [...prev];
+                }
+                return [...prev, {
+                    username: toUsername,
+                    peerConnection: pc
+                }];
+            });
         } catch (err) {
             console.error('Error creating offer:', err);
             setError('Failed to create offer');
@@ -173,45 +159,54 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             setIsCaller(isInitiator);
             await getLocalMedia();
 
-            // const isProduction = process.env.NODE_ENV === 'production';
-            // const wsUrl = isProduction
-            //     ? 'wss://anybet.site/ws'
-            //     : 'ws://localhost:8080';
-            // signalingClient.current = new SignalingClient(wsUrl);
-
             signalingClient.current = new SignalingClient('wss://anybet.site/ws');
 
             signalingClient.current.onRoomCreated((data) => {
                 setRoomId(data.roomId);
+                setConnectionStatus('connecting');
                 if (isInitiator && !existingRoomId) {
                     data.clients.forEach((clientUsername: string) => {
-                        createOffer(clientUsername);
+                        if (clientUsername !== username) {
+                            createOffer(clientUsername);
+                        }
                     });
                 }
             });
 
-            signalingClient.current.onUserJoined((username) => {
+            signalingClient.current.onUserJoined((joinedUsername) => {
+                if (joinedUsername === username) return;
+
+                setConnectionStatus('connecting');
                 if (isCaller) {
-                    createOffer(username);
+                    createOffer(joinedUsername);
                 }
-                setRemoteUsers(prev => [...prev, { username }]);
+                setRemoteUsers(prev => {
+                    if (!prev.some(u => u.username === joinedUsername)) {
+                        return [...prev, { username: joinedUsername }];
+                    }
+                    return prev;
+                });
             });
 
-            signalingClient.current.onUserLeft((username) => {
-                setRemoteUsers(prev => prev.filter(u => u.username !== username));
-                if (peerConnections.current[username]) {
-                    peerConnections.current[username].close();
-                    delete peerConnections.current[username];
-                }
+            signalingClient.current.onUserLeft((leftUsername) => {
+                setRemoteUsers(prev => {
+                    const user = prev.find(u => u.username === leftUsername);
+                    if (user?.peerConnection) {
+                        user.peerConnection.close();
+                    }
+                    return prev.filter(u => u.username !== leftUsername);
+                });
             });
 
             signalingClient.current.onOffer(async ({ offer, from }) => {
-                const pc = initPeerConnection(from);
-                if (!pc) return;
+                if (from === username) return;
 
+                const pc = initPeerConnection(from);
                 await pc.setRemoteDescription(offer);
+
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
+
                 signalingClient.current?.sendAnswer({
                     answer,
                     to: from
@@ -222,24 +217,37 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
                         pc.addTrack(track, localStreamRef.current!);
                     });
                 }
+
+                setRemoteUsers(prev => {
+                    const existingUser = prev.find(u => u.username === from);
+                    if (existingUser) {
+                        existingUser.peerConnection = pc;
+                        return [...prev];
+                    }
+                    return [...prev, {
+                        username: from,
+                        peerConnection: pc
+                    }];
+                });
             });
 
             signalingClient.current.onAnswer(async ({ answer, from }) => {
-                const pc = peerConnections.current[from];
-                if (pc) {
-                    await pc.setRemoteDescription(answer);
+                const user = remoteUsers.find(u => u.username === from);
+                if (user?.peerConnection) {
+                    await user.peerConnection.setRemoteDescription(answer);
                 }
             });
 
             signalingClient.current.onCandidate(async ({ candidate, from }) => {
-                const pc = peerConnections.current[from];
-                if (pc && candidate) {
-                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                const user = remoteUsers.find(u => u.username === from);
+                if (user?.peerConnection && candidate) {
+                    await user.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             });
 
             signalingClient.current.onError((error) => {
                 setError(error);
+                setConnectionStatus('failed');
             });
 
             if (existingRoomId) {
@@ -250,9 +258,9 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
         } catch (err) {
             console.error('Error starting call:', err);
-            setError('Failed to start call');
+            setError(`Failed to start call: ${err instanceof Error ? err.message : String(err)}`);
+            setConnectionStatus('failed');
             cleanup();
-            throw err;
         }
     };
 
@@ -267,8 +275,14 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     };
 
     const cleanup = () => {
-        Object.values(peerConnections.current).forEach(pc => pc.close());
-        peerConnections.current = {};
+        setRemoteUsers(prev => {
+            prev.forEach(user => {
+                if (user.peerConnection) {
+                    user.peerConnection.close();
+                }
+            });
+            return [];
+        });
 
         if (signalingClient.current) {
             signalingClient.current.close();
@@ -280,8 +294,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             localStreamRef.current = null;
             setLocalStream(null);
         }
-
-        setRemoteUsers([]);
     };
 
     useEffect(() => {
