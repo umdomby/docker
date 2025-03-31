@@ -1,3 +1,4 @@
+// app/webrtc/hooks/useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 import { SignalingClient } from '../lib/signaling';
 
@@ -35,6 +36,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             return false;
         }
     };
+
     const initPeerConnection = (userId: string): RTCPeerConnection | null => {
         try {
             const pc = new RTCPeerConnection({
@@ -50,7 +52,66 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
                 rtcpMuxPolicy: 'require'
             });
 
-            // Настройка обработчиков событий для pc...
+            pc.onicecandidate = (event) => {
+                if (event.candidate && signalingClient.current) {
+                    console.log('Sending ICE candidate:', event.candidate);
+                    signalingClient.current.sendCandidate({
+                        candidate: event.candidate,
+                        to: userId
+                    });
+                } else if (!event.candidate) {
+                    console.log('All ICE candidates have been sent');
+                }
+            };
+
+            pc.oniceconnectionstatechange = () => {
+                console.log(`ICE connection state changed to: ${pc.iceConnectionState}`);
+                setConnectionStatus(pc.iceConnectionState);
+                if (pc.iceConnectionState === 'failed') {
+                    console.log('Restarting ICE...');
+                    pc.restartIce();
+                }
+            };
+
+            pc.ontrack = (event) => {
+                console.log('Received remote track:', event.track.kind);
+                setRemoteUsers(prev => {
+                    const existingUser = prev.find(u => u.username === userId);
+                    if (existingUser) {
+                        if (!existingUser.stream) {
+                            existingUser.stream = new MediaStream();
+                        }
+                        event.streams[0].getTracks().forEach(track => {
+                            if (!existingUser.stream!.getTracks().some(t => t.id === track.id)) {
+                                existingUser.stream!.addTrack(track);
+                            }
+                        });
+                        return [...prev];
+                    }
+                    return [...prev, {
+                        username: userId,
+                        stream: event.streams[0]
+                    }];
+                });
+            };
+
+            pc.onnegotiationneeded = async () => {
+                console.log('Negotiation needed for:', userId);
+                try {
+                    const offer = await pc.createOffer({
+                        offerToReceiveAudio: true,
+                        offerToReceiveVideo: true
+                    });
+                    await pc.setLocalDescription(offer);
+                    signalingClient.current?.sendOffer({
+                        offer,
+                        to: userId
+                    });
+                } catch (err) {
+                    console.error('Negotiation error:', err);
+                    setError('Failed to negotiate connection');
+                }
+            };
 
             peerConnections.current[userId] = pc;
             return pc;
@@ -58,6 +119,24 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             console.error('Error initializing peer connection:', err);
             setError('Failed to initialize connection');
             return null;
+        }
+    };
+
+    const getLocalMedia = async () => {
+        try {
+            const constraints = {
+                video: deviceIds.video ? { deviceId: { exact: deviceIds.video } } : true,
+                audio: deviceIds.audio ? { deviceId: { exact: deviceIds.audio } } : true
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            localStreamRef.current = stream;
+            setLocalStream(stream);
+            return stream;
+        } catch (err) {
+            console.error('Error getting media devices:', err);
+            setError('Could not access camera/microphone');
+            throw err;
         }
     };
 
@@ -83,24 +162,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
         } catch (err) {
             console.error('Error creating offer:', err);
             setError('Failed to create offer');
-        }
-    };
-
-    const getLocalMedia = async () => {
-        try {
-            const constraints = {
-                video: deviceIds.video ? { deviceId: { exact: deviceIds.video } } : true,
-                audio: deviceIds.audio ? { deviceId: { exact: deviceIds.audio } } : true
-            };
-
-            const stream = await navigator.mediaDevices.getUserMedia(constraints);
-            localStreamRef.current = stream;
-            setLocalStream(stream);
-            return stream;
-        } catch (err) {
-            console.error('Error getting media devices:', err);
-            setError('Could not access camera/microphone');
-            throw err;
         }
     };
 
