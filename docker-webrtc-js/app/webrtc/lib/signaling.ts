@@ -1,26 +1,24 @@
-//signaling.ts
 export class SignalingClient {
     private ws: WebSocket;
     private onOfferCallback: (offer: RTCSessionDescriptionInit) => void = () => {};
     private onAnswerCallback: (answer: RTCSessionDescriptionInit) => void = () => {};
     private onCandidateCallback: (candidate: RTCIceCandidateInit) => void = () => {};
     private onRoomCreatedCallback: (roomId: string) => void = () => {};
-    private reconnectAttempts = 0;
-    private maxReconnectAttempts = 5;
-    private reconnectInterval = 1000;
+    private messageQueue: Array<{event: string, data: any}> = [];
+    private isConnected = false;
 
     constructor(url: string) {
-        if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
-            throw new Error('Invalid WebSocket URL protocol');
-        }
         this.ws = new WebSocket(url);
         this.setupEventListeners();
     }
 
     private setupEventListeners() {
         this.ws.onopen = () => {
+            this.isConnected = true;
             console.log('Signaling connection established');
-            this.reconnectAttempts = 0; // Сброс счетчика переподключений
+            // Отправляем все сообщения из очереди
+            this.messageQueue.forEach(msg => this.sendMessage(msg));
+            this.messageQueue = [];
         };
 
         this.ws.onmessage = (event) => {
@@ -52,39 +50,18 @@ export class SignalingClient {
             }
         };
 
-        this.ws.onclose = (event) => {
-            console.log(`Signaling connection closed: ${event.code} ${event.reason}`);
-            this.handleReconnect();
+        this.ws.onclose = () => {
+            this.isConnected = false;
+            console.log('Signaling connection closed');
         };
 
         this.ws.onerror = (error) => {
             console.error('Signaling error:', error);
-            console.error('WebSocket state:', this.ws.readyState);
         };
-
-        // Периодическая проверка соединения
-        setInterval(() => {
-            if (this.ws.readyState === WebSocket.OPEN) {
-                this.sendMessage({ event: 'ping', data: null });
-            }
-        }, 30000);
     }
 
     private sendPong() {
         this.sendMessage({ event: 'pong', data: null });
-    }
-
-    private handleReconnect() {
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            setTimeout(() => {
-                this.reconnectAttempts++;
-                console.log(`Reconnecting attempt ${this.reconnectAttempts}...`);
-                this.ws = new WebSocket(this.ws.url);
-                this.setupEventListeners();
-            }, this.reconnectInterval * this.reconnectAttempts);
-        } else {
-            console.error('Max reconnection attempts reached');
-        }
     }
 
     createRoom(): void {
@@ -124,23 +101,21 @@ export class SignalingClient {
     }
 
     private sendMessage(message: { event: string; data: any }): void {
-        if (this.ws.readyState === WebSocket.OPEN) {
+        if (this.isConnected) {
             try {
                 this.ws.send(JSON.stringify(message));
             } catch (error) {
                 console.error('Error sending message:', error);
+                // Добавляем сообщение в очередь для повторной отправки
+                this.messageQueue.push(message);
             }
         } else {
-            console.error('WebSocket is not open. ReadyState:', this.ws.readyState);
-            // Можно добавить в очередь сообщений для отправки после подключения
+            console.log('WebSocket not connected, adding message to queue');
+            this.messageQueue.push(message);
         }
     }
 
     close(): void {
         this.ws.close();
-    }
-
-    get readyState(): number {
-        return this.ws.readyState;
     }
 }

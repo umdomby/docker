@@ -1,20 +1,20 @@
-//VideoCallApp.tsx
-import { useWebRTC } from './hooks/useWebRTC'
-import styles from './styles.module.css'
-import { VideoPlayer } from './components/VideoPlayer'
-import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState } from 'react'
+import { useWebRTC } from './hooks/useWebRTC';
+import styles from './styles.module.css';
+import { VideoPlayer } from './components/VideoPlayer';
+import { DeviceSelector } from './components/DeviceSelector';
+import { useEffect, useState } from 'react';
 
 interface VideoCallAppProps {
-    devices?: MediaDeviceInfo[]
+    initialDevices?: MediaDeviceInfo[];
 }
 
-export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
-    const [roomIdInput, setRoomIdInput] = useState('')
+export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>(initialDevices || []);
     const [selectedDevices, setSelectedDevices] = useState({
         video: '',
         audio: ''
-    })
+    });
+    const [roomIdInput, setRoomIdInput] = useState(''); // Добавлено отсутствующее состояние
 
     const {
         localStream,
@@ -22,51 +22,77 @@ export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
         roomId,
         startCall,
         joinRoom,
+        stopCall,
         isConnected,
-        connectionStatus
-    } = useWebRTC(selectedDevices)
+        connectionStatus,
+        error
+    } = useWebRTC(selectedDevices);
 
     useEffect(() => {
-        if (devices?.length) {
-            const defaultVideo = devices.find(d => d.kind === 'videoinput')?.deviceId || ''
-            const defaultAudio = devices.find(d => d.kind === 'audioinput')?.deviceId || ''
-            setSelectedDevices({
-                video: defaultVideo,
-                audio: defaultAudio
-            })
+        if (initialDevices?.length) {
+            updateDeviceState(initialDevices);
+        } else {
+            refreshDevices();
         }
-    }, [devices])
+    }, []);
 
-    const handleStartCall = () => {
-        startCall(true)
-    }
+    const updateDeviceState = (deviceList: MediaDeviceInfo[]) => {
+        setDevices(deviceList);
 
-    const handleJoinCall = () => {
-        if (roomIdInput.trim()) {
-            joinRoom(roomIdInput.trim())
-            startCall(false)
+        // Автовыбор устройств если не выбраны
+        if (!selectedDevices.video) {
+            const video = deviceList.find(d => d.kind === 'videoinput')?.deviceId || '';
+            setSelectedDevices(prev => ({ ...prev, video }));
         }
-    }
+        if (!selectedDevices.audio) {
+            const audio = deviceList.find(d => d.kind === 'audioinput')?.deviceId || '';
+            setSelectedDevices(prev => ({ ...prev, audio }));
+        }
+    };
+
+    const refreshDevices = async () => {
+        try {
+            const newDevices = await navigator.mediaDevices.enumerateDevices();
+            updateDeviceState(newDevices);
+            return newDevices;
+        } catch (error) {
+            console.error('Error refreshing devices:', error);
+            return [];
+        }
+    };
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
             ...prev,
             [type]: deviceId
-        }))
-    }
+        }));
+    };
+
+    const handleStartCall = () => { // Добавлена отсутствующая функция
+        startCall(true);
+    };
+
+    const handleJoinCall = () => { // Добавлена отсутствующая функция
+        if (roomIdInput.trim()) {
+            joinRoom(roomIdInput);
+        }
+    };
 
     return (
         <div className={styles.container}>
             <h1>WebRTC Video Call</h1>
 
+            {error && <div className={styles.error}>{error}</div>}
+
             {!isConnected ? (
                 <div className={styles.setupPanel}>
                     <div className={styles.deviceSelection}>
-                        <h2>Настройки устройств</h2>
+                        <h2>Device Settings</h2>
                         <DeviceSelector
                             devices={devices}
                             selectedDevices={selectedDevices}
                             onChange={handleDeviceChange}
+                            onRefresh={refreshDevices}
                         />
                     </div>
 
@@ -75,7 +101,7 @@ export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
                             onClick={handleStartCall}
                             className={styles.primaryButton}
                         >
-                            Начать новый звонок
+                            Start New Call
                         </button>
 
                         <div className={styles.joinContainer}>
@@ -83,14 +109,14 @@ export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
                                 type="text"
                                 value={roomIdInput}
                                 onChange={(e) => setRoomIdInput(e.target.value)}
-                                placeholder="Введите ID комнаты"
+                                placeholder="Enter Room ID"
                             />
                             <button
                                 onClick={handleJoinCall}
                                 className={styles.secondaryButton}
                                 disabled={!roomIdInput.trim()}
                             >
-                                Присоединиться
+                                Join Call
                             </button>
                         </div>
                     </div>
@@ -98,22 +124,25 @@ export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
             ) : (
                 <div className={styles.callPanel}>
                     <div className={styles.roomInfo}>
-                        <p>ID комнаты: <strong>{roomId}</strong></p>
-                        <p>Статус: <span className={styles[connectionStatus]}>{connectionStatus}</span></p>
+                        <p>Room ID: <strong>{roomId}</strong></p>
+                        <p>Status: <span className={styles[connectionStatus]}>{connectionStatus}</span></p>
+                        <button onClick={stopCall} className={styles.stopButton}>
+                            End Call
+                        </button>
                     </div>
 
                     <div className={styles.videoContainer}>
                         <div className={styles.videoWrapper}>
                             <VideoPlayer stream={localStream} muted />
-                            <div className={styles.videoLabel}>Вы</div>
+                            <div className={styles.videoLabel}>You</div>
                         </div>
                         <div className={styles.videoWrapper}>
                             <VideoPlayer stream={remoteStream} />
-                            <div className={styles.videoLabel}>Участник</div>
+                            <div className={styles.videoLabel}>Remote</div>
                         </div>
                     </div>
                 </div>
             )}
         </div>
-    )
-}
+    );
+};

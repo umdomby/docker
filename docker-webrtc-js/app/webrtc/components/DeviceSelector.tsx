@@ -1,4 +1,3 @@
-// DeviceSelector.tsx
 import { useState, useEffect } from 'react';
 import styles from '../styles.module.css';
 
@@ -9,30 +8,41 @@ interface DeviceSelectorProps {
         audio: string;
     };
     onChange: (type: 'video' | 'audio', deviceId: string) => void;
+    onRefresh?: () => Promise<MediaDeviceInfo[]>;
 }
 
 export const DeviceSelector = ({
                                    devices,
                                    selectedDevices,
-                                   onChange
+                                   onChange,
+                                   onRefresh
                                }: DeviceSelectorProps) => {
     const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
     const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     useEffect(() => {
         if (devices) {
-            setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
-            setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
+            updateDeviceLists(devices);
         }
     }, [devices]);
 
+    const updateDeviceLists = (deviceList: MediaDeviceInfo[]) => {
+        setVideoDevices(deviceList.filter(d => d.kind === 'videoinput'));
+        setAudioDevices(deviceList.filter(d => d.kind === 'audioinput'));
+    };
+
     const handleRefresh = async () => {
+        if (!onRefresh) return;
+
+        setIsRefreshing(true);
         try {
-            const newDevices = await navigator.mediaDevices.enumerateDevices();
-            setVideoDevices(newDevices.filter(d => d.kind === 'videoinput'));
-            setAudioDevices(newDevices.filter(d => d.kind === 'audioinput'));
+            const newDevices = await onRefresh();
+            updateDeviceLists(newDevices);
         } catch (error) {
             console.error('Error refreshing devices:', error);
+        } finally {
+            setIsRefreshing(false);
         }
     };
 
@@ -48,11 +58,14 @@ export const DeviceSelector = ({
                     {videoDevices.length === 0 ? (
                         <option value="">Камеры не найдены</option>
                     ) : (
-                        videoDevices.map(device => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `Камера ${videoDevices.indexOf(device) + 1}`}
-                            </option>
-                        ))
+                        <>
+                            <option value="">-- Выберите камеру --</option>
+                            {videoDevices.map(device => (
+                                <option key={device.deviceId} value={device.deviceId}>
+                                    {device.label || `Камера ${videoDevices.indexOf(device) + 1}`}
+                                </option>
+                            ))}
+                        </>
                     )}
                 </select>
             </div>
@@ -67,11 +80,14 @@ export const DeviceSelector = ({
                     {audioDevices.length === 0 ? (
                         <option value="">Микрофоны не найдены</option>
                     ) : (
-                        audioDevices.map(device => (
-                            <option key={device.deviceId} value={device.deviceId}>
-                                {device.label || `Микрофон ${audioDevices.indexOf(device) + 1}`}
-                            </option>
-                        ))
+                        <>
+                            <option value="">-- Выберите микрофон --</option>
+                            {audioDevices.map(device => (
+                                <option key={device.deviceId} value={device.deviceId}>
+                                    {device.label || `Микрофон ${audioDevices.indexOf(device) + 1}`}
+                                </option>
+                            ))}
+                        </>
                     )}
                 </select>
             </div>
@@ -79,8 +95,9 @@ export const DeviceSelector = ({
             <button
                 onClick={handleRefresh}
                 className={styles.refreshButton}
+                disabled={isRefreshing}
             >
-                Обновить устройства
+                {isRefreshing ? 'Обновление...' : 'Обновить устройства'}
             </button>
         </div>
     );

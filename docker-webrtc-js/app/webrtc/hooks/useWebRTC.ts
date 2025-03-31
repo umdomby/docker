@@ -1,4 +1,3 @@
-//useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 import { SignalingClient } from '../lib/signaling';
 
@@ -7,7 +6,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
     const [roomId, setRoomId] = useState<string | null>(null);
     const [isCaller, setIsCaller] = useState(false);
-    const [iceStatus, setIceStatus] = useState('');
     const [connectionStatus, setConnectionStatus] = useState('disconnected');
     const [error, setError] = useState<string | null>(null);
 
@@ -16,25 +14,13 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
     const remoteStreamRef = useRef<MediaStream>(new MediaStream());
     const localStreamRef = useRef<MediaStream | null>(null);
 
-    // Инициализация PeerConnection
     const initPeerConnection = () => {
         try {
             const pc = new RTCPeerConnection({
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    // { urls: 'stun.voipbuster.com' },
-                    // { urls: 'stun.stunprotocol.org' },
-                    // {
-                    //     urls: "turn:192.168.0.151:3478",
-                    //     username: "username1",
-                    //     credential: "password1"
-                    // }
-                ],
-                iceTransportPolicy: 'all',
-                iceCandidatePoolSize: 10,
-                bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require'
+                    { urls: 'stun:stun1.l.google.com:19302' }
+                ]
             });
 
             pc.onicecandidate = (event) => {
@@ -44,29 +30,17 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             };
 
             pc.oniceconnectionstatechange = () => {
-                const state = pc.iceConnectionState;
-                setIceStatus(state);
-                console.log('ICE Connection State:', state);
-
-                if (state === 'failed') {
-                    restartIce();
+                setConnectionStatus(pc.iceConnectionState);
+                if (pc.iceConnectionState === 'failed') {
+                    pc.restartIce();
                 }
-            };
-
-            pc.onconnectionstatechange = () => {
-                const state = pc.connectionState;
-                setConnectionStatus(state);
-                console.log('Connection State:', state);
             };
 
             pc.ontrack = (event) => {
                 if (!event.streams || !event.streams[0]) return;
-
-                for (const track of event.streams[0].getTracks()) {
-                    if (!remoteStreamRef.current.getTracks().some(t => t.id === track.id)) {
-                        remoteStreamRef.current.addTrack(track);
-                    }
-                }
+                event.streams[0].getTracks().forEach(track => {
+                    remoteStreamRef.current.addTrack(track);
+                });
                 setRemoteStream(new MediaStream(remoteStreamRef.current.getTracks()));
             };
 
@@ -79,32 +53,11 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
         }
     };
 
-    // Перезапуск ICE
-    const restartIce = () => {
-        if (!peerConnection.current) return;
-
-        try {
-            peerConnection.current.restartIce();
-            console.log('ICE restart triggered');
-        } catch (err) {
-            console.error('Error restarting ICE:', err);
-        }
-    };
-
-    // Получение медиапотока
     const getLocalMedia = async () => {
         try {
             const constraints = {
-                video: deviceIds.video ? {
-                    deviceId: { exact: deviceIds.video },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 }
-                } : true,
-                audio: deviceIds.audio ? {
-                    deviceId: { exact: deviceIds.audio },
-                    echoCancellation: true,
-                    noiseSuppression: true
-                } : true
+                video: deviceIds.video ? { deviceId: { exact: deviceIds.video } } : true,
+                audio: deviceIds.audio ? { deviceId: { exact: deviceIds.audio } } : true
             };
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
@@ -118,54 +71,49 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
         }
     };
 
-    // Начало звонка
     const startCall = async (isInitiator: boolean, existingRoomId?: string) => {
         try {
             setIsCaller(isInitiator);
-            initPeerConnection();
+            const pc = initPeerConnection();
             const stream = await getLocalMedia();
 
-            // Добавляем треки в соединение
             stream.getTracks().forEach(track => {
-                peerConnection.current?.addTrack(track, stream);
+                pc.addTrack(track, stream);
             });
 
-            // Инициализация клиента сигнализации
             signalingClient.current = new SignalingClient('wss://anybet.site/ws');
 
-            // Настройка обработчиков событий
             signalingClient.current.onRoomCreated((id) => {
                 setRoomId(id);
+                if (isInitiator) {
+                    pc.createOffer()
+                        .then(offer => pc.setLocalDescription(offer))
+                        .then(() => {
+                            signalingClient.current?.sendOffer(pc.localDescription!);
+                        });
+                }
             });
 
             signalingClient.current.onOffer(async (offer) => {
                 if (!peerConnection.current) return;
-
-                await peerConnection.current.setRemoteDescription(offer);
-                const answer = await peerConnection.current.createAnswer();
-                await peerConnection.current.setLocalDescription(answer);
+                await pc.setRemoteDescription(offer);
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
                 signalingClient.current?.sendAnswer(answer);
             });
 
             signalingClient.current.onAnswer(async (answer) => {
                 if (peerConnection.current) {
-                    await peerConnection.current.setRemoteDescription(answer);
+                    await pc.setRemoteDescription(answer);
                 }
             });
 
             signalingClient.current.onCandidate(async (candidate) => {
                 if (peerConnection.current && candidate) {
-                    try {
-                        await peerConnection.current.addIceCandidate(
-                            new RTCIceCandidate(candidate)
-                        );
-                    } catch (err) {
-                        console.error('Error adding ICE candidate:', err);
-                    }
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
                 }
             });
 
-            // Создание или присоединение к комнате
             if (isInitiator) {
                 signalingClient.current.createRoom();
             } else if (existingRoomId) {
@@ -180,20 +128,17 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
         }
     };
 
-    // Присоединение к существующей комнате
     const joinRoom = (roomId: string) => {
         setRoomId(roomId);
         startCall(false, roomId);
     };
 
-    // Остановка звонка
     const stopCall = () => {
         cleanup();
         setRoomId(null);
         setConnectionStatus('disconnected');
     };
 
-    // Очистка ресурсов
     const cleanup = () => {
         if (peerConnection.current) {
             peerConnection.current.close();
@@ -211,14 +156,11 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             setLocalStream(null);
         }
 
-        if (remoteStreamRef.current) {
-            remoteStreamRef.current.getTracks().forEach(track => track.stop());
-            remoteStreamRef.current = new MediaStream();
-            setRemoteStream(null);
-        }
+        remoteStreamRef.current.getTracks().forEach(track => track.stop());
+        remoteStreamRef.current = new MediaStream();
+        setRemoteStream(null);
     };
 
-    // Автоматическая очистка при размонтировании
     useEffect(() => {
         return cleanup;
     }, []);
@@ -227,13 +169,11 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
         localStream,
         remoteStream,
         roomId,
-        iceStatus,
         connectionStatus,
         error,
         isConnected: connectionStatus === 'connected',
         startCall,
         joinRoom,
-        stopCall,
-        restartIce
+        stopCall
     };
 };
