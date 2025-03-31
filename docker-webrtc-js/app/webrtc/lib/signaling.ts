@@ -1,4 +1,4 @@
-//app\webrtc\lib\signaling.ts
+// file: docker-webrtc-js/app/webrtc/lib/signaling.ts
 export class SignalingClient {
     private ws: WebSocket;
     private onOfferCallback: (data: { offer: RTCSessionDescriptionInit; from: string }) => void = () => {};
@@ -24,6 +24,7 @@ export class SignalingClient {
             this.isConnected = true;
             this.reconnectAttempts = 0;
             console.log('Signaling connection established');
+            this.sendPing();
             this.messageQueue.forEach(msg => this.sendMessage(msg));
             this.messageQueue = [];
         };
@@ -64,8 +65,8 @@ export class SignalingClient {
                     case 'error':
                         this.onErrorCallback(message.data);
                         break;
-                    case 'ping':
-                        this.sendPong();
+                    case 'pong':
+                        console.log('Received pong from server');
                         break;
                     default:
                         console.warn('Unknown message type:', message.event);
@@ -164,6 +165,10 @@ export class SignalingClient {
 
     onError(callback: (error: string) => void): void {
         this.onErrorCallback = callback;
+    }
+
+    private sendPing(): void {
+        this.sendMessage({ event: 'ping', data: null });
     }
 
     private sendPong(): void {
