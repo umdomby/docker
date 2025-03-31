@@ -10,8 +10,8 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     });
-    const [roomIdInput, setRoomIdInput] = useState('');
-    const [username, setUsername] = useState('');
+    const [roomIdInput, setRoomIdInput] = useState('123'); // Установим дефолтное значение для теста
+    const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
 
     const {
         localStream,
@@ -25,60 +25,27 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username);
 
+    // Загружаем устройства при монтировании
     useEffect(() => {
-        // Load username from localStorage or generate random one
-        const savedUsername = localStorage.getItem('webrtc-username') ||
-            `User${Math.floor(Math.random() * 1000)}`;
-        setUsername(savedUsername);
+        const loadDevices = async () => {
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                setDevices(devices);
 
-        // Load roomId from localStorage if exists
-        const savedRoomId = localStorage.getItem('webrtc-roomId');
-        if (savedRoomId) {
-            setRoomIdInput(savedRoomId);
-        }
+                const videoDevice = devices.find(d => d.kind === 'videoinput');
+                const audioDevice = devices.find(d => d.kind === 'audioinput');
 
-        refreshDevices();
+                if (videoDevice) setSelectedDevices(prev => ({...prev, video: videoDevice.deviceId}));
+                if (audioDevice) setSelectedDevices(prev => ({...prev, audio: audioDevice.deviceId}));
+            } catch (err) {
+                console.error('Error loading devices:', err);
+            }
+        };
+
+        loadDevices();
     }, []);
 
-    const refreshDevices = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-            const newDevices = await navigator.mediaDevices.enumerateDevices();
-            setDevices(newDevices);
-
-            const videoDevice = newDevices.find(d => d.kind === 'videoinput');
-            const audioDevice = newDevices.find(d => d.kind === 'audioinput');
-
-            setSelectedDevices({
-                video: videoDevice?.deviceId || '',
-                audio: audioDevice?.deviceId || ''
-            });
-
-            stream.getTracks().forEach(track => track.stop());
-        } catch (err) {
-            console.error('Error refreshing devices:', err);
-        }
-    };
-
-    const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
-        setSelectedDevices(prev => ({ ...prev, [type]: deviceId }));
-    };
-
     const handleStartCall = () => {
-        if (!selectedDevices.video && !selectedDevices.audio) {
-            alert('Пожалуйста, выберите хотя бы одно устройство');
-            return;
-        }
-
-        if (!username.trim()) {
-            alert('Пожалуйста, введите имя пользователя');
-            return;
-        }
-
-        // Save to localStorage
-        localStorage.setItem('webrtc-username', username);
-        localStorage.setItem('webrtc-roomId', roomIdInput.trim());
-
         if (roomIdInput.trim()) {
             joinRoom(roomIdInput.trim());
         } else {
@@ -92,66 +59,72 @@ export const VideoCallApp = () => {
 
             {error && <div className={styles.error}>{error}</div>}
 
-            {!isConnected ? (
-                <div className={styles.setupPanel}>
-                    <div className={styles.deviceSelection}>
-                        <h2>Настройки устройств</h2>
-                        <div className={styles.formGroup}>
-                            <label>Ваше имя:</label>
-                            <input
-                                type="text"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                className={styles.input}
-                            />
-                        </div>
-                        <DeviceSelector
-                            devices={devices}
-                            selectedDevices={selectedDevices}
-                            onChange={handleDeviceChange}
-                            onRefresh={refreshDevices}
-                        />
-                    </div>
+            <div className={styles.controls}>
+                <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="Ваше имя"
+                    className={styles.input}
+                />
+                <input
+                    type="text"
+                    value={roomIdInput}
+                    onChange={(e) => setRoomIdInput(e.target.value)}
+                    placeholder="ID комнаты"
+                    className={styles.input}
+                />
+                <button
+                    onClick={handleStartCall}
+                    className={styles.button}
+                    disabled={isConnected}
+                >
+                    {isConnected ? 'Подключено' : 'Подключиться'}
+                </button>
+                {isConnected && (
+                    <button onClick={stopCall} className={styles.stopButton}>
+                        Завершить
+                    </button>
+                )}
+            </div>
 
-                    <div className={styles.connectionOptions}>
-                        <div className={styles.joinContainer}>
-                            <input
-                                type="text"
-                                value={roomIdInput}
-                                onChange={(e) => setRoomIdInput(e.target.value)}
-                                placeholder="Введите ID комнаты"
-                                className={styles.roomInput}
-                            />
-                            <button onClick={handleStartCall} className={styles.primaryButton}>
-                                Начать/Присоединиться
-                            </button>
-                        </div>
+            <div className={styles.videoContainer}>
+                {/* Локальное видео */}
+                {localStream && (
+                    <div className={styles.videoWrapper}>
+                        <VideoPlayer stream={localStream} muted className={styles.video} />
+                        <div className={styles.videoLabel}>Вы: {username}</div>
                     </div>
-                </div>
-            ) : (
-                <div className={styles.callPanel}>
-                    <div className={styles.roomInfo}>
-                        <p>ID комнаты: <strong>{roomId}</strong></p>
-                        <p>Ваше имя: <strong>{username}</strong></p>
-                        <p>Статус: <span className={styles[connectionStatus]}>{connectionStatus}</span></p>
-                        <button onClick={stopCall} className={styles.stopButton}>
-                            Завершить звонок
-                        </button>
-                    </div>
+                )}
 
-                    <div className={styles.videoContainer}>
-                        <div className={styles.videoWrapper}>
-                            <VideoPlayer stream={localStream} muted className={styles.video} />
-                            <div className={styles.videoLabel}>Вы: {username}</div>
-                        </div>
-
-                        {remoteUsers.map(user => (
-                            <div key={user.username} className={styles.videoWrapper}>
+                {/* Удаленные видео */}
+                {remoteUsers.map(user => (
+                    <div key={user.username} className={styles.videoWrapper}>
+                        {user.stream ? (
+                            <>
                                 <VideoPlayer stream={user.stream} className={styles.video} />
                                 <div className={styles.videoLabel}>{user.username}</div>
+                            </>
+                        ) : (
+                            <div className={styles.videoPlaceholder}>
+                                <div>{user.username}</div>
+                                <div>Подключается...</div>
                             </div>
-                        ))}
+                        )}
                     </div>
+                ))}
+            </div>
+
+            {!isConnected && (
+                <div className={styles.deviceSelection}>
+                    <h3>Выберите устройства:</h3>
+                    <DeviceSelector
+                        devices={devices}
+                        selectedDevices={selectedDevices}
+                        onChange={(type, deviceId) =>
+                            setSelectedDevices(prev => ({...prev, [type]: deviceId}))
+                        }
+                    />
                 </div>
             )}
         </div>

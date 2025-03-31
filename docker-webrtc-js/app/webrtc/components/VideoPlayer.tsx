@@ -1,3 +1,4 @@
+// components/VideoPlayer.tsx
 import { useEffect, useRef } from 'react';
 
 interface VideoPlayerProps {
@@ -13,12 +14,6 @@ export const VideoPlayer = ({ stream, muted = false, className }: VideoPlayerPro
         if (videoRef.current && stream) {
             videoRef.current.srcObject = stream;
         }
-
-        return () => {
-            if (videoRef.current) {
-                videoRef.current.srcObject = null;
-            }
-        };
     }, [stream]);
 
     return (
