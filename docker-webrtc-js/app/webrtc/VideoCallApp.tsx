@@ -14,7 +14,7 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
         video: '',
         audio: ''
     });
-    const [roomIdInput, setRoomIdInput] = useState(''); // Добавлено отсутствующее состояние
+    const [roomIdInput, setRoomIdInput] = useState('');
 
     const {
         localStream,
@@ -52,6 +52,8 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
 
     const refreshDevices = async () => {
         try {
+            // Запрашиваем разрешение на доступ к устройствам
+            await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
             const newDevices = await navigator.mediaDevices.enumerateDevices();
             updateDeviceState(newDevices);
             return newDevices;
@@ -68,26 +70,26 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
         }));
     };
 
-    const handleStartCall = () => { // Добавлена отсутствующая функция
+    const handleStartCall = () => {
         startCall(true);
     };
 
-    const handleJoinCall = () => { // Добавлена отсутствующая функция
+    const handleJoinCall = () => {
         if (roomIdInput.trim()) {
-            joinRoom(roomIdInput);
+            joinRoom(roomIdInput.trim());
         }
     };
 
     return (
         <div className={styles.container}>
-            <h1>WebRTC Video Call</h1>
+            <h1 className={styles.title}>WebRTC Video Call</h1>
 
             {error && <div className={styles.error}>{error}</div>}
 
             {!isConnected ? (
                 <div className={styles.setupPanel}>
                     <div className={styles.deviceSelection}>
-                        <h2>Device Settings</h2>
+                        <h2 className={styles.sectionTitle}>Device Settings</h2>
                         <DeviceSelector
                             devices={devices}
                             selectedDevices={selectedDevices}
@@ -100,6 +102,7 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
                         <button
                             onClick={handleStartCall}
                             className={styles.primaryButton}
+                            disabled={!selectedDevices.video && !selectedDevices.audio}
                         >
                             Start New Call
                         </button>
@@ -110,6 +113,7 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
                                 value={roomIdInput}
                                 onChange={(e) => setRoomIdInput(e.target.value)}
                                 placeholder="Enter Room ID"
+                                className={styles.roomInput}
                             />
                             <button
                                 onClick={handleJoinCall}
@@ -133,11 +137,11 @@ export const VideoCallApp = ({ initialDevices }: VideoCallAppProps) => {
 
                     <div className={styles.videoContainer}>
                         <div className={styles.videoWrapper}>
-                            <VideoPlayer stream={localStream} muted />
+                            <VideoPlayer stream={localStream} muted className={styles.video} />
                             <div className={styles.videoLabel}>You</div>
                         </div>
                         <div className={styles.videoWrapper}>
-                            <VideoPlayer stream={remoteStream} />
+                            <VideoPlayer stream={remoteStream} className={styles.video} />
                             <div className={styles.videoLabel}>Remote</div>
                         </div>
                     </div>
