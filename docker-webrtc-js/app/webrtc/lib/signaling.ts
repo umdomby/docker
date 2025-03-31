@@ -4,8 +4,12 @@ export class SignalingClient {
     private onAnswerCallback: (answer: RTCSessionDescriptionInit) => void = () => {};
     private onCandidateCallback: (candidate: RTCIceCandidateInit) => void = () => {};
     private onRoomCreatedCallback: (roomId: string) => void = () => {};
+    private onErrorCallback: (error: string) => void = () => {};
     private messageQueue: Array<{event: string, data: any}> = [];
     private isConnected = false;
+    private reconnectAttempts = 0;
+    private maxReconnectAttempts = 5;
+    private reconnectDelay = 1000;
 
     constructor(url: string) {
         this.ws = new WebSocket(url);
@@ -15,8 +19,8 @@ export class SignalingClient {
     private setupEventListeners() {
         this.ws.onopen = () => {
             this.isConnected = true;
+            this.reconnectAttempts = 0;
             console.log('Signaling connection established');
-            // Отправляем все сообщения из очереди
             this.messageQueue.forEach(msg => this.sendMessage(msg));
             this.messageQueue = [];
         };
@@ -39,6 +43,9 @@ export class SignalingClient {
                     case 'candidate':
                         this.onCandidateCallback(message.data as RTCIceCandidateInit);
                         break;
+                    case 'error':
+                        this.onErrorCallback(message.data);
+                        break;
                     case 'ping':
                         this.sendPong();
                         break;
@@ -47,17 +54,33 @@ export class SignalingClient {
                 }
             } catch (error) {
                 console.error('Error parsing message:', error);
+                this.onErrorCallback('Invalid message format');
             }
         };
 
         this.ws.onclose = () => {
             this.isConnected = false;
             console.log('Signaling connection closed');
+            this.attemptReconnect();
         };
 
         this.ws.onerror = (error) => {
             console.error('Signaling error:', error);
+            this.onErrorCallback('Connection error');
         };
+    }
+
+    private attemptReconnect() {
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+            this.reconnectAttempts++;
+            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+            setTimeout(() => {
+                this.ws = new WebSocket(this.ws.url);
+                this.setupEventListeners();
+            }, this.reconnectDelay);
+        } else {
+            this.onErrorCallback('Failed to reconnect to signaling server');
+        }
     }
 
     private sendPong() {
@@ -100,13 +123,18 @@ export class SignalingClient {
         this.onRoomCreatedCallback = callback;
     }
 
+    onError(callback: (error: string) => void): void {
+        this.onErrorCallback = callback;
+    }
+
     private sendMessage(message: { event: string; data: any }): void {
+        const messageString = JSON.stringify(message);
+
         if (this.isConnected) {
             try {
-                this.ws.send(JSON.stringify(message));
+                this.ws.send(messageString);
             } catch (error) {
                 console.error('Error sending message:', error);
-                // Добавляем сообщение в очередь для повторной отправки
                 this.messageQueue.push(message);
             }
         } else {

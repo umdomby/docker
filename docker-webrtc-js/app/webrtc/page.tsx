@@ -38,7 +38,7 @@ export default function WebRTCPage() {
             {isSupported === null ? (
                 <div>Loading...</div>
             ) : (
-                <VideoCallApp devices={devices} />
+                <VideoCallApp />
             )}
         </main>
     );

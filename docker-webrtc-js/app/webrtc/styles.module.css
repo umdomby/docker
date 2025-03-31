@@ -21,6 +21,16 @@
     border-left: 4px solid #e74c3c;
 }
 
+.errorContainer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    text-align: center;
+    padding: 20px;
+}
+
 .setupPanel {
     background-color: #f9f9f9;
     border-radius: 8px;
@@ -67,29 +77,9 @@
     background: #2980b9;
 }
 
-.primaryButton:disabled {
-    background: #bdc3c7;
-    cursor: not-allowed;
-}
-
-.secondaryButton {
-    background: #2ecc71;
-    color: white;
-}
-
-.secondaryButton:hover {
-    background: #27ae60;
-}
-
-.secondaryButton:disabled {
-    background: #bdc3c7;
-    cursor: not-allowed;
-}
-
 .stopButton {
     background: #e74c3c;
     color: white;
-    margin-left: 10px;
 }
 
 .stopButton:hover {
@@ -181,7 +171,6 @@
     font-size: 14px;
 }
 
-/* Стили для DeviceSelector */
 .deviceSelector {
     background: white;
     padding: 20px;
@@ -240,7 +229,6 @@
     cursor: not-allowed;
 }
 
-/* Адаптация для мобильных устройств */
 @media (max-width: 768px) {
     .videoContainer {
         grid-template-columns: 1fr;

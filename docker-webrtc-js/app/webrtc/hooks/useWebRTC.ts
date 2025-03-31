@@ -37,7 +37,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
             };
 
             pc.ontrack = (event) => {
-                if (!event.streams || !event.streams[0]) return;
+                if (!event.streams || event.streams.length === 0) return;
                 event.streams[0].getTracks().forEach(track => {
                     remoteStreamRef.current.addTrack(track);
                 });
@@ -85,7 +85,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
 
             signalingClient.current.onRoomCreated((id) => {
                 setRoomId(id);
-                if (isInitiator) {
+                if (isInitiator && !existingRoomId) {
                     pc.createOffer()
                         .then(offer => pc.setLocalDescription(offer))
                         .then(() => {
@@ -114,10 +114,14 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
                 }
             });
 
-            if (isInitiator) {
-                signalingClient.current.createRoom();
-            } else if (existingRoomId) {
+            signalingClient.current.onError((error) => {
+                setError(error);
+            });
+
+            if (existingRoomId) {
                 signalingClient.current.joinRoom(existingRoomId);
+            } else {
+                signalingClient.current.createRoom();
             }
 
         } catch (err) {
@@ -129,7 +133,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }) => {
     };
 
     const joinRoom = (roomId: string) => {
-        setRoomId(roomId);
         startCall(false, roomId);
     };
 
