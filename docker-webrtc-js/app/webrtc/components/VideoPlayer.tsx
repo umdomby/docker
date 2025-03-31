@@ -1,45 +1,34 @@
-'use client';
-
+//VideoPlayer.tsx
 import { useEffect, useRef } from 'react';
 
 interface VideoPlayerProps {
     stream: MediaStream | null;
-    isMuted: boolean;
-    label?: string;
+    muted?: boolean;
     className?: string;
 }
 
-export default function VideoPlayer({
-                                        stream,
-                                        isMuted,
-                                        label = '',
-                                        className = ''
-                                    }: VideoPlayerProps) {
+export const VideoPlayer = ({ stream, muted = false, className }: VideoPlayerProps) => {
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
-
-        video.srcObject = stream;
+        if (videoRef.current && stream) {
+            videoRef.current.srcObject = stream;
+        }
 
         return () => {
-            if (video.srcObject) {
-                (video.srcObject as MediaStream).getTracks().forEach(track => track.stop());
+            if (videoRef.current) {
+                videoRef.current.srcObject = null;
             }
         };
     }, [stream]);
 
     return (
-        <div className={className}>
-            {label && <div className="video-label">{label}</div>}
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted={isMuted}
-                className="w-full h-auto bg-black rounded-lg"
-            />
-        </div>
+        <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={muted}
+            className={className}
+        />
     );
-}
+};

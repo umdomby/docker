@@ -1,91 +1,119 @@
-'use client';
+//VideoCallApp.tsx
+import { useWebRTC } from './hooks/useWebRTC'
+import styles from './styles.module.css'
+import { VideoPlayer } from './components/VideoPlayer'
+import { DeviceSelector } from './components/DeviceSelector'
+import { useEffect, useState } from 'react'
 
-import { useEffect, useState } from 'react';
-import { useWebRTC } from './hooks/useWebRTC';
-import VideoPlayer from './components/VideoPlayer';
-import styles from './styles.module.css';
+interface VideoCallAppProps {
+    devices?: MediaDeviceInfo[]
+}
 
-export default function VideoCallApp() {
-    const [roomId, setRoomId] = useState('default-room');
-    const [inputRoomId, setInputRoomId] = useState('default-room');
-    const [hasMounted, setHasMounted] = useState(false);
+export const VideoCallApp = ({ devices }: VideoCallAppProps) => {
+    const [roomIdInput, setRoomIdInput] = useState('')
+    const [selectedDevices, setSelectedDevices] = useState({
+        video: '',
+        audio: ''
+    })
 
     const {
         localStream,
         remoteStream,
-        isConnected,
-        error,
+        roomId,
         startCall,
-        endCall
-    } = useWebRTC(roomId);
+        joinRoom,
+        isConnected,
+        connectionStatus
+    } = useWebRTC(selectedDevices)
 
     useEffect(() => {
-        setHasMounted(true);
-        return () => {
-            endCall();
-        };
-    }, [endCall]);
+        if (devices?.length) {
+            const defaultVideo = devices.find(d => d.kind === 'videoinput')?.deviceId || ''
+            const defaultAudio = devices.find(d => d.kind === 'audioinput')?.deviceId || ''
+            setSelectedDevices({
+                video: defaultVideo,
+                audio: defaultAudio
+            })
+        }
+    }, [devices])
 
     const handleStartCall = () => {
-        setRoomId(inputRoomId);
-        startCall();
-    };
+        startCall(true)
+    }
 
-    const handleEndCall = () => {
-        endCall();
-        setInputRoomId(roomId);
-    };
+    const handleJoinCall = () => {
+        if (roomIdInput.trim()) {
+            joinRoom(roomIdInput.trim())
+            startCall(false)
+        }
+    }
 
-    if (!hasMounted) {
-        return <div className={styles.loading}>Initializing WebRTC...</div>;
+    const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
+        setSelectedDevices(prev => ({
+            ...prev,
+            [type]: deviceId
+        }))
     }
 
     return (
         <div className={styles.container}>
-            <div className={styles.roomControls}>
-                <input
-                    type="text"
-                    value={inputRoomId}
-                    onChange={(e) => setInputRoomId(e.target.value)}
-                    placeholder="Enter room ID"
-                    disabled={isConnected}
-                    className={styles.roomInput}
-                />
-                <button
-                    onClick={isConnected ? handleEndCall : handleStartCall}
-                    className={`${styles.button} ${
-                        isConnected ? styles.endButton : styles.startButton
-                    }`}
-                    disabled={!inputRoomId.trim()}
-                >
-                    {isConnected ? 'End Call' : 'Start Call'}
-                </button>
-            </div>
+            <h1>WebRTC Video Call</h1>
 
-            {error && (
-                <div className={styles.error}>
-                    Error: {error}
+            {!isConnected ? (
+                <div className={styles.setupPanel}>
+                    <div className={styles.deviceSelection}>
+                        <h2>Настройки устройств</h2>
+                        <DeviceSelector
+                            devices={devices}
+                            selectedDevices={selectedDevices}
+                            onChange={handleDeviceChange}
+                        />
+                    </div>
+
+                    <div className={styles.connectionOptions}>
+                        <button
+                            onClick={handleStartCall}
+                            className={styles.primaryButton}
+                        >
+                            Начать новый звонок
+                        </button>
+
+                        <div className={styles.joinContainer}>
+                            <input
+                                type="text"
+                                value={roomIdInput}
+                                onChange={(e) => setRoomIdInput(e.target.value)}
+                                placeholder="Введите ID комнаты"
+                            />
+                            <button
+                                onClick={handleJoinCall}
+                                className={styles.secondaryButton}
+                                disabled={!roomIdInput.trim()}
+                            >
+                                Присоединиться
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : (
+                <div className={styles.callPanel}>
+                    <div className={styles.roomInfo}>
+                        <p>ID комнаты: <strong>{roomId}</strong></p>
+                        <p>Статус: <span className={styles[connectionStatus]}>{connectionStatus}</span></p>
+                    </div>
+
+                    <div className={styles.videoContainer}>
+                        <div className={styles.videoWrapper}>
+                            <VideoPlayer stream={localStream} muted />
+                            <div className={styles.videoLabel}>Вы</div>
+                        </div>
+                        <div className={styles.videoWrapper}>
+                            <VideoPlayer stream={remoteStream} />
+                            <div className={styles.videoLabel}>Участник</div>
+                        </div>
+                    </div>
                 </div>
             )}
-
-            <div className={styles.videoContainer}>
-                <VideoPlayer
-                    stream={localStream}
-                    isMuted={true}
-                    label="Your Camera"
-                    className={styles.video}
-                />
-                <VideoPlayer
-                    stream={remoteStream}
-                    isMuted={false}
-                    label="Remote Stream"
-                    className={styles.video}
-                />
-            </div>
-
-            <div className={styles.status}>
-                Status: {isConnected ? `Connected to room: ${roomId}` : 'Disconnected'}
-            </div>
         </div>
-    );
+    )
 }

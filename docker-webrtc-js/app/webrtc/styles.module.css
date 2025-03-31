@@ -1,381 +1,147 @@
-.container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 2rem;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    color: #333;
-}
-
-.title {
-    text-align: center;
-    margin-bottom: 2rem;
-    color: #2c3e50;
-}
-
-.controls {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    align-items: center;
-}
-
-.input {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    border: 1px solid #ddd;
-    border-radius: 6px;
-    font-size: 1rem;
-    transition: border-color 0.2s;
-}
-
-.input:focus {
-    outline: none;
-    border-color: #4CAF50;
-    box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.2);
-}
-
-.button {
-    padding: 0.75rem 1.5rem;
-    border: none;
-    border-radius: 6px;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-}
-
-.startButton {
-    background: #4CAF50;
-    color: white;
-}
-
-.startButton:hover {
-    background: #3d8b40;
-}
-
-.startButton:disabled {
-    background: #a5d6a7;
-    cursor: not-allowed;
-    opacity: 0.7;
-}
-
-.endButton {
-    background: #f44336;
-    color: white;
-}
-
-.endButton:hover {
-    background: #d32f2f;
-}
-
-.buttonLoading {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.buttonLoading::after {
-    content: "";
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-radius: 50%;
-    border-top-color: white;
-    animation: spin 1s ease-in-out infinite;
-}
-
-.videoContainer {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 1.5rem;
-    margin-bottom: 2rem;
-}
-
-.video {
-    position: relative;
-    background: #000;
+/* Стили для компонента DeviceSelector */
+/*styles.module.css*/
+.deviceSelector {
+    background-color: #f8f9fa;
     border-radius: 8px;
-    overflow: hidden;
-    aspect-ratio: 16/9;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    transition: opacity 0.3s ease;
-}
-
-.video.disconnected {
-    opacity: 0.6;
-    filter: grayscale(30%);
-}
-
-.video-label {
-    position: absolute;
-    top: 0.5rem;
-    left: 0.5rem;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    z-index: 10;
-}
-
-.roomControls {
-    display: flex;
-    gap: 1rem;
-    margin-bottom: 2rem;
-    align-items: center;
-    background: #f8f9fa;
     padding: 1.5rem;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    margin: 1rem 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.roomInput {
-    flex: 1;
-    padding: 0.75rem 1.25rem;
-    border: 2px solid #e9ecef;
-    border-radius: 8px;
-    font-size: 1rem;
-    transition: all 0.3s ease;
-    background: white;
+.deviceGroup {
+    margin-bottom: 1.5rem;
+}
+
+.deviceGroup label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
     color: #495057;
 }
 
-.roomInput:focus {
-    outline: none;
-    border-color: #4dabf7;
-    box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.2);
-}
-
-.roomInput:disabled {
-    background-color: #e9ecef;
-    cursor: not-allowed;
-}
-
-.button {
-    padding: 0.75rem 1.75rem;
-    border: none;
-    border-radius: 8px;
+.deviceGroup select {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    background-color: #fff;
     font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    min-width: 120px;
+    color: #212529;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
 }
 
-.startButton {
-    background: #40c057;
-    color: white;
-    box-shadow: 0 2px 4px rgba(64, 192, 87, 0.3);
+.deviceGroup select:focus {
+    border-color: #86b7fe;
+    outline: 0;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
-.startButton:hover {
-    background: #37b24d;
-    transform: translateY(-1px);
-}
-
-.startButton:active {
-    transform: translateY(0);
-}
-
-.startButton:disabled {
-    background: #b2f2bb;
-    cursor: not-allowed;
-    transform: none;
-    box-shadow: none;
-}
-
-.endButton {
-    background: #fa5252;
-    color: white;
-    box-shadow: 0 2px 4px rgba(250, 82, 82, 0.3);
-}
-
-.endButton:hover {
-    background: #f03e3e;
-    transform: translateY(-1px);
-}
-
-.endButton:active {
-    transform: translateY(0);
-}
-
-/* Адаптивные стили */
-@media (max-width: 768px) {
-    .roomControls {
-        flex-direction: column;
-        align-items: stretch;
-        padding: 1rem;
-    }
-
-    .button {
-        width: 100%;
-        padding: 0.75rem;
-    }
-}
-
-.status {
-    text-align: center;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 6px;
-    margin-top: 1rem;
-    font-weight: 500;
-}
-
-.statusConnected {
-    color: #4CAF50;
-    background-color: rgba(76, 175, 80, 0.1);
-}
-
-.statusDisconnected {
-    color: #F44336;
-    background-color: rgba(244, 67, 54, 0.1);
-}
-
-.error {
-    padding: 1rem;
-    background: #ffebee;
-    color: #c62828;
-    border-radius: 6px;
-    margin: 1rem 0;
-    text-align: center;
-    border-left: 4px solid #c62828;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.dismissButton {
-    margin-top: 0.5rem;
-    padding: 0.5rem;
-    background: rgba(198, 40, 40, 0.1);
-    border: 1px solid rgba(198, 40, 40, 0.2);
-    border-radius: 4px;
-    color: #c62828;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: all 0.2s;
-}
-
-.dismissButton:hover {
-    background: rgba(198, 40, 40, 0.2);
-}
-
-.loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    gap: 1rem;
-    color: #555;
-    min-height: 200px;
-}
-
-.spinner {
-    border: 4px solid rgba(0, 0, 0, 0.1);
-    border-radius: 50%;
-    border-top: 4px solid #3498db;
-    width: 40px;
-    height: 40px;
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* Адаптивность */
-@media (max-width: 768px) {
-    .container {
-        padding: 1rem;
-    }
-
-    .controls {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .videoContainer {
-        grid-template-columns: 1fr;
-        gap: 1rem;
-    }
-
-    .button {
-        width: 100%;
-        padding: 1rem;
-    }
-}
-
-@media (max-width: 480px) {
-    .container {
-        padding: 0.5rem;
-    }
-
-    .video-label {
-        font-size: 0.75rem;
-        padding: 0.15rem 0.3rem;
-    }
-
-    .status, .error {
-        padding: 0.75rem;
-        font-size: 0.875rem;
-    }
-}
-
-
-.status {
-    text-align: center;
-    padding: 1rem;
-    background: #f8f9fa;
-    border-radius: 6px;
-    margin-top: 1rem;
-    font-weight: 500;
-    transition: all 0.3s ease;
-}
-
-.statusConnected {
-    color: #4CAF50;
-    background-color: rgba(76, 175, 80, 0.1);
-}
-
-.statusDisconnected {
-    color: #F44336;
-    background-color: rgba(244, 67, 54, 0.1);
-}
-
-.statusPending {
-    color: #FF9800;
-    background-color: rgba(255, 152, 0, 0.1);
-}
-
-.buttonLoading {
+.refreshButton {
     display: inline-flex;
     align-items: center;
-    gap: 0.5rem;
+    justify-content: center;
+    padding: 0.5rem 1rem;
+    background-color: #e9ecef;
+    color: #212529;
+    border: 1px solid #ced4da;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-top: 0.5rem;
 }
 
-.buttonLoading::after {
-    content: "";
-    display: inline-block;
-    width: 1rem;
-    height: 1rem;
-    border: 2px solid rgba(255,255,255,0.3);
-    border-radius: 50%;
-    border-top-color: white;
-    animation: spin 1s linear infinite;
+.refreshButton:hover {
+    background-color: #dee2e6;
+    border-color: #adb5bd;
 }
 
-@keyframes spin {
-    to { transform: rotate(360deg); }
+.refreshButton:active {
+    background-color: #d1d7dd;
+}
+
+/* Иконка обновления (опционально) */
+.refreshButton::before {
+    content: "↻";
+    margin-right: 0.5rem;
+    font-size: 1rem;
+    transition: transform 0.3s ease;
+}
+/* app/webrtc/styles.css */
+.video-call-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+.call-controls {
+    margin-bottom: 20px;
+}
+
+.video-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+
+.video {
+    width: 100%;
+    background: #000;
+    border-radius: 8px;
+}
+.refreshButton:hover::before {
+    transform: rotate(90deg);
+}
+
+/* Адаптация для мобильных устройств */
+@media (max-width: 576px) {
+    .deviceSelector {
+        padding: 1rem;
+    }
+
+    .deviceGroup select {
+        padding: 0.6rem;
+    }
+}
+
+.deviceSelector {
+    margin: 1.5rem 0;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 8px;
+}
+
+.deviceGroup {
+    margin-bottom: 1rem;
+}
+
+.deviceGroup label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #333;
+}
+
+.deviceGroup select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+}
+
+.refreshButton {
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: #e9ecef;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.refreshButton:hover {
+    background: #dee2e6;
 }
