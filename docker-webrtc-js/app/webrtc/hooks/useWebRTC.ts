@@ -19,6 +19,24 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     const signalingClient = useRef<SignalingClient | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
 
+    const checkPermissions = async () => {
+        try {
+            const cameraPermission = await navigator.permissions.query({ name: 'camera' as PermissionName });
+            const microphonePermission = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+
+            if (cameraPermission.state !== 'granted' || microphonePermission.state !== 'granted') {
+                console.warn('Camera or microphone permission not granted');
+                setError('Please grant access to camera and microphone');
+            }
+        } catch (err) {
+            console.error('Error checking permissions:', err);
+        }
+    };
+
+    useEffect(() => {
+        checkPermissions();
+    }, []);
+
     const initPeerConnection = (userId: string) => {
         try {
             const pc = new RTCPeerConnection({
@@ -149,6 +167,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
     const startCall = async (isInitiator: boolean, existingRoomId?: string) => {
         try {
+            await checkPermissions(); // Проверка разрешений
             setIsCaller(isInitiator);
             await getLocalMedia(); // Убедимся, что поток используется
 
