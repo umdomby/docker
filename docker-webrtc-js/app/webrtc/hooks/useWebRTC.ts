@@ -13,6 +13,8 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
     const signalingClient = useRef<SignalingClient | null>(null);
     const localStreamRef = useRef<MediaStream | null>(null);
+    const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
+    const processedUsers = useRef<Set<string>>(new Set());
 
     const initPeerConnection = (userId: string): RTCPeerConnection => {
         const pc = new RTCPeerConnection({
@@ -38,38 +40,51 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
         pc.ontrack = (event) => {
             setRemoteUsers(prev => {
                 const existingUser = prev.find(u => u.username === userId);
+                const newStream = new MediaStream();
+                event.streams[0].getTracks().forEach(track => {
+                    newStream.addTrack(track);
+                });
+
                 if (existingUser) {
-                    const newStream = existingUser.stream || new MediaStream();
-                    event.streams[0].getTracks().forEach(track => {
-                        if (!newStream.getTracks().some(t => t.id === track.id)) {
-                            newStream.addTrack(track);
-                        }
-                    });
                     return prev.map(u =>
                         u.username === userId ? { ...u, stream: newStream } : u
                     );
                 }
                 return [...prev, {
                     username: userId,
-                    stream: event.streams[0],
+                    stream: newStream,
                     peerConnection: pc
                 }];
             });
         };
 
+        pc.oniceconnectionstatechange = () => {
+            if (pc.iceConnectionState === 'connected') {
+                setConnectionStatus('connected');
+            } else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+                setConnectionStatus('disconnected');
+            }
+        };
+
+        peerConnections.current[userId] = pc;
         return pc;
     };
 
     const createOffer = async (toUsername: string) => {
+        if (peerConnections.current[toUsername]) {
+            console.log('Connection already exists for user:', toUsername);
+            return;
+        }
+
         const pc = initPeerConnection(toUsername);
         if (!localStreamRef.current) return;
 
-        localStreamRef.current.getTracks().forEach(track => {
-            pc.addTrack(track, localStreamRef.current!);
-        });
-
         try {
-            const offer = await pc.createOffer();
+            localStreamRef.current.getTracks().forEach(track => {
+                pc.addTrack(track, localStreamRef.current!);
+            });
+
+            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
             await pc.setLocalDescription(offer);
 
             signalingClient.current?.sendOffer({
@@ -94,6 +109,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
     const startCall = async (isInitiator: boolean, existingRoomId?: string) => {
         try {
+            processedUsers.current = new Set();
             setIsCaller(isInitiator);
             await getLocalMedia();
 
@@ -102,9 +118,11 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             signalingClient.current.onRoomCreated = (data: RoomCreatedData) => {
                 setRoomId(data.roomId);
                 setConnectionStatus('connecting');
+
                 if (isInitiator) {
                     data.clients.forEach((clientUsername: string) => {
-                        if (clientUsername !== username) {
+                        if (clientUsername !== username && !processedUsers.current.has(clientUsername)) {
+                            processedUsers.current.add(clientUsername);
                             createOffer(clientUsername);
                         }
                     });
@@ -112,25 +130,45 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             };
 
             signalingClient.current.onUserJoined = (joinedUsername: string) => {
-                if (joinedUsername === username) return;
+                if (joinedUsername === username || processedUsers.current.has(joinedUsername)) return;
+
+                processedUsers.current.add(joinedUsername);
                 setConnectionStatus('connecting');
+
                 if (isCaller) {
                     createOffer(joinedUsername);
                 }
-                setRemoteUsers(prev => [...prev, { username: joinedUsername }]);
+
+                setRemoteUsers(prev => {
+                    const existingUser = prev.find(u => u.username === joinedUsername);
+                    return existingUser ? prev : [...prev, { username: joinedUsername }];
+                });
             };
 
             signalingClient.current.onUserLeft = (leftUsername: string) => {
                 setRemoteUsers(prev => {
                     const user = prev.find(u => u.username === leftUsername);
-                    user?.peerConnection?.close();
+                    if (user?.peerConnection) {
+                        user.peerConnection.close();
+                        delete peerConnections.current[leftUsername];
+                    }
+                    processedUsers.current.delete(leftUsername);
                     return prev.filter(u => u.username !== leftUsername);
                 });
             };
 
             signalingClient.current.onOffer = async ({ offer, from }: WebRTCOffer) => {
+                if (processedUsers.current.has(from)) return;
+                processedUsers.current.add(from);
+
                 const pc = initPeerConnection(from);
-                await pc.setRemoteDescription(offer);
+                await pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+                if (localStreamRef.current) {
+                    localStreamRef.current.getTracks().forEach(track => {
+                        pc.addTrack(track, localStreamRef.current!);
+                    });
+                }
 
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
@@ -139,12 +177,6 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
                     answer,
                     to: from
                 });
-
-                if (localStreamRef.current) {
-                    localStreamRef.current.getTracks().forEach(track => {
-                        pc.addTrack(track, localStreamRef.current!);
-                    });
-                }
 
                 setRemoteUsers(prev => {
                     const existingUser = prev.find(u => u.username === from);
@@ -158,16 +190,20 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             };
 
             signalingClient.current.onAnswer = async ({ answer, from }: WebRTCAnswer) => {
-                const user = remoteUsers.find(u => u.username === from);
-                if (user?.peerConnection) {
-                    await user.peerConnection.setRemoteDescription(answer);
+                const pc = peerConnections.current[from];
+                if (pc) {
+                    await pc.setRemoteDescription(new RTCSessionDescription(answer));
                 }
             };
 
             signalingClient.current.onCandidate = async ({ candidate, from }: WebRTCCandidate) => {
-                const user = remoteUsers.find(u => u.username === from);
-                if (user?.peerConnection && candidate) {
-                    await user.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+                const pc = peerConnections.current[from];
+                if (pc && candidate) {
+                    try {
+                        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                    } catch (err) {
+                        console.error('Error adding ICE candidate:', err);
+                    }
                 }
             };
 
@@ -199,7 +235,7 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
 
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             localStreamRef.current = stream;
-            setLocalStream(stream);
+            setLocalStream(new MediaStream(stream.getTracks()));
             return stream;
         } catch (err) {
             console.error('Error getting media devices:', err);
@@ -219,14 +255,9 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     };
 
     const cleanup = () => {
-        setRemoteUsers(prev => {
-            prev.forEach(user => {
-                if (user.peerConnection) {
-                    user.peerConnection.close();
-                }
-            });
-            return [];
-        });
+        Object.values(peerConnections.current).forEach(pc => pc.close());
+        peerConnections.current = {};
+        processedUsers.current.clear();
 
         if (signalingClient.current) {
             signalingClient.current.close();
@@ -238,6 +269,8 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
             localStreamRef.current = null;
             setLocalStream(null);
         }
+
+        setRemoteUsers([]);
     };
 
     useEffect(() => {

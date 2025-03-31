@@ -1,4 +1,4 @@
-// components/VideoPlayer.tsx
+// app/webrtc/components/VideoPlayer.tsx
 import { useEffect, useRef } from 'react';
 
 interface VideoPlayerProps {
@@ -11,9 +11,19 @@ export const VideoPlayer = ({ stream, muted = false, className }: VideoPlayerPro
     const videoRef = useRef<HTMLVideoElement>(null);
 
     useEffect(() => {
-        if (videoRef.current && stream) {
-            videoRef.current.srcObject = stream;
+        const video = videoRef.current;
+        if (!video) return;
+
+        if (stream) {
+            video.srcObject = stream;
+            video.play().catch(err => console.error('Error playing video:', err));
+        } else {
+            video.srcObject = null;
         }
+
+        return () => {
+            video.srcObject = null;
+        };
     }, [stream]);
 
     return (

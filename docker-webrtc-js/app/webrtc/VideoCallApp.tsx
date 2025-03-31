@@ -1,4 +1,3 @@
-// file: docker-webrtc-js/app/webrtc/VideoCallApp.tsx
 // app/webrtc/VideoCallApp.tsx
 import { useWebRTC } from './hooks/useWebRTC';
 import styles from './styles.module.css';
@@ -12,7 +11,7 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     });
-    const [roomIdInput, setRoomIdInput] = useState('123');
+    const [roomIdInput, setRoomIdInput] = useState('');
     const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
     const [hasPermission, setHasPermission] = useState(false);
 
@@ -30,21 +29,29 @@ export const VideoCallApp = () => {
 
     const loadDevices = async () => {
         try {
-            // Сначала проверяем разрешения
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-            stream.getTracks().forEach(track => track.stop()); // Освобождаем ресурсы
+            // Сначала запрашиваем разрешения
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: true,
+                video: true
+            });
+
+            // Освобождаем ресурсы
+            stream.getTracks().forEach(track => track.stop());
 
             setHasPermission(true);
 
-            // Затем получаем устройства
+            // Получаем список устройств
             const devices = await navigator.mediaDevices.enumerateDevices();
             setDevices(devices);
 
+            // Устанавливаем первое доступное устройство по умолчанию
             const videoDevice = devices.find(d => d.kind === 'videoinput');
             const audioDevice = devices.find(d => d.kind === 'audioinput');
 
-            if (videoDevice) setSelectedDevices(prev => ({...prev, video: videoDevice.deviceId}));
-            if (audioDevice) setSelectedDevices(prev => ({...prev, audio: audioDevice.deviceId}));
+            setSelectedDevices({
+                video: videoDevice?.deviceId || '',
+                audio: audioDevice?.deviceId || ''
+            });
         } catch (err) {
             console.error('Error loading devices:', err);
             setHasPermission(false);
@@ -73,7 +80,7 @@ export const VideoCallApp = () => {
 
             {error && <div className={styles.error}>{error}</div>}
 
-            <div>
+            <div className={styles.controls}>
                 <input
                     type="text"
                     value={username}
@@ -85,7 +92,7 @@ export const VideoCallApp = () => {
                     type="text"
                     value={roomIdInput}
                     onChange={(e) => setRoomIdInput(e.target.value)}
-                    placeholder="ID комнаты"
+                    placeholder="ID комнаты (оставьте пустым для создания новой)"
                     className={styles.input}
                 />
                 <button
@@ -110,7 +117,9 @@ export const VideoCallApp = () => {
 
             <div className={styles.connectionStatus}>
                 <span>Статус: </span>
-                <div className={`${styles.connectionDot} ${isConnected ? styles.connected : styles.disconnected}`} />
+                <div className={`${styles.connectionDot} ${
+                    isConnected ? styles.connected : styles.disconnected
+                }`} />
                 <span>{connectionStatus}</span>
             </div>
 
@@ -118,21 +127,31 @@ export const VideoCallApp = () => {
                 {/* Локальное видео */}
                 {localStream && (
                     <div className={styles.videoWrapper}>
-                        <VideoPlayer stream={localStream} muted className={styles.video} />
+                        <VideoPlayer
+                            stream={localStream}
+                            muted
+                            className={styles.video}
+                        />
                         <div className={styles.videoLabel}>Вы: {username}</div>
                     </div>
                 )}
 
                 {/* Удаленные видео */}
-                {remoteUsers.map((user, index) => (
-                    <div key={`${user.username}-${index}`} className={styles.videoWrapper}>
+                {remoteUsers.map((user) => (
+                    <div key={user.username} className={styles.videoWrapper}>
                         {user.stream ? (
                             <>
-                                <VideoPlayer stream={user.stream} className={styles.video} />
+                                <VideoPlayer
+                                    stream={user.stream}
+                                    className={styles.video}
+                                />
                                 <div className={styles.videoLabel}>{user.username}</div>
                             </>
                         ) : (
                             <div className={styles.videoPlaceholder}>
+                                <div className={styles.userAvatar}>
+                                    {user.username.charAt(0).toUpperCase()}
+                                </div>
                                 <div>{user.username}</div>
                                 <div>Подключается...</div>
                             </div>
@@ -149,7 +168,7 @@ export const VideoCallApp = () => {
                             onClick={loadDevices}
                             className={styles.refreshButton}
                         >
-                            Запросить доступ к устройствам
+                            Запросить доступ к камере и микрофону
                         </button>
                     ) : (
                         <DeviceSelector

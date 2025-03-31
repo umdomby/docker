@@ -1,4 +1,4 @@
-// file: docker-webrtc-js/app/webrtc/lib/signaling.ts
+// app/webrtc/lib/signaling.ts
 import {
     RoomCreatedData,
     WebRTCOffer,
@@ -15,8 +15,8 @@ export class SignalingClient {
     private pingInterval: NodeJS.Timeout | null = null;
     private connectionPromise: Promise<void> | null = null;
     private resolveConnection: (() => void) | null = null;
+    private lastJoinedUser: string | null = null;
 
-    // Callbacks
     public onRoomCreated: (data: RoomCreatedData) => void = () => {};
     public onOffer: (data: WebRTCOffer) => void = () => {};
     public onAnswer: (data: WebRTCAnswer) => void = () => {};
@@ -77,6 +77,10 @@ export class SignalingClient {
                 const message = JSON.parse(event.data);
                 console.debug('Received message:', message.event);
 
+                if (message.event === 'user_joined' && this.lastJoinedUser === message.data.username) {
+                    return;
+                }
+
                 switch (message.event) {
                     case 'joined':
                         this.onRoomCreated(message.data);
@@ -91,10 +95,12 @@ export class SignalingClient {
                         this.onCandidate(message.data);
                         break;
                     case 'user_joined':
+                        this.lastJoinedUser = message.data.username;
                         this.onUserJoined(message.data.username);
                         break;
                     case 'user_left':
                         this.onUserLeft(message.data.username);
+                        this.lastJoinedUser = null;
                         break;
                     case 'error':
                         this.onError(message.data);
@@ -181,6 +187,7 @@ export class SignalingClient {
     private cleanup(): void {
         this.clearTimeout(this.connectionTimeout);
         this.clearInterval(this.pingInterval);
+        this.lastJoinedUser = null;
     }
 
     private clearTimeout(timer: NodeJS.Timeout | null): void {
@@ -205,7 +212,6 @@ export class SignalingClient {
         this.messageQueue = [];
     }
 
-    // Public API methods
     public createRoom(username: string): Promise<void> {
         return this.sendMessage({
             event: 'join',
