@@ -16,57 +16,61 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
     const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
     const processedUsers = useRef<Set<string>>(new Set());
 
+// app/webrtc/hooks/useWebRTC.ts
     const initPeerConnection = (userId: string): RTCPeerConnection => {
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                {
-                    urls: 'turn:turn.bistri.com:80',
-                    username: 'homeo',
-                    credential: 'homeo'
-                }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' }
+            ],
+            iceTransportPolicy: 'all' // Добавляем для лучшей совместимости
         });
 
         pc.onicecandidate = (event) => {
-            if (event.candidate && signalingClient.current) {
+            if (event.candidate && signalingClient.current?.isConnected) {
                 signalingClient.current.sendCandidate({
                     candidate: event.candidate,
                     to: userId
-                });
+                }).catch(e => console.error('Failed to send ICE candidate:', e));
             }
         };
 
         pc.ontrack = (event) => {
+            if (!event.streams || event.streams.length === 0) return;
+
             setRemoteUsers(prev => {
                 const existingUser = prev.find(u => u.username === userId);
                 const newStream = new MediaStream();
                 event.streams[0].getTracks().forEach(track => {
-                    newStream.addTrack(track);
+                    if (!newStream.getTracks().some(t => t.id === track.id)) {
+                        newStream.addTrack(track);
+                    }
                 });
 
                 if (existingUser) {
                     return prev.map(u =>
-                        u.username === userId ? { ...u, stream: newStream } : u
+                        u.username === userId
+                            ? { ...u, stream: newStream }
+                            : u
                     );
                 }
-                return [...prev, {
-                    username: userId,
-                    stream: newStream,
-                    peerConnection: pc
-                }];
+                return [...prev, { username: userId, stream: newStream, peerConnection: pc }];
             });
         };
 
+        // Добавляем обработчики для отладки
         pc.oniceconnectionstatechange = () => {
+            console.log(`ICE state for ${userId}:`, pc.iceConnectionState);
             if (pc.iceConnectionState === 'connected') {
                 setConnectionStatus('connected');
-            } else if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-                setConnectionStatus('disconnected');
             }
         };
 
-        peerConnections.current[userId] = pc;
+        pc.onnegotiationneeded = async () => {
+            console.log('Negotiation needed for:', userId);
+        };
+
         return pc;
     };
 
@@ -77,21 +81,37 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
         }
 
         const pc = initPeerConnection(toUsername);
-        if (!localStreamRef.current) return;
+        if (!localStreamRef.current) {
+            console.error('Local stream not available');
+            return;
+        }
 
         try {
+            // Добавляем треки локального потока
             localStreamRef.current.getTracks().forEach(track => {
                 pc.addTrack(track, localStreamRef.current!);
             });
 
-            const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true });
-            await pc.setLocalDescription(offer);
+            // Создаем offer с явным указанием типов
+            const offer = await pc.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
 
-            signalingClient.current?.sendOffer({
-                offer,
+            // Явно указываем тип для localDescription
+            await pc.setLocalDescription(new RTCSessionDescription(offer));
+
+            if (!signalingClient.current) {
+                throw new Error('Signaling client not available');
+            }
+
+            // Отправляем offer через signaling
+            await signalingClient.current.sendOffer({
+                offer: pc.localDescription!,
                 to: toUsername
             });
 
+            // Обновляем состояние пользователей
             setRemoteUsers(prev => {
                 const existingUser = prev.find(u => u.username === toUsername);
                 if (existingUser) {
@@ -101,9 +121,14 @@ export const useWebRTC = (deviceIds: { video: string; audio: string }, username:
                 }
                 return [...prev, { username: toUsername, peerConnection: pc }];
             });
+
         } catch (err) {
-            console.error('Error creating offer:', err);
-            setError('Failed to create offer');
+            console.error('Error in createOffer:', err);
+            setError(`Failed to create offer: ${err instanceof Error ? err.message : String(err)}`);
+
+            // Закрываем соединение в случае ошибки
+            pc.close();
+            delete peerConnections.current[toUsername];
         }
     };
 

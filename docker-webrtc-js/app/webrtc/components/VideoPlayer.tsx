@@ -14,14 +14,25 @@ export const VideoPlayer = ({ stream, muted = false, className }: VideoPlayerPro
         const video = videoRef.current;
         if (!video) return;
 
+        const handleCanPlay = () => {
+            video.play().catch(e => {
+                console.error('Playback failed:', e);
+                // Пытаемся воспроизвести снова с muted
+                video.muted = true;
+                video.play().catch(e => console.error('Muted playback also failed:', e));
+            });
+        };
+
+        video.addEventListener('canplay', handleCanPlay);
+
         if (stream) {
             video.srcObject = stream;
-            video.play().catch(err => console.error('Error playing video:', err));
         } else {
             video.srcObject = null;
         }
 
         return () => {
+            video.removeEventListener('canplay', handleCanPlay);
             video.srcObject = null;
         };
     }, [stream]);

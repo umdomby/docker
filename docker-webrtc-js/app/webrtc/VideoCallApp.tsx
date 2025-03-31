@@ -31,20 +31,19 @@ export const VideoCallApp = () => {
         try {
             // Сначала запрашиваем разрешения
             const stream = await navigator.mediaDevices.getUserMedia({
-                audio: true,
-                video: true
+                video: true,
+                audio: true
             });
 
-            // Освобождаем ресурсы
+            // Останавливаем треки сразу после получения разрешений
             stream.getTracks().forEach(track => track.stop());
 
-            setHasPermission(true);
-
-            // Получаем список устройств
+            // Теперь получаем список устройств
             const devices = await navigator.mediaDevices.enumerateDevices();
             setDevices(devices);
+            setHasPermission(true);
 
-            // Устанавливаем первое доступное устройство по умолчанию
+            // Автоматически выбираем устройства если они есть
             const videoDevice = devices.find(d => d.kind === 'videoinput');
             const audioDevice = devices.find(d => d.kind === 'audioinput');
 
@@ -52,8 +51,9 @@ export const VideoCallApp = () => {
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
             });
-        } catch (err) {
-            console.error('Error loading devices:', err);
+
+        } catch (error) {
+            console.error('Device access error:', error);
             setHasPermission(false);
         }
     };

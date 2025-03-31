@@ -151,20 +151,27 @@ export class SignalingClient {
     }
 
     public async sendMessage(message: { event: string; data: any }): Promise<void> {
-        if (!this.connectionPromise && !this.isConnected) {
-            this.connectionPromise = new Promise((resolve) => {
-                this.resolveConnection = resolve;
-            });
-        }
-
-        if (!this.isConnected) {
-            console.log('Queueing message:', message.event);
+        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            if (!this.connectionPromise) {
+                this.connectionPromise = new Promise((resolve, reject) => {
+                    this.resolveConnection = resolve;
+                    setTimeout(() => {
+                        reject(new Error('Connection timeout'));
+                        this.cleanup();
+                    }, this.options.connectionTimeout || 5000);
+                });
+            }
             this.messageQueue.push(message);
             await this.connectionPromise;
             return this.sendMessage(message);
         }
 
-        return this.sendMessageInternal(message);
+        try {
+            this.ws.send(JSON.stringify(message));
+        } catch (error) {
+            console.error('Send error:', error);
+            throw error;
+        }
     }
 
     private attemptReconnect(): void {
