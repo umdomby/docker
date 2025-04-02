@@ -41,21 +41,17 @@ services:
     restart: unless-stopped
     networks:
       - sharednetwork
-
-    # Проброс портов
     ports:
-      - "3478:3478/udp"    # STUN/TURN UDP
-      - "3478:3478/tcp"     # STUN/TURN TCP
-      - "5349:5349/tcp"     # TURN TLS
-      - "50000-50100:50000-50100/udp"  # Relay порты
-
-    # Монтирование конфигов и сертификатов
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      - "5349:5349/tcp"
+      - "50000-50100:50000-50100/udp"
     volumes:
       - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
       - ./letsencrypt/live/anybet.site/fullchain.pem:/etc/coturn/certs/fullchain.pem:ro
       - ./letsencrypt/live/anybet.site/privkey.pem:/etc/coturn/certs/privkey.pem:ro
-
-    # Переменные окружения
+      - ./turn_logs:/var/log
+      - ./var/log/coturn:/var/log
     environment:
       - TURN_EXTERNAL_IP=213.184.249.66
       - TURN_REALM=anybet.site
@@ -63,15 +59,13 @@ services:
       - TURN_MAX_PORT=50100
       - TURN_USERNAME=user1
       - TURN_PASSWORD=pass1
-      - TURN_SECRET=your_strong_secret_123
-
-    # Оптимизация производительности
+      - TURN_SECRET=your_strong_secret_32chars
     sysctls:
-      - net.core.somaxconn=8192
+      - net.core.somaxconn=65535
     ulimits:
       nofile:
-        soft: 65536
-        hard: 65536
+        soft: 100000
+        hard: 100000
 
 networks:
   sharednetwork:
