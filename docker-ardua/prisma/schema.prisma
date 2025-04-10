@@ -1,4 +1,5 @@
-// schema.prisma
+// npx prisma migrate dev --name init
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -9,9 +10,110 @@ datasource db {
   directUrl = env("POSTGRES_URL_NON_POOLING")
 }
 
-model Player {
-  id    Int    @id @default(autoincrement())
-  name  String
-  email String @unique
-  phone Int
+model User {
+  id                   Int              @id @default(autoincrement())
+  fullName             String
+  email                String           @unique
+  provider             String?
+  providerId           String?
+  password             String
+  role                 UserRole         @default(USER)
+  img                  String?
+  gameRecords          GameRecords[]
+  goldProductItems     ProductItem[]    @relation("GoldUser")
+  silverProductItems   ProductItem[]    @relation("SilverUser")
+  bronzeProductItems   ProductItem[]    @relation("BronzeUser")
+  platinumProductItems ProductItem[]    @relation("PlatinumUser")
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  gameCreateTime       GameCreateTime[]
+}
+
+model Category {
+  id          Int           @id @default(autoincrement())
+  name        String        @unique
+  products    Product[]
+  img         String?
+  gameRecords GameRecords[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model Product {
+  id          Int           @id @default(autoincrement())
+  name        String
+  img         String?
+  productItem ProductItem[]
+  gameRecords GameRecords[]
+  carModel    CarModel[]
+  category    Category      @relation(fields: [categoryId], references: [id])
+  categoryId  Int
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+
+model ProductItem {
+  id          Int           @id @default(autoincrement())
+  name        String
+  img         String?
+  gameRecords GameRecords[]
+  product     Product       @relation(fields: [productId], references: [id])
+  productId   Int
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  goldId       Int?
+  goldUser     User? @relation("GoldUser", fields: [goldId], references: [id])
+  silverId     Int?
+  silverUser   User? @relation("SilverUser", fields: [silverId], references: [id])
+  bronzeId     Int?
+  bronzeUser   User? @relation("BronzeUser", fields: [bronzeId], references: [id])
+  platinumId   Int?
+  platinumUser User? @relation("PlatinumUser", fields: [platinumId], references: [id])
+}
+
+model GameRecords {
+  id            Int         @id @default(autoincrement())
+  user          User        @relation(fields: [userId], references: [id])
+  userId        Int
+  category      Category    @relation(fields: [categoryId], references: [id])
+  categoryId    Int
+  product       Product     @relation(fields: [productId], references: [id])
+  productId     Int
+  productItem   ProductItem @relation(fields: [productItemId], references: [id])
+  productItemId Int
+
+  carModel   CarModel? @relation(fields: [carModelId], references: [id])
+  carModelId Int?
+
+  timestate String?
+  video     String?
+  img       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model GameCreateTime {
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int  @unique
+
+  category    DateTime
+  product     DateTime
+  productItem DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CarModel {
+  id          Int           @id @default(autoincrement())
+  name        String
+  gameRecords GameRecords[]
+  product     Product       @relation(fields: [productId], references: [id])
+  productId   Int
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
