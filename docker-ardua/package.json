@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"nodemon --watch ./pages --watch ./app --watch ./components --exec 'next dev -p 3005'\" \"nodemon --watch server.ts --exec 'ts-node' server.ts\"",
-    "dev1": "concurrently \"next dev -p 3005\" \"ts-node --esm server.ts\"",
+    "dev": "concurrently \"nodemon --watch ./pages --watch ./app --watch ./components --ext ts,tsx --exec 'next dev -p 3005'\" \"nodemon --watch server.ts --ext ts --exec 'tsx' server.ts\"",    "dev1": "concurrently \"next dev -p 3005\" \"ts-node --esm server.ts\"",
     "dev11": "concurrently \"next dev -p 3005\" \"tsx server.ts\"",
     "dev2": "next dev --turbopack -p 3005",
     "build": "next build",
