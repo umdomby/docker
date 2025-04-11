@@ -1,10 +1,11 @@
-import { categories, products, productsItem, gameRecords, carModel } from './constants';
+import { categories, products, productsItem, players } from './constants';
 import { prisma } from './prisma-client';
 import { hashSync } from 'bcrypt';
 
 
 async function up() {
   await prisma.user.createMany({
+
     data: [
       {
         fullName: 'Pi',
@@ -26,7 +27,6 @@ async function up() {
       },
     ],
   });
-
   await prisma.category.createMany({
     data: categories,
   });
@@ -39,23 +39,19 @@ async function up() {
     data: productsItem,
   });
 
-  await prisma.gameRecords.createMany({
-    data: gameRecords,
-  });
-
-  await prisma.carModel.createMany({
-    data: carModel,
+  await prisma.player.createMany({
+    data: players,
   });
 }
+
 
 async function down() {
   await prisma.$executeRaw`TRUNCATE TABLE "User" RESTART IDENTITY CASCADE`;
   await prisma.$executeRaw`TRUNCATE TABLE "Category" RESTART IDENTITY CASCADE`;
   await prisma.$executeRaw`TRUNCATE TABLE "Product" RESTART IDENTITY CASCADE`;
   await prisma.$executeRaw`TRUNCATE TABLE "ProductItem" RESTART IDENTITY CASCADE`;
-  await prisma.$executeRaw`TRUNCATE TABLE "GameRecords" RESTART IDENTITY CASCADE`;
-  await prisma.$executeRaw`TRUNCATE TABLE "CarModel" RESTART IDENTITY CASCADE`;
 }
+
 
 async function main() {
   try {
