@@ -8,7 +8,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog"
-
+import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 
 type MessageType = {
     type?: string

@@ -16,7 +16,7 @@ const nextConfig = {
         serverActions: {
             bodySizeLimit: '5mb',
             serverActions: true,
-            allowedOrigins: ['localhost:3000/', 'localhost:3005/','https://ardu.site/', '192.168.1.151:3005'],
+            allowedOrigins: ['localhost:3000/', 'localhost:3001/','https://ardu.site/'],
         },
     },
     eslint: {

@@ -27,14 +27,6 @@ WORKDIR /app2
 
 COPY --from=builder /app2 /app2
 
-# Скопируйте только необходимые файлы из этапа сборки
-#COPY --from=builder /app2/.next ./.next
-#COPY --from=builder /app2/node_modules ./node_modules
-#COPY --from=builder /app2/package.json ./package.json
-#COPY --from=builder /app2/public ./public
-#COPY --from=builder /app2/prisma ./prisma
-#COPY --from=builder /app2/server.ts ./server.ts
-
 RUN yarn install --production --frozen-lockfile
 RUN yarn global add ts-node typescript @types/node @types/ws concurrently path
 RUN yarn prisma generate
