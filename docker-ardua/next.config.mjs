@@ -14,7 +14,7 @@ const nextConfig = {
         serverActions: {
             bodySizeLimit: '5mb',
             serverActions: true,
-            allowedOrigins: ['localhost:3000/','https://anybet.site'],
+            allowedOrigins: ['localhost:3001/','https://ardua.site'],
         },
     },
 };

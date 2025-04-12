@@ -1,10 +1,10 @@
 // Ref: https://next-auth.js.org/getting-started/typescript#module-augmentation
 
-import { DefaultSession, DefaultUser } from '@/@types/next-auth';
+import { DefaultSession, DefaultUser } from 'next-auth';
 import { JWT, DefaultJWT } from 'next-auth/jwt';
 import type { UserRole } from '@prisma/client';
 
-declare module '@/@types/next-auth' {
+declare module 'next-auth' {
   interface Session {
     user: {
       id: string;
