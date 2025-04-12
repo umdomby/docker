@@ -21,7 +21,7 @@ export const Header: React.FC<Props> = ({  className }) => {
         <header className={cn('border-b', className)}>
             <Container className="flex items-center justify-between py-3">
                 {/* Левая часть */}
-                <Link href="/docker_center/public">
+                <Link href="/docker-center/public">
                     <div className="flex items-center gap-4">
                             <Image
                                 src="/logo.png"
