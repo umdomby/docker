@@ -22,7 +22,7 @@ export const InfoBlock: React.FC<Props> = ({ className, title, text, imageUrl })
         </div>
 
         <div className="flex gap-5 mt-11">
-          <Link href="/docker-center/public">
+          <Link href="/docker-ardua/public">
             <Button variant="outline" className="gap-2">
               <ArrowLeft />
               На главную

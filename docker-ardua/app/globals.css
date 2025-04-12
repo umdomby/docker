@@ -14,7 +14,6 @@ html {
 
 @layer base {
   :root {
-    --background: 0 0% 100%; /* Darker gray for dark mode */
     --foreground: 20 14.3% 4.1%;
 
     --card: 0 0% 100%;
@@ -140,12 +139,6 @@ html {
   padding: .2rem;
 }
 
-.button-success {
-  background-color: #718dff; /* Светло-зеленый цвет */
-  color: #1a293e; /* Светло-красный цвет текста */
-}
-
-
 /*.dialog-content {*/
 /*  width: 95vw; !* Полная ширина экрана *!*/
 /*  height: 90vh; !* Полная высота экрана *!*/
@@ -166,56 +159,4 @@ html {
 .image-container { /*  Класс для контейнера изображения */
   width: 50%; /* Или любое другое значение */
   height: auto; /*  Сохраняем соотношение сторон */
-}
-.width-5 { width: 5%; }
-.width-10 { width: 10%; }
-.width-15 { width: 15%; }
-
-
-@layer utilities {
-  .no-hover-bg:hover {
-    background-color: transparent !important;
-  }
-}
-
-
-.flex-container {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-}
-
-.buy-section, .sell-section {
-  flex: 1 1 45%; /* Задает начальную ширину и позволяет сжиматься */
-  min-width: 300px; /* Минимальная ширина для каждого блока */
-}
-
-@media (max-width: 868px) {
-  .flex-container {
-    flex-direction: column; /* Изменяет направление на колонку при уменьшении ширины экрана */
-  }
-
-  .buy-section, .sell-section {
-    flex: 1 1 100%; /* Задает ширину 100% для каждого блока */
-  }
-}
-
-
-.yellow-circle {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  background-color: yellow;
-  border-radius: 50%;
-  margin-left: 8px; /* Отступ слева от имени игрока */
-}
-
-.enlarged-image {
-  height: auto; /* Устанавливаем высоту в процентах от контейнера */
-  width: 100%; /* Ширина будет автоматически рассчитана */
-}
-.dialog-content {
-  height: auto; /* Устанавливаем фиксированную высоту для контейнера */
-  max-width: none;
-  width: 65%;
 }

@@ -14,34 +14,34 @@ interface ProvidersProps {
 export const Providers: React.FC<ProvidersProps> = ({children}) => {
 
 
-    // const [mounted, setMounted] = useState(false);
-    // const [theme, setTheme] = useState<string | null>(null);
-    //
-    // useEffect(() => {
-    //     setMounted(true); // Компонент смонтирован
-    //     const storedTheme = localStorage.getItem('theme');
-    //     if (storedTheme) {
-    //         setTheme(storedTheme); // Используем сохраненную тему
-    //     }
-    // }, []);
+    const [mounted, setMounted] = useState(false);
+    const [theme, setTheme] = useState<string | null>(null); // null по умолчанию
 
-    // if (!mounted) {
-    //     return null; // Не рендерим ThemeProvider до монтирования
-    // }
+    useEffect(() => {
+        setMounted(true); // Компонент смонтирован
+        const storedTheme = localStorage.getItem('theme');
+        if (storedTheme) {
+            setTheme(storedTheme); // Используем сохраненную тему
+        }
+    }, []);
+
+    if (!mounted) {
+        return null; // Не рендерим ThemeProvider до монтирования
+    }
 
     return (
         <>
             <React.StrictMode>
-                {/*<SessionProvider>*/}
-                    {/*<ThemeProvider*/}
-                    {/*    attribute="class"*/}
-                    {/*    defaultTheme={theme || 'system'}*/}
-                    {/*    enableSystem*/}
-                    {/*    disableTransitionOnChange*/}
-                    {/*>*/}
+                <SessionProvider>
+                    <ThemeProvider
+                        attribute="class"
+                        defaultTheme={theme || 'system'}  // system - fallback, если нет
+                        enableSystem
+                        disableTransitionOnChange
+                    >
                     {children}
-                    {/*</ThemeProvider>*/}
-                {/*</SessionProvider>*/}
+                    </ThemeProvider>
+                </SessionProvider>
             </React.StrictMode>
             <Toaster/>
             <NextTopLoader/>

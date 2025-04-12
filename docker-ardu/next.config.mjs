@@ -10,12 +10,17 @@ const nextConfig = {
             },
         ]
     },
+    // Конфигурация для standalone-режима
+    //output: 'standalone',
     experimental: {
         serverActions: {
             bodySizeLimit: '5mb',
             serverActions: true,
-            allowedOrigins: ['localhost:3000/','https://anybet.site'],
+            allowedOrigins: ['localhost:3000/', 'localhost:3001/','https://ardu.site/', 'ardu.site' ],
         },
+    },
+    eslint: {
+        ignoreDuringBuilds: true, // Добавьте эту строку
     },
 };
 

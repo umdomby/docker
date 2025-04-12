@@ -1,16 +1,20 @@
+import { Header } from '@/components/header';
 import type { Metadata } from 'next';
-import React from 'react';
+import React, { Suspense } from 'react';
 
 export const metadata: Metadata = {
     title: 'HEROES 3',
 };
 
+export const dynamic = 'force-dynamic'; // Отключаем SSG
 
 
-export default async function HomeLayout({ children }: { children: React.ReactNode }) {
-
+export default function HomeLayout({ children }: { children: React.ReactNode }) {
     return (
         <main className="min-h-screen">
+            <Suspense>
+                <Header />
+            </Suspense>
             {children}
         </main>
     );

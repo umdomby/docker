@@ -1,25 +1,57 @@
+import { categories, products, productsItem, players } from './constants';
 import { prisma } from './prisma-client';
-import { faker } from '@faker-js/faker';
+import { hashSync } from 'bcrypt';
 
-function generateRandomPhoneNumber() {
-  return Math.floor(1000000 + Math.random() * 9000000); // Генерация 7-значного номера
-}
 
 async function up() {
-  const players = Array.from({ length: 200 }).map(() => ({
-    name: faker.name.fullName(),
-    email: faker.internet.email(),
-    phone: generateRandomPhoneNumber() // Генерация 7-значного номера
-  }));
+  await prisma.user.createMany({
+
+    data: [
+      {
+        fullName: 'Pi',
+        email: 'umdom2@gmail.com',
+        password: hashSync('123123', 10),
+        role: 'ADMIN',
+      },
+      {
+        fullName: 'Yatsyk',
+        email: 'yatsyk@gmail.com',
+        password: hashSync('123123', 10),
+        role: 'USER',
+      },
+      {
+        fullName: '123',
+        email: '123@123.com',
+        password: hashSync('123123', 10),
+        role: 'USER',
+      },
+    ],
+  });
+  await prisma.category.createMany({
+    data: categories,
+  });
+
+  await prisma.product.createMany({
+    data: products,
+  });
+
+  await prisma.productItem.createMany({
+    data: productsItem,
+  });
 
   await prisma.player.createMany({
     data: players,
   });
 }
 
+
 async function down() {
-  await prisma.$executeRaw`TRUNCATE TABLE "Player" RESTART IDENTITY CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE "User" RESTART IDENTITY CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE "Category" RESTART IDENTITY CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE "Product" RESTART IDENTITY CASCADE`;
+  await prisma.$executeRaw`TRUNCATE TABLE "ProductItem" RESTART IDENTITY CASCADE`;
 }
+
 
 async function main() {
   try {
