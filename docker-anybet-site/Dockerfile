@@ -8,7 +8,7 @@ WORKDIR /app2
 COPY package.json yarn.lock ./
 
 # Скопируйте директорию prisma в контейнер
-COPY prisma ./prisma
+# COPY prisma ./prisma
 
 # Установите только production-зависимости
 RUN yarn install --production
@@ -32,7 +32,7 @@ COPY --from=builder /app2/package.json ./package.json
 COPY --from=builder /app2/public ./public
 
 # Убедитесь, что директория prisma копируется
-COPY --from=builder /app2/prisma ./prisma
+# COPY --from=builder /app2/prisma ./prisma
 
 # Установите переменные окружения, если необходимо
 ENV NODE_ENV=production
