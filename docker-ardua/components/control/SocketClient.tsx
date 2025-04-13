@@ -245,7 +245,8 @@ export default function WebsocketController() {
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [isLandscape, setIsLandscape] = useState(false)
-    const reconnectAttemptRef = useRef(0);
+    const reconnectAttemptRef = useRef(0)
+    const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
     const lastMotorACommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
@@ -275,23 +276,136 @@ export default function WebsocketController() {
         }
     }, [newDeviceId, deviceList])
 
-    const handleDeviceChange = useCallback((value: string) => {
-        setInputDeviceId(value)
-    }, [])
-
-    useEffect(() => {
-        const checkOrientation = () => {
-            setIsLandscape(window.innerWidth > window.innerHeight)
-        }
-
-        checkOrientation()
-        window.addEventListener('resize', checkOrientation)
-        return () => window.removeEventListener('resize', checkOrientation)
-    }, [])
-
     const addLog = useCallback((msg: string, type: LogEntry['type']) => {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
     }, [])
+
+    const cleanupWebSocket = useCallback(() => {
+        if (socketRef.current) {
+            socketRef.current.onopen = null
+            socketRef.current.onclose = null
+            socketRef.current.onmessage = null
+            socketRef.current.onerror = null
+            if (socketRef.current.readyState === WebSocket.OPEN) {
+                socketRef.current.close()
+            }
+            socketRef.current = null
+        }
+    }, [])
+
+    const connectWebSocket = useCallback(() => {
+        cleanupWebSocket()
+
+        reconnectAttemptRef.current = 0
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current)
+            reconnectTimerRef.current = null
+        }
+
+        const ws = new WebSocket('wss://ardu.site/ws')
+
+        ws.onopen = () => {
+            setIsConnected(true)
+            reconnectAttemptRef.current = 0
+            addLog("Connected to WebSocket server", 'server')
+
+            ws.send(JSON.stringify({
+                type: 'client_type',
+                clientType: 'browser'
+            }))
+
+            ws.send(JSON.stringify({
+                type: 'identify',
+                deviceId: inputDeviceId
+            }))
+        }
+
+        ws.onmessage = (event) => {
+            try {
+                const data: MessageType = JSON.parse(event.data)
+                console.log("Received message:", data)
+
+                if (data.type === "system") {
+                    if (data.status === "connected") {
+                        setIsIdentified(true)
+                        setDeviceId(inputDeviceId)
+                    }
+                    addLog(`System: ${data.message}`, 'server')
+                }
+                else if (data.type === "error") {
+                    addLog(`Error: ${data.message}`, 'error')
+                    setIsIdentified(false)
+                }
+                else if (data.type === "log") {
+                    addLog(`ESP: ${data.message}`, 'esp')
+                    if (data.message && data.message.includes("Heartbeat")) {
+                        setEspConnected(true)
+                    }
+                }
+                else if (data.type === "esp_status") {
+                    console.log(`Received ESP status: ${data.status}`)
+                    setEspConnected(data.status === "connected")
+                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
+                        data.status === "connected" ? 'esp' : 'error')
+                }
+                else if (data.type === "command_ack") {
+                    if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
+                    addLog(`ESP executed command: ${data.command}`, 'esp')
+                }
+                else if (data.type === "command_status") {
+                    addLog(`Command ${data.command} delivered to ESP`, 'server')
+                }
+            } catch (error) {
+                console.error("Error processing message:", error)
+                addLog(`Received invalid message: ${event.data}`, 'error')
+            }
+        }
+
+        ws.onclose = (event) => {
+            setIsConnected(false)
+            setIsIdentified(false)
+            setEspConnected(false)
+            addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server')
+
+            // Auto-reconnect logic
+            if (reconnectAttemptRef.current < 5) {
+                reconnectAttemptRef.current += 1
+                const delay = Math.min(5000, reconnectAttemptRef.current * 1000)
+                addLog(`Attempting to reconnect in ${delay/1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
+
+                reconnectTimerRef.current = setTimeout(() => {
+                    connectWebSocket()
+                }, delay)
+            } else {
+                addLog("Max reconnection attempts reached", 'error')
+            }
+        }
+
+        ws.onerror = (error) => {
+            addLog(`WebSocket error: ${error.type}`, 'error')
+        }
+
+        socketRef.current = ws
+    }, [addLog, inputDeviceId, cleanupWebSocket])
+
+    const disconnectWebSocket = useCallback(() => {
+        cleanupWebSocket()
+        setIsConnected(false)
+        setIsIdentified(false)
+        setEspConnected(false)
+        addLog("Disconnected manually", 'server')
+        reconnectAttemptRef.current = 5
+
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current)
+            reconnectTimerRef.current = null
+        }
+    }, [addLog, cleanupWebSocket])
+
+    const handleDeviceChange = useCallback((value: string) => {
+        setInputDeviceId(value)
+        disconnectWebSocket()
+    }, [disconnectWebSocket])
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
@@ -384,104 +498,24 @@ export default function WebsocketController() {
         if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
     }, [sendCommand])
 
-    const connectWebSocket = useCallback(() => {
-        if (socketRef.current) {
-            socketRef.current.close();
+    useEffect(() => {
+        const checkOrientation = () => {
+            setIsLandscape(window.innerWidth > window.innerHeight)
         }
 
-        reconnectAttemptRef.current = 0;
-        const ws = new WebSocket('wss://ardu.site/ws');
-
-        ws.onopen = () => {
-            setIsConnected(true);
-            reconnectAttemptRef.current = 0;
-            addLog("Connected to WebSocket server", 'server');
-
-            ws.send(JSON.stringify({
-                type: 'client_type',
-                clientType: 'browser'
-            }));
-
-            ws.send(JSON.stringify({
-                type: 'identify',
-                deviceId: inputDeviceId
-            }));
-        };
-
-        ws.onmessage = (event) => {
-            try {
-                const data: MessageType = JSON.parse(event.data);
-                console.log("Received message:", data);
-
-                if (data.type === "system") {
-                    if (data.status === "connected") {
-                        setIsIdentified(true);
-                        setDeviceId(inputDeviceId);
-                    }
-                    addLog(`System: ${data.message}`, 'server');
-                }
-                else if (data.type === "error") {
-                    addLog(`Error: ${data.message}`, 'error');
-                    setIsIdentified(false);
-                }
-                else if (data.type === "log") {
-                    addLog(`ESP: ${data.message}`, 'esp');
-                    if (data.message && data.message.includes("Heartbeat")) {
-                        setEspConnected(true);
-                    }
-                }
-                else if (data.type === "esp_status") {
-                    console.log(`Received ESP status: ${data.status}`);
-                    setEspConnected(data.status === "connected");
-                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
-                        data.status === "connected" ? 'esp' : 'error');
-                }
-                else if (data.type === "command_ack") {
-                    if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current);
-                    addLog(`ESP executed command: ${data.command}`, 'esp');
-                }
-                else if (data.type === "command_status") {
-                    addLog(`Command ${data.command} delivered to ESP`, 'server');
-                }
-            } catch (error) {
-                console.error("Error processing message:", error);
-                addLog(`Received invalid message: ${event.data}`, 'error');
-            }
-        };
-
-        ws.onclose = (event) => {
-            setIsConnected(false);
-            setIsIdentified(false);
-            setEspConnected(false);
-            addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server');
-        };
-
-        ws.onerror = (error) => {
-            addLog(`WebSocket error: ${error.type}`, 'error');
-        };
-
-        socketRef.current = ws;
-    }, [addLog, inputDeviceId]);
-
-    const disconnectWebSocket = useCallback(() => {
-        if (socketRef.current) {
-            socketRef.current.close();
-            socketRef.current = null;
-            setIsConnected(false);
-            setIsIdentified(false);
-            setEspConnected(false);
-            addLog("Disconnected manually", 'server');
-            reconnectAttemptRef.current = 5;
-        }
-    }, [addLog]);
+        checkOrientation()
+        window.addEventListener('resize', checkOrientation)
+        return () => window.removeEventListener('resize', checkOrientation)
+    }, [])
 
     useEffect(() => {
         return () => {
-            if (socketRef.current) socketRef.current.close()
+            cleanupWebSocket()
             if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
             if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
         }
-    }, [])
+    }, [cleanupWebSocket])
 
     useEffect(() => {
         const interval = setInterval(() => {
@@ -572,6 +606,7 @@ export default function WebsocketController() {
                         <Button
                             size="sm"
                             className="h-8"
+                            disabled={!isConnected || !isIdentified}
                         >
                             Controls
                         </Button>
