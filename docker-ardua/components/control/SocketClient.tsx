@@ -221,11 +221,6 @@ const Joystick = ({
                 color: '#333',
                 zIndex: '1'
             }}>
-                {direction !== 'stop' ? (
-                    <span>{direction === 'forward' ? '↑' : '↓'} {speed}</span>
-                ) : (
-                    <span>Motor {motor}</span>
-                )}
             </div>
         </div>
     )
@@ -636,31 +631,48 @@ export default function WebsocketController() {
 
                 <Dialog open={controlVisible} onOpenChange={setControlVisible}>
                     <DialogTrigger asChild>
-                        <Button
-                            size="sm"
-                            className="h-8"
-                            disabled={!isConnected || !isIdentified}
-                        >
-                            Controls
+                        <Button onClick={() => setControlVisible(!controlVisible)}>
+                            {controlVisible ? "Hide Controls" : "Show Controls"}
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="w-full h-[80vh] p-0 m-0 flex justify-between items-stretch gap-0">
+                    <DialogContent style={{
+                        width: '100%',
+                        height: '80vh',
+                        padding: 0,
+                        margin: 0,
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'stretch',
+                        gap: 0
+                    }}>
                         <DialogHeader>
-                            <DialogTitle>Motor Controls</DialogTitle>
+                            <DialogTitle></DialogTitle>
                         </DialogHeader>
+
+                        <DialogClose className="absolute left-1/2 -translate-x-1/2">
+                            X
+                        </DialogClose>
+
+                        {/* Левый сенсор (A) */}
                         <div className="flex w-full justify-between">
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="A"
-                                    onChange={handleMotorAControl}
+                                    onChange={(value) => {
+                                        handleMotorAControl(value)
+                                    }}
                                     direction={motorADirection}
                                     speed={motorASpeed}
                                 />
                             </div>
+
+                            {/* Правый сенсор (B) */}
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="B"
-                                    onChange={handleMotorBControl}
+                                    onChange={(value) => {
+                                        handleMotorBControl(value)
+                                    }}
                                     direction={motorBDirection}
                                     speed={motorBSpeed}
                                 />
