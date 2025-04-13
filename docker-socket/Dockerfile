@@ -1,22 +1,15 @@
 FROM node:18-alpine
 
-# Устанавливаем Yarn глобально
-RUN npm install -g yarn
-
 WORKDIR /app
 
-# Копируем файлы блокировки зависимостей
-COPY yarn.lock .
-COPY package.json .
+# Установка зависимостей
+COPY package.json yarn.lock ./
+RUN yarn install --frozen-lockfile
+# Установка ts-node глобально (или можно добавить его в devDependencies)
+RUN yarn global add ts-node typescript
 
-# Устанавливаем зависимости через Yarn
-RUN yarn install --frozen-lockfile --production
-
-# Копируем остальные файлы
+# Копирование исходного кода
 COPY . .
-
-# Собираем проект (если нужно)
-RUN yarn build
 
 EXPOSE 1444
 
