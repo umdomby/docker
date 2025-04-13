@@ -264,9 +264,14 @@ export default function WebsocketController() {
             const devices = JSON.parse(savedDevices)
             setDeviceList(devices)
             if (devices.length > 0) {
-                setInputDeviceId(devices[0])
-                setDeviceId(devices[0])
-                currentDeviceIdRef.current = devices[0]
+                // Добавляем проверку сохраненного deviceId
+                const savedDeviceId = localStorage.getItem('selectedDeviceId')
+                const initialDeviceId = savedDeviceId && devices.includes(savedDeviceId)
+                    ? savedDeviceId
+                    : devices[0]
+                setInputDeviceId(initialDeviceId)
+                setDeviceId(initialDeviceId)
+                currentDeviceIdRef.current = initialDeviceId
             }
         }
 
@@ -418,6 +423,8 @@ export default function WebsocketController() {
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
         currentDeviceIdRef.current = value
+        // Сохраняем выбранный deviceId в localStorage
+        localStorage.setItem('selectedDeviceId', value)
 
         if (autoReconnect) {
             await disconnectWebSocket()
