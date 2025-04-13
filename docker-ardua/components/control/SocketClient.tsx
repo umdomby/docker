@@ -243,6 +243,7 @@ export default function WebsocketController() {
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [isLandscape, setIsLandscape] = useState(false)
     const [autoReconnect, setAutoReconnect] = useState(false)
+    const [autoConnect, setAutoConnect] = useState(false)
 
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -258,14 +259,14 @@ export default function WebsocketController() {
         currentDeviceIdRef.current = inputDeviceId
     }, [inputDeviceId])
 
+
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
         if (savedDevices) {
             const devices = JSON.parse(savedDevices)
             setDeviceList(devices)
             if (devices.length > 0) {
-                // Добавляем проверку сохраненного deviceId
-                const savedDeviceId = localStorage.getItem('selectedDeviceId')
+                const savedDeviceId = localStorage.getItem('selectedDeviceId') // Получаем сохраненный deviceId
                 const initialDeviceId = savedDeviceId && devices.includes(savedDeviceId)
                     ? savedDeviceId
                     : devices[0]
@@ -278,6 +279,11 @@ export default function WebsocketController() {
         const savedAutoReconnect = localStorage.getItem('autoReconnect')
         if (savedAutoReconnect) {
             setAutoReconnect(savedAutoReconnect === 'true')
+        }
+
+        const savedAutoConnect = localStorage.getItem('autoConnect')
+        if (savedAutoConnect) {
+            setAutoConnect(savedAutoConnect === 'true')
         }
     }, [])
 
@@ -403,6 +409,18 @@ export default function WebsocketController() {
         socketRef.current = ws
     }, [addLog, cleanupWebSocket])
 
+
+    useEffect(() => {
+        if (autoConnect && !isConnected) {
+            connectWebSocket(currentDeviceIdRef.current)
+        }
+    }, [autoConnect, connectWebSocket, isConnected])
+
+    const handleAutoConnectChange = useCallback((checked: boolean) => {
+        setAutoConnect(checked)
+        localStorage.setItem('autoConnect', checked.toString())
+    }, [])
+
     const disconnectWebSocket = useCallback(() => {
         return new Promise<void>((resolve) => {
             cleanupWebSocket()
@@ -423,8 +441,7 @@ export default function WebsocketController() {
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
         currentDeviceIdRef.current = value
-        // Сохраняем выбранный deviceId в localStorage
-        localStorage.setItem('selectedDeviceId', value)
+        localStorage.setItem('selectedDeviceId', value) // Сохраняем выбранный deviceId в localStorage
 
         if (autoReconnect) {
             await disconnectWebSocket()
@@ -641,6 +658,15 @@ export default function WebsocketController() {
                     <Label htmlFor="auto-reconnect">Auto reconnect</Label>
                 </div>
 
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id="auto-connect"
+                        checked={autoConnect}
+                        onCheckedChange={handleAutoConnectChange}
+                    />
+                    <Label htmlFor="auto-connect">Auto connect</Label>
+                </div>
+
                 <Dialog open={controlVisible} onOpenChange={setControlVisible}>
                     <DialogTrigger asChild>
                         <Button onClick={() => setControlVisible(!controlVisible)}>
@@ -653,7 +679,7 @@ export default function WebsocketController() {
                         padding: 0,
                         margin: 0,
                         display: 'flex',
-                        flexDirection: 'column', // Добавляем column layout
+                        flexDirection: 'column',
                         justifyContent: 'space-between',
                         alignItems: 'stretch',
                         gap: 0
@@ -664,9 +690,7 @@ export default function WebsocketController() {
                             </DialogDescription>
                         </DialogHeader>
 
-                        {/* Основное содержимое */}
                         <div className="flex w-full justify-between" style={{ flex: 1 }}>
-                            {/* Левый сенсор (A) */}
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="A"
@@ -676,7 +700,6 @@ export default function WebsocketController() {
                                 />
                             </div>
 
-                            {/* Правый сенсор (B) */}
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="B"
