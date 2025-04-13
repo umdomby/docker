@@ -36,8 +36,9 @@ ENV NODE_ENV=production
 
 # Порты
 EXPOSE 3000
-EXPOSE 1444
+#EXPOSE 1444
 
 # Запустите приложение
 #CMD ["yarn", "start"]
-CMD ["sh", "-c", "concurrently \"yarn next start\" \"ts-node server.ts\""]
+#CMD ["sh", "-c", "concurrently \"yarn next start\" \"ts-node server.ts\""]
+CMD ["sh", "-c", "concurrently \"yarn next start\""]
