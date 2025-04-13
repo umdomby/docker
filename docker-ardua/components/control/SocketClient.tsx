@@ -630,7 +630,7 @@ export default function WebsocketController() {
 
                 <Button
                     onClick={disconnectWebSocket}
-                    disabled={!isConnected}
+                    disabled={!isConnected || autoConnect}
                     size="sm"
                     variant="destructive"
                     className="h-8"
