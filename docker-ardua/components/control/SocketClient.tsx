@@ -12,6 +12,8 @@ import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 
 type MessageType = {
     type?: string
@@ -245,6 +247,7 @@ export default function WebsocketController() {
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [isLandscape, setIsLandscape] = useState(false)
+    const [autoReconnect, setAutoReconnect] = useState(false)
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
@@ -263,6 +266,11 @@ export default function WebsocketController() {
                 setInputDeviceId(devices[0])
                 setDeviceId(devices[0])
             }
+        }
+
+        const savedAutoReconnect = localStorage.getItem('autoReconnect')
+        if (savedAutoReconnect) {
+            setAutoReconnect(savedAutoReconnect === 'true')
         }
     }, [])
 
@@ -367,7 +375,6 @@ export default function WebsocketController() {
             setEspConnected(false)
             addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server')
 
-            // Auto-reconnect logic
             if (reconnectAttemptRef.current < 5) {
                 reconnectAttemptRef.current += 1
                 const delay = Math.min(5000, reconnectAttemptRef.current * 1000)
@@ -404,8 +411,17 @@ export default function WebsocketController() {
 
     const handleDeviceChange = useCallback((value: string) => {
         setInputDeviceId(value)
-        disconnectWebSocket()
-    }, [disconnectWebSocket])
+
+        if (autoReconnect) {
+            disconnectWebSocket()
+            connectWebSocket()
+        }
+    }, [autoReconnect, disconnectWebSocket, connectWebSocket])
+
+    const toggleAutoReconnect = useCallback((checked: boolean) => {
+        setAutoReconnect(checked)
+        localStorage.setItem('autoReconnect', checked.toString())
+    }, [])
 
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
@@ -600,6 +616,15 @@ export default function WebsocketController() {
                 >
                     E-Stop
                 </Button>
+
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id="auto-reconnect"
+                        checked={autoReconnect}
+                        onCheckedChange={toggleAutoReconnect}
+                    />
+                    <Label htmlFor="auto-reconnect">Auto reconnect</Label>
+                </div>
 
                 <Dialog open={controlVisible} onOpenChange={setControlVisible}>
                     <DialogTrigger asChild>
