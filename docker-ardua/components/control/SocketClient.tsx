@@ -558,14 +558,19 @@ export default function WebsocketController() {
             <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                 <h1 className="text-lg font-bold">ESP8266 Control</h1>
 
-                <div className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
-                     title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
+                <div
+                    className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
+                    title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
                 </div>
 
                 <div className="flex items-center space-x-2">
-                    <Select value={inputDeviceId} onValueChange={handleDeviceChange}>
+                    <Select
+                        value={inputDeviceId}
+                        onValueChange={handleDeviceChange}
+                        disabled={isConnected && !autoReconnect}
+                    >
                         <SelectTrigger className="w-[100px] h-8">
-                            <SelectValue placeholder="Device ID" />
+                            <SelectValue placeholder="Device ID"/>
                         </SelectTrigger>
                         <SelectContent>
                             {deviceList.map(id => (
@@ -687,7 +692,7 @@ export default function WebsocketController() {
                     className="h-8"
                     onClick={() => setLogVisible(!logVisible)}
                 >
-                    {logVisible ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
                     <span className="ml-1">Logs</span>
                 </Button>
             </div>
