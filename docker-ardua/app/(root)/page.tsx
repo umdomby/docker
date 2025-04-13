@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation';
 import React, { Suspense } from 'react';
 import Loading from "@/app/(root)/loading";
 import {prisma} from "@/prisma/prisma-client";
-
+import SocketClient from "@/components/control/SocketClient";
 
 export default async function Home() {
     const session = await getUserSession();
@@ -40,7 +40,7 @@ export default async function Home() {
     return (
         <Container className="flex flex-col my-10">
             <Suspense fallback={<Loading />}>
-                999
+                <SocketClient/>
             </Suspense>
         </Container>
     );
