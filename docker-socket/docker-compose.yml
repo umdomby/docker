@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  websocket-server:
+    build: .
+    container_name: ws-server
+    ports:
+      - "1444:1444"
+    restart: always  # или "always" для более агрессивного перезапуска
+    environment:
+      - NODE_ENV=production
+    volumes:
+      - .:/app
+      - /app/node_modules
+    working_dir: /app
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:1444 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
