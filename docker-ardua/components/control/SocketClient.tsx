@@ -638,17 +638,6 @@ export default function WebsocketController() {
                     Disconnect
                 </Button>
 
-                <Button
-                    onClick={emergencyStop}
-                    disabled={!isConnected || !isIdentified}
-                    size="sm"
-                    variant="outline"
-                    className="h-8"
-                    title="Immediately stops both motors by sending zero speed commands"
-                >
-                    E-Stop
-                </Button>
-
                 <div className="flex items-center space-x-2">
                     <Checkbox
                         id="auto-reconnect"
@@ -708,6 +697,19 @@ export default function WebsocketController() {
                                     speed={motorBSpeed}
                                 />
                             </div>
+                        </div>
+
+                        <div className="p-2 flex justify-center">
+                            <Button
+                                onClick={emergencyStop}
+                                disabled={!isConnected || !isIdentified}
+                                size="sm"
+                                variant="destructive"
+                                className="h-8"
+                                title="Immediately stops both motors by sending zero speed commands"
+                            >
+                                E-Stop
+                            </Button>
                         </div>
 
                         <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
