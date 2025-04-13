@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import {
     Dialog, DialogClose,
-    DialogContent,
+    DialogContent, DialogDescription,
     DialogHeader,
     DialogTitle,
     DialogTrigger,
@@ -646,26 +646,24 @@ export default function WebsocketController() {
                         padding: 0,
                         margin: 0,
                         display: 'flex',
+                        flexDirection: 'column', // Добавляем column layout
                         justifyContent: 'space-between',
                         alignItems: 'stretch',
                         gap: 0
                     }}>
                         <DialogHeader>
-                            <DialogTitle></DialogTitle>
+                            <DialogTitle>Управление моторами</DialogTitle>
+                            <DialogDescription>
+                            </DialogDescription>
                         </DialogHeader>
 
-                        <DialogClose className="absolute left-1/2 -translate-x-1/2">
-                            X
-                        </DialogClose>
-
-                        {/* Левый сенсор (A) */}
-                        <div className="flex w-full justify-between">
+                        {/* Основное содержимое */}
+                        <div className="flex w-full justify-between" style={{ flex: 1 }}>
+                            {/* Левый сенсор (A) */}
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="A"
-                                    onChange={(value) => {
-                                        handleMotorAControl(value)
-                                    }}
+                                    onChange={handleMotorAControl}
                                     direction={motorADirection}
                                     speed={motorASpeed}
                                 />
@@ -675,14 +673,19 @@ export default function WebsocketController() {
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
                                     motor="B"
-                                    onChange={(value) => {
-                                        handleMotorBControl(value)
-                                    }}
+                                    onChange={handleMotorBControl}
                                     direction={motorBDirection}
                                     speed={motorBSpeed}
                                 />
                             </div>
                         </div>
+
+                        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+                            <span className="sr-only">Закрыть</span>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </DialogClose>
                     </DialogContent>
                 </Dialog>
 
