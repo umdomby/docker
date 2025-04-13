@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { ChevronDown, ChevronUp } from "lucide-react"
 
 type MessageType = {
     type?: string
@@ -233,9 +235,11 @@ export default function WebsocketController() {
     const [isIdentified, setIsIdentified] = useState(false)
     const [deviceId, setDeviceId] = useState('123')
     const [inputDeviceId, setInputDeviceId] = useState('123')
+    const [newDeviceId, setNewDeviceId] = useState('')
     const [deviceList, setDeviceList] = useState<string[]>(['123'])
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
+    const [logVisible, setLogVisible] = useState(false)
     const [motorASpeed, setMotorASpeed] = useState(0)
     const [motorBSpeed, setMotorBSpeed] = useState(0)
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
@@ -252,18 +256,28 @@ export default function WebsocketController() {
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
         if (savedDevices) {
-            setDeviceList(JSON.parse(savedDevices))
+            const devices = JSON.parse(savedDevices)
+            setDeviceList(devices)
+            if (devices.length > 0) {
+                setInputDeviceId(devices[0])
+                setDeviceId(devices[0])
+            }
         }
     }, [])
 
-    const saveDeviceId = useCallback((id: string) => {
-        setInputDeviceId(id)
-        if (!deviceList.includes(id)) {
-            const newList = [...deviceList, id]
-            setDeviceList(newList)
-            localStorage.setItem('espDeviceList', JSON.stringify(newList))
+    const saveNewDeviceId = useCallback(() => {
+        if (newDeviceId && !deviceList.includes(newDeviceId)) {
+            const updatedList = [...deviceList, newDeviceId]
+            setDeviceList(updatedList)
+            localStorage.setItem('espDeviceList', JSON.stringify(updatedList))
+            setInputDeviceId(newDeviceId)
+            setNewDeviceId('')
         }
-    }, [deviceList])
+    }, [newDeviceId, deviceList])
+
+    const handleDeviceChange = useCallback((value: string) => {
+        setInputDeviceId(value)
+    }, [])
 
     useEffect(() => {
         const checkOrientation = () => {
@@ -484,7 +498,7 @@ export default function WebsocketController() {
 
     return (
         <div className="p-2 space-y-2 max-w-full">
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                 <h1 className="text-lg font-bold">ESP8266 Control</h1>
 
                 <div className={`w-3 h-3 rounded-full ${statusColor}`} title={
@@ -495,16 +509,33 @@ export default function WebsocketController() {
                         : 'Disconnected'
                 }></div>
 
-                <Select value={inputDeviceId} onValueChange={saveDeviceId}>
-                    <SelectTrigger className="w-[100px] h-8">
-                        <SelectValue placeholder="Device ID" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        {deviceList.map(id => (
-                            <SelectItem key={id} value={id}>{id}</SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
+                <div className="flex items-center space-x-2">
+                    <Select value={inputDeviceId} onValueChange={handleDeviceChange}>
+                        <SelectTrigger className="w-[100px] h-8">
+                            <SelectValue placeholder="Device ID" />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {deviceList.map(id => (
+                                <SelectItem key={id} value={id}>{id}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    <Input
+                        value={newDeviceId}
+                        onChange={(e) => setNewDeviceId(e.target.value)}
+                        placeholder="New ID"
+                        className="w-[80px] h-8"
+                    />
+                    <Button
+                        onClick={saveNewDeviceId}
+                        size="sm"
+                        className="h-8"
+                        disabled={!newDeviceId}
+                    >
+                        Add
+                    </Button>
+                </div>
 
                 <Button
                     onClick={connectWebSocket}
@@ -541,12 +572,14 @@ export default function WebsocketController() {
                         <Button
                             size="sm"
                             className="h-8"
-                            onClick={() => setControlVisible(!controlVisible)}
                         >
-                            {controlVisible ? "Hide" : "Show"}
+                            Controls
                         </Button>
                     </DialogTrigger>
                     <DialogContent className="w-full h-[80vh] p-0 m-0 flex justify-between items-stretch gap-0">
+                        <DialogHeader>
+                            <DialogTitle>Motor Controls</DialogTitle>
+                        </DialogHeader>
                         <div className="flex w-full justify-between">
                             <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
                                 <Joystick
@@ -567,21 +600,33 @@ export default function WebsocketController() {
                         </div>
                     </DialogContent>
                 </Dialog>
+
+                <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    onClick={() => setLogVisible(!logVisible)}
+                >
+                    {logVisible ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    <span className="ml-1">Logs</span>
+                </Button>
             </div>
 
-            <div className="border rounded-md overflow-hidden">
-                <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
-                    {log.slice().reverse().map((entry, index) => (
-                        <div key={index} className={`truncate ${
-                            entry.type === 'client' ? 'text-blue-500' :
-                                entry.type === 'esp' ? 'text-green-500' :
-                                    entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
-                        }`}>
-                            {entry.message}
-                        </div>
-                    ))}
+            {logVisible && (
+                <div className="border rounded-md overflow-hidden">
+                    <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
+                        {log.slice().reverse().map((entry, index) => (
+                            <div key={index} className={`truncate ${
+                                entry.type === 'client' ? 'text-blue-500' :
+                                    entry.type === 'esp' ? 'text-green-500' :
+                                        entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
+                            }`}>
+                                {entry.message}
+                            </div>
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </div>
     )
 }
