@@ -9,6 +9,7 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 type MessageType = {
     type?: string
@@ -91,7 +92,7 @@ const Joystick = ({
             container.style.backgroundColor = motorStyles[motor].bg
         }
 
-        onChange(0) // Важно: отправляем 0 при отпускании
+        onChange(0)
     }, [motor, motorStyles, onChange])
 
     useEffect(() => {
@@ -152,7 +153,6 @@ const Joystick = ({
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
-        // Добавляем глобальные обработчики для гарантированного завершения
         const handleGlobalMouseUp = () => {
             if (isDragging.current) {
                 handleEnd()
@@ -233,6 +233,7 @@ export default function WebsocketController() {
     const [isIdentified, setIsIdentified] = useState(false)
     const [deviceId, setDeviceId] = useState('123')
     const [inputDeviceId, setInputDeviceId] = useState('123')
+    const [deviceList, setDeviceList] = useState<string[]>(['123'])
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
     const [motorASpeed, setMotorASpeed] = useState(0)
@@ -247,6 +248,22 @@ export default function WebsocketController() {
     const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
     const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
+
+    useEffect(() => {
+        const savedDevices = localStorage.getItem('espDeviceList')
+        if (savedDevices) {
+            setDeviceList(JSON.parse(savedDevices))
+        }
+    }, [])
+
+    const saveDeviceId = useCallback((id: string) => {
+        setInputDeviceId(id)
+        if (!deviceList.includes(id)) {
+            const newList = [...deviceList, id]
+            setDeviceList(newList)
+            localStorage.setItem('espDeviceList', JSON.stringify(newList))
+        }
+    }, [deviceList])
 
     useEffect(() => {
         const checkOrientation = () => {
@@ -299,7 +316,6 @@ export default function WebsocketController() {
         const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
 
         return (value: number) => {
-            // Определяем направление и скорость
             let direction: 'forward' | 'backward' | 'stop' = 'stop'
             let speed = 0
 
@@ -311,31 +327,25 @@ export default function WebsocketController() {
                 speed = -value
             }
 
-            // Обновляем UI сразу
             setSpeed(speed)
             setDirection(direction)
 
-            // Если команда не изменилась - ничего не делаем
             const currentCommand = { speed, direction }
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
                 return
             }
 
-            // Запоминаем последнюю команду
             lastCommandRef.current = currentCommand
 
-            // Отменяем предыдущий таймер
             if (throttleRef.current) {
                 clearTimeout(throttleRef.current)
             }
 
-            // Если скорость 0 (отпустили джойстик) - отправляем команду остановки немедленно
             if (speed === 0) {
                 sendCommand("set_speed", { motor, speed: 0 })
                 return
             }
 
-            // Для движения - отправляем с задержкой (но гарантируем отправку последней команды)
             throttleRef.current = setTimeout(() => {
                 sendCommand("set_speed", { motor, speed })
                 sendCommand(direction === 'forward'
@@ -349,7 +359,6 @@ export default function WebsocketController() {
     const handleMotorBControl = createMotorHandler('B')
 
     const emergencyStop = useCallback(() => {
-        // Немедленная остановка без задержек
         sendCommand("set_speed", { motor: 'A', speed: 0 })
         sendCommand("set_speed", { motor: 'B', speed: 0 })
         setMotorASpeed(0)
@@ -357,7 +366,6 @@ export default function WebsocketController() {
         setMotorADirection('stop')
         setMotorBDirection('stop')
 
-        // Очищаем все pending команды
         if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
         if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
     }, [sendCommand])
@@ -468,168 +476,107 @@ export default function WebsocketController() {
         return () => clearInterval(interval)
     }, [isConnected, isIdentified, sendCommand])
 
+    const statusColor = isConnected
+        ? (isIdentified
+            ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
+            : 'bg-yellow-500')
+        : 'bg-red-500'
+
     return (
-        <div>
-            <h1>ESP8266 WebSocket Control</h1>
+        <div className="p-2 space-y-2 max-w-full">
+            <div className="flex items-center space-x-2">
+                <h1 className="text-lg font-bold">ESP8266 Control</h1>
 
-            <div style={{
-                margin: '10px 0',
-                padding: '10px',
-                background: isConnected ? (isIdentified ? (espConnected ? '#5c5c5c' : '#4c4c4c') : '#5c5c5c') : '#868788',
-                border: `1px solid ${isConnected ? (isIdentified ? (espConnected ? '#4caf50' : '#ffa000') : '#ffa000') : '#f44336'}`,
-                borderRadius: '4px'
-            }}>
-                Status: {isConnected ? (isIdentified ? `✅ Connected & Identified (ESP: ${espConnected ? '✅' : '❌'})` : "🟡 Connected (Pending)") : "❌ Disconnected"}
-            </div>
+                <div className={`w-3 h-3 rounded-full ${statusColor}`} title={
+                    isConnected
+                        ? (isIdentified
+                            ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)')
+                            : 'Connected (Pending)')
+                        : 'Disconnected'
+                }></div>
 
-            <div style={{
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '10px',
-                margin: '15px 0',
-                padding: '15px',
-                background: '#f5f5f5',
-                borderRadius: '8px'
-            }}>
-                <input
-                    type="text"
-                    placeholder="Device ID"
-                    value={inputDeviceId}
-                    onChange={(e) => setInputDeviceId(e.target.value)}
+                <Select value={inputDeviceId} onValueChange={saveDeviceId}>
+                    <SelectTrigger className="w-[100px] h-8">
+                        <SelectValue placeholder="Device ID" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {deviceList.map(id => (
+                            <SelectItem key={id} value={id}>{id}</SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+
+                <Button
+                    onClick={connectWebSocket}
                     disabled={isConnected}
-                    style={{
-                        padding: '8px',
-                        border: '1px solid #ddd',
-                        borderRadius: '4px'
-                    }}
-                />
-                <div style={{ display: 'flex', gap: '10px' }}>
-                    <button
-                        onClick={connectWebSocket}
-                        disabled={isConnected}
-                        style={{
-                            padding: '10px 15px',
-                            background: '#2196f3',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            flex: 1
-                        }}
-                    >
-                        Connect
-                    </button>
-                    <button
-                        onClick={disconnectWebSocket}
-                        disabled={!isConnected}
-                        style={{
-                            padding: '10px 15px',
-                            background: '#f44336',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            flex: 1
-                        }}
-                    >
-                        Disconnect
-                    </button>
-                    <button
-                        onClick={emergencyStop}
-                        disabled={!isConnected || !isIdentified}
-                        style={{
-                            padding: '10px 15px',
-                            background: '#ff9800',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '4px',
-                            cursor: 'pointer',
-                            flex: 1
-                        }}
-                    >
-                        Emergency Stop
-                    </button>
-                </div>
+                    size="sm"
+                    className="h-8"
+                >
+                    Connect
+                </Button>
+
+                <Button
+                    onClick={disconnectWebSocket}
+                    disabled={!isConnected}
+                    size="sm"
+                    variant="destructive"
+                    className="h-8"
+                >
+                    Disconnect
+                </Button>
+
+                <Button
+                    onClick={emergencyStop}
+                    disabled={!isConnected || !isIdentified}
+                    size="sm"
+                    variant="outline"
+                    className="h-8"
+                    title="Immediately stops both motors by sending zero speed commands"
+                >
+                    E-Stop
+                </Button>
+
+                <Dialog open={controlVisible} onOpenChange={setControlVisible}>
+                    <DialogTrigger asChild>
+                        <Button
+                            size="sm"
+                            className="h-8"
+                            onClick={() => setControlVisible(!controlVisible)}
+                        >
+                            {controlVisible ? "Hide" : "Show"}
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="w-full h-[80vh] p-0 m-0 flex justify-between items-stretch gap-0">
+                        <div className="flex w-full justify-between">
+                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                                <Joystick
+                                    motor="A"
+                                    onChange={handleMotorAControl}
+                                    direction={motorADirection}
+                                    speed={motorASpeed}
+                                />
+                            </div>
+                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                                <Joystick
+                                    motor="B"
+                                    onChange={handleMotorBControl}
+                                    direction={motorBDirection}
+                                    speed={motorBSpeed}
+                                />
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </div>
 
-            <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                <DialogTrigger asChild>
-                    <Button onClick={() => setControlVisible(!controlVisible)}>
-                        {controlVisible ? "Hide Controls" : "Show Controls"}
-                    </Button>
-                </DialogTrigger>
-                <DialogContent style={{
-                    width: '100%',
-                    height: '80vh',
-                    padding: 0,
-                    margin: 0,
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'stretch',
-                    gap: 0
-                }}>
-                    <DialogHeader>
-                        <DialogTitle></DialogTitle>
-                    </DialogHeader>
-
-                    <DialogClose className="absolute left-1/2 -translate-x-1/2">
-                        X
-                    </DialogClose>
-
-                    {/* Левый сенсор (A) */}
-                    <div className="flex w-full justify-between">
-                        <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
-                            <Joystick
-                                motor="A"
-                                onChange={(value) => {
-                                    handleMotorAControl(value)
-                                }}
-                                direction={motorADirection}
-                                speed={motorASpeed}
-                            />
-                        </div>
-
-                        {/* Правый сенсор (B) */}
-                        <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
-                            <Joystick
-                                motor="B"
-                                onChange={(value) => {
-                                    handleMotorBControl(value)
-                                }}
-                                direction={motorBDirection}
-                                speed={motorBSpeed}
-                            />
-                        </div>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            <div style={{
-                border: '1px solid #ddd',
-                borderRadius: '8px',
-                overflow: 'hidden',
-                marginTop: '20px'
-            }}>
-                <h3 style={{ padding: '10px', background: '#eee', margin: 0 }}>Event Log</h3>
-                <div style={{
-                    height: '300px',
-                    overflowY: 'auto',
-                    padding: '10px',
-                    background: '#fafafa'
-                }}>
+            <div className="border rounded-md overflow-hidden">
+                <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
                     {log.slice().reverse().map((entry, index) => (
-                        <div key={index} style={{
-                            margin: '5px 0',
-                            padding: '5px',
-                            borderBottom: '1px solid #eee',
-                            fontFamily: 'monospace',
-                            fontSize: '14px',
-                            color:
-                                entry.type === 'client' ? '#2196F3' :
-                                    entry.type === 'esp' ? '#4CAF50' :
-                                        entry.type === 'server' ? '#9C27B0' : '#F44336',
-                            fontWeight: entry.type === 'error' ? 'bold' : 'normal'
-                        }}>
+                        <div key={index} className={`truncate ${
+                            entry.type === 'client' ? 'text-blue-500' :
+                                entry.type === 'esp' ? 'text-green-500' :
+                                    entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
+                        }`}>
                             {entry.message}
                         </div>
                     ))}
