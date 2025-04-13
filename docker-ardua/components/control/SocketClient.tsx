@@ -248,6 +248,7 @@ export default function WebsocketController() {
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [isLandscape, setIsLandscape] = useState(false)
     const [autoReconnect, setAutoReconnect] = useState(false)
+
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
@@ -256,6 +257,11 @@ export default function WebsocketController() {
     const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
     const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
+    const currentDeviceIdRef = useRef(inputDeviceId)
+
+    useEffect(() => {
+        currentDeviceIdRef.current = inputDeviceId
+    }, [inputDeviceId])
 
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
@@ -265,6 +271,7 @@ export default function WebsocketController() {
             if (devices.length > 0) {
                 setInputDeviceId(devices[0])
                 setDeviceId(devices[0])
+                currentDeviceIdRef.current = devices[0]
             }
         }
 
@@ -281,6 +288,7 @@ export default function WebsocketController() {
             localStorage.setItem('espDeviceList', JSON.stringify(updatedList))
             setInputDeviceId(newDeviceId)
             setNewDeviceId('')
+            currentDeviceIdRef.current = newDeviceId
         }
     }, [newDeviceId, deviceList])
 
@@ -301,7 +309,7 @@ export default function WebsocketController() {
         }
     }, [])
 
-    const connectWebSocket = useCallback(() => {
+    const connectWebSocket = useCallback((deviceIdToConnect: string) => {
         cleanupWebSocket()
 
         reconnectAttemptRef.current = 0
@@ -324,7 +332,7 @@ export default function WebsocketController() {
 
             ws.send(JSON.stringify({
                 type: 'identify',
-                deviceId: inputDeviceId
+                deviceId: deviceIdToConnect
             }))
         }
 
@@ -336,7 +344,7 @@ export default function WebsocketController() {
                 if (data.type === "system") {
                     if (data.status === "connected") {
                         setIsIdentified(true)
-                        setDeviceId(inputDeviceId)
+                        setDeviceId(deviceIdToConnect)
                     }
                     addLog(`System: ${data.message}`, 'server')
                 }
@@ -381,7 +389,7 @@ export default function WebsocketController() {
                 addLog(`Attempting to reconnect in ${delay/1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
 
                 reconnectTimerRef.current = setTimeout(() => {
-                    connectWebSocket()
+                    connectWebSocket(currentDeviceIdRef.current)
                 }, delay)
             } else {
                 addLog("Max reconnection attempts reached", 'error')
@@ -393,28 +401,32 @@ export default function WebsocketController() {
         }
 
         socketRef.current = ws
-    }, [addLog, inputDeviceId, cleanupWebSocket])
-
-    const disconnectWebSocket = useCallback(() => {
-        cleanupWebSocket()
-        setIsConnected(false)
-        setIsIdentified(false)
-        setEspConnected(false)
-        addLog("Disconnected manually", 'server')
-        reconnectAttemptRef.current = 5
-
-        if (reconnectTimerRef.current) {
-            clearTimeout(reconnectTimerRef.current)
-            reconnectTimerRef.current = null
-        }
     }, [addLog, cleanupWebSocket])
 
-    const handleDeviceChange = useCallback((value: string) => {
+    const disconnectWebSocket = useCallback(() => {
+        return new Promise<void>((resolve) => {
+            cleanupWebSocket()
+            setIsConnected(false)
+            setIsIdentified(false)
+            setEspConnected(false)
+            addLog("Disconnected manually", 'server')
+            reconnectAttemptRef.current = 5
+
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current)
+                reconnectTimerRef.current = null
+            }
+            resolve()
+        })
+    }, [addLog, cleanupWebSocket])
+
+    const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
+        currentDeviceIdRef.current = value
 
         if (autoReconnect) {
-            disconnectWebSocket()
-            connectWebSocket()
+            await disconnectWebSocket()
+            connectWebSocket(value)
         }
     }, [autoReconnect, disconnectWebSocket, connectWebSocket])
 
@@ -551,13 +563,9 @@ export default function WebsocketController() {
             <div className="flex items-center space-x-2 flex-wrap gap-y-2">
                 <h1 className="text-lg font-bold">ESP8266 Control</h1>
 
-                <div className={`w-3 h-3 rounded-full ${statusColor}`} title={
-                    isConnected
-                        ? (isIdentified
-                            ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)')
-                            : 'Connected (Pending)')
-                        : 'Disconnected'
-                }></div>
+                <div className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
+                     title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
+                </div>
 
                 <div className="flex items-center space-x-2">
                     <Select value={inputDeviceId} onValueChange={handleDeviceChange}>
@@ -588,7 +596,7 @@ export default function WebsocketController() {
                 </div>
 
                 <Button
-                    onClick={connectWebSocket}
+                    onClick={() => connectWebSocket(currentDeviceIdRef.current)}
                     disabled={isConnected}
                     size="sm"
                     className="h-8"
