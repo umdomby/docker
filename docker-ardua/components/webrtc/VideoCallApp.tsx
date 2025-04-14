@@ -1,5 +1,4 @@
 // file: docker-ardua/components/webrtc/VideoCallApp.tsx
-// file: client/app/webrtc/VideoCallApp.tsx
 'use client'
 
 import { useWebRTC } from './hooks/useWebRTC';
@@ -10,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export const VideoCallApp = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -23,6 +23,14 @@ export const VideoCallApp = () => {
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
+    const [autoConnect, setAutoConnect] = useState(() => {
+        // Чтение из localStorage при инициализации
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('autoConnect');
+            return saved === 'true';
+        }
+        return false;
+    });
 
     // Загрузка сохраненных устройств из localStorage при монтировании
     useEffect(() => {
@@ -37,12 +45,14 @@ export const VideoCallApp = () => {
         }
     }, []);
 
-    // Сохранение устройств в localStorage при их изменении
+    // Сохранение устройств и настроек autoConnect в localStorage при их изменении
     useEffect(() => {
-        if (selectedDevices.video || selectedDevices.audio) {
-            localStorage.setItem('selectedDevices', JSON.stringify(selectedDevices));
-        }
+        localStorage.setItem('selectedDevices', JSON.stringify(selectedDevices));
     }, [selectedDevices]);
+
+    useEffect(() => {
+        localStorage.setItem('autoConnect', String(autoConnect));
+    }, [autoConnect]);
 
     const {
         localStream,
@@ -74,26 +84,10 @@ export const VideoCallApp = () => {
             setHasPermission(true);
             setDevicesLoaded(true);
 
-            // Восстановление выбранных устройств из localStorage
-            const savedDevices = localStorage.getItem('selectedDevices');
-            if (savedDevices) {
-                try {
-                    const parsedDevices = JSON.parse(savedDevices);
-                    setSelectedDevices(parsedDevices);
-                    return;
-                } catch (e) {
-                    console.error('Failed to parse saved devices', e);
-                }
+            // Автоматическое подключение если включена опция
+            if (autoConnect && !isInRoom) {
+                handleJoinRoom();
             }
-
-            // Если сохраненных устройств нет, выбираем первые доступные
-            const videoDevice = devices.find(d => d.kind === 'videoinput');
-            const audioDevice = devices.find(d => d.kind === 'audioinput');
-
-            setSelectedDevices({
-                video: videoDevice?.deviceId || '',
-                audio: audioDevice?.deviceId || ''
-            });
         } catch (error) {
             console.error('Device access error:', error);
             setHasPermission(false);
@@ -107,7 +101,6 @@ export const VideoCallApp = () => {
             [type]: deviceId
         };
         setSelectedDevices(newDevices);
-        localStorage.setItem('selectedDevices', JSON.stringify(newDevices));
     };
 
     const handleJoinRoom = async () => {
@@ -132,7 +125,6 @@ export const VideoCallApp = () => {
 
     return (
         <div className={styles.container}>
-
             {error && <div className={styles.error}>{error}</div>}
 
             <div className={styles.controls}>
@@ -142,6 +134,7 @@ export const VideoCallApp = () => {
                 </div>
 
                 <div className={styles.inputGroup}>
+                    <Label htmlFor="room">ID комнаты:</Label>
                     <Input
                         id="room"
                         value={roomId}
@@ -151,6 +144,7 @@ export const VideoCallApp = () => {
                 </div>
 
                 <div className={styles.inputGroup}>
+                    <Label htmlFor="username">Имя пользователя:</Label>
                     <Input
                         id="username"
                         value={username}
@@ -159,10 +153,22 @@ export const VideoCallApp = () => {
                     />
                 </div>
 
+                <div className={styles.inputGroup}>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="autoConnect"
+                            checked={autoConnect}
+                            onCheckedChange={(checked) => setAutoConnect(!!checked)}
+                            disabled={isInRoom}
+                        />
+                        <Label htmlFor="autoConnect">Автоматическое подключение</Label>
+                    </div>
+                </div>
+
                 {!isInRoom ? (
                     <Button
                         onClick={handleJoinRoom}
-                        disabled={!hasPermission || isJoining}
+                        disabled={!hasPermission || isJoining || autoConnect}
                         className={styles.button}
                     >
                         {isJoining ? 'Подключение...' : 'Войти в комнату'}
@@ -185,6 +191,7 @@ export const VideoCallApp = () => {
                     </ul>
                 </div>
             </div>
+
             <div className={styles.deviceSelection}>
                 <h3>Выбор устройств:</h3>
                 {devicesLoaded ? (
