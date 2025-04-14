@@ -1,4 +1,4 @@
-// file: client/app/webrtc/VideoCallApp.tsx
+// file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
 
 import { useWebRTC } from './hooks/useWebRTC';
@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export const VideoCallApp = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
@@ -22,6 +23,7 @@ export const VideoCallApp = () => {
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
+    const [autoJoin, setAutoJoin] = useState(false);
 
     const {
         localStream,
@@ -53,19 +55,49 @@ export const VideoCallApp = () => {
             setHasPermission(true);
             setDevicesLoaded(true);
 
-            const videoDevice = devices.find(d => d.kind === 'videoinput');
-            const audioDevice = devices.find(d => d.kind === 'audioinput');
+            const savedVideoDevice = localStorage.getItem('videoDevice');
+            const savedAudioDevice = localStorage.getItem('audioDevice');
 
-            setSelectedDevices({
+            const videoDevice = devices.find(d =>
+                d.kind === 'videoinput' &&
+                (savedVideoDevice ? d.deviceId === savedVideoDevice : true)
+            );
+            const audioDevice = devices.find(d =>
+                d.kind === 'audioinput' &&
+                (savedAudioDevice ? d.deviceId === savedAudioDevice : true)
+            );
+
+            const newSelectedDevices = {
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
-            });
+            };
+
+            setSelectedDevices(newSelectedDevices);
+
+            if (autoJoin && hasPermission && newSelectedDevices.video && newSelectedDevices.audio) {
+                handleJoinRoom();
+            }
         } catch (error) {
             console.error('Device access error:', error);
             setHasPermission(false);
             setDevicesLoaded(true);
         }
     };
+
+    useEffect(() => {
+        const savedAutoJoin = localStorage.getItem('autoJoin') === 'true';
+        setAutoJoin(savedAutoJoin);
+        loadDevices();
+    }, []);
+
+    useEffect(() => {
+        if (selectedDevices.video) {
+            localStorage.setItem('videoDevice', selectedDevices.video);
+        }
+        if (selectedDevices.audio) {
+            localStorage.setItem('audioDevice', selectedDevices.audio);
+        }
+    }, [selectedDevices]);
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
@@ -90,10 +122,6 @@ export const VideoCallApp = () => {
         }
     };
 
-    useEffect(() => {
-        loadDevices();
-    }, []);
-
     return (
         <div className={styles.container}>
             <h1 className={styles.title}>WebRTC Video Call</h1>
@@ -104,6 +132,25 @@ export const VideoCallApp = () => {
                 <div className={styles.connectionStatus}>
                     Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
                     {isCallActive && ' (Звонок активен)'}
+                </div>
+
+                <div className={styles.inputGroup}>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="autoJoin"
+                            checked={autoJoin}
+                            onCheckedChange={(checked) => {
+                                setAutoJoin(!!checked);
+                                localStorage.setItem('autoJoin', checked ? 'true' : 'false');
+                            }}
+                        />
+                        <label
+                            htmlFor="autoJoin"
+                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                            Автоматическое подключение
+                        </label>
+                    </div>
                 </div>
 
                 <div className={styles.inputGroup}>
@@ -129,7 +176,7 @@ export const VideoCallApp = () => {
                 {!isInRoom ? (
                     <Button
                         onClick={handleJoinRoom}
-                        disabled={!hasPermission || isJoining}
+                        disabled={!hasPermission || isJoining || autoJoin}
                         className={styles.button}
                     >
                         {isJoining ? 'Подключение...' : 'Войти в комнату'}
