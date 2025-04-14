@@ -74,12 +74,14 @@ func sendRoomInfo(room string) {
 		roomInfo := RoomInfo{Users: users}
 
 		for _, peer := range roomPeers {
-			err := peer.conn.WriteJSON(map[string]interface{}{
-				"type": "room_info",
-				"data": roomInfo,
-			})
-			if err != nil {
-				log.Printf("Error sending room info to %s: %v", peer.username, err)
+			if peer.conn != nil {
+				err := peer.conn.WriteJSON(map[string]interface{}{
+					"type": "room_info",
+					"data": roomInfo,
+				})
+				if err != nil {
+					log.Printf("Error sending room info to %s: %v", peer.username, err)
+				}
 			}
 		}
 	}
@@ -94,7 +96,16 @@ func main() {
 
 	log.Println("Server started on :8080")
 	logStatus()
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	server := &http.Server{Addr: ":8080"}
+
+	// Добавляем перезапуск сервера при ошибках
+	for {
+		err := server.ListenAndServe()
+		if err != nil {
+			log.Printf("Server error: %v. Restarting...", err)
+			time.Sleep(5 * time.Second) // Задержка перед перезапуском
+		}
+	}
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -103,7 +114,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println("WebSocket upgrade error:", err)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
 
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New connection from: %s", remoteAddr)
@@ -136,12 +151,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
-        {URLs: []string{
-            "stun:stun.l.google.com:19302",
-            "stun:stun1.l.google.com:19302",
-            "stun:stun2.l.google.com:19302",
-        }},
-
+			{URLs: []string{
+				"stun:stun.l.google.com:19302",
+				"stun:stun1.l.google.com:19302",
+				"stun:stun2.l.google.com:19302",
+			}},
 		},
 	}
 
@@ -167,12 +181,30 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	logStatus()
 	sendRoomInfo(initData.Room)
 
-	// Обработка входящих сообщений
+	// Обработка входящих сообщений с переподключением
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("Connection closed by %s: %v", initData.Username, err)
-			break
+			log.Printf("Connection error from %s: %v. Attempting to reconnect...", initData.Username, err)
+
+			// Попытка переподключения
+			for i := 0; i < 3; i++ {
+				time.Sleep(time.Duration(i+1) * time.Second) // Экспоненциальная задержка
+				newConn, _, err := websocket.DefaultDialer.Dial("ws://"+r.Host+"/ws", nil)
+				if err == nil {
+					conn = newConn
+					peer.conn = newConn
+					log.Printf("Successfully reconnected %s", initData.Username)
+					break
+				}
+				log.Printf("Reconnection attempt %d failed for %s: %v", i+1, initData.Username, err)
+			}
+
+			if err != nil {
+				log.Printf("Failed to reconnect %s, closing connection", initData.Username)
+				break
+			}
+			continue
 		}
 
 		var data map[string]interface{}
@@ -206,9 +238,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// Пересылка сообщения другим участникам комнаты
 		mu.Lock()
 		for username, p := range rooms[peer.room] {
-			if username != peer.username {
+			if username != peer.username && p.conn != nil {
 				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					log.Printf("Error sending to %s: %v", username, err)
+					// Помечаем соединение как проблемное
+					p.conn = nil
 				}
 			}
 		}
