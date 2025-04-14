@@ -1,3 +1,4 @@
+// file: docker-ardua/components/webrtc/VideoCallApp.tsx
 // file: client/app/webrtc/VideoCallApp.tsx
 'use client'
 
@@ -22,6 +23,26 @@ export const VideoCallApp = () => {
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
+
+    // Загрузка сохраненных устройств из localStorage при монтировании
+    useEffect(() => {
+        const savedDevices = localStorage.getItem('selectedDevices');
+        if (savedDevices) {
+            try {
+                const parsedDevices = JSON.parse(savedDevices);
+                setSelectedDevices(parsedDevices);
+            } catch (e) {
+                console.error('Failed to parse saved devices', e);
+            }
+        }
+    }, []);
+
+    // Сохранение устройств в localStorage при их изменении
+    useEffect(() => {
+        if (selectedDevices.video || selectedDevices.audio) {
+            localStorage.setItem('selectedDevices', JSON.stringify(selectedDevices));
+        }
+    }, [selectedDevices]);
 
     const {
         localStream,
@@ -53,6 +74,19 @@ export const VideoCallApp = () => {
             setHasPermission(true);
             setDevicesLoaded(true);
 
+            // Восстановление выбранных устройств из localStorage
+            const savedDevices = localStorage.getItem('selectedDevices');
+            if (savedDevices) {
+                try {
+                    const parsedDevices = JSON.parse(savedDevices);
+                    setSelectedDevices(parsedDevices);
+                    return;
+                } catch (e) {
+                    console.error('Failed to parse saved devices', e);
+                }
+            }
+
+            // Если сохраненных устройств нет, выбираем первые доступные
             const videoDevice = devices.find(d => d.kind === 'videoinput');
             const audioDevice = devices.find(d => d.kind === 'audioinput');
 
@@ -68,10 +102,12 @@ export const VideoCallApp = () => {
     };
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
-        setSelectedDevices(prev => ({
-            ...prev,
+        const newDevices = {
+            ...selectedDevices,
             [type]: deviceId
-        }));
+        };
+        setSelectedDevices(newDevices);
+        localStorage.setItem('selectedDevices', JSON.stringify(newDevices));
     };
 
     const handleJoinRoom = async () => {
