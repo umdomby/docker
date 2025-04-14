@@ -74,15 +74,12 @@ func sendRoomInfo(room string) {
 		roomInfo := RoomInfo{Users: users}
 
 		for _, peer := range roomPeers {
-			if peer.conn != nil {
-				err := peer.conn.WriteJSON(map[string]interface{}{
-					"type": "room_info",
-					"data": roomInfo,
-				})
-				if err != nil {
-					log.Printf("Error sending room info to %s: %v", peer.username, err)
-					// Не удаляем сразу, даем шанс на переподключение
-				}
+			err := peer.conn.WriteJSON(map[string]interface{}{
+				"type": "room_info",
+				"data": roomInfo,
+			})
+			if err != nil {
+				log.Printf("Error sending room info to %s: %v", peer.username, err)
 			}
 		}
 	}
@@ -97,16 +94,7 @@ func main() {
 
 	log.Println("Server started on :8080")
 	logStatus()
-
-	server := &http.Server{
-		Addr: ":8080",
-		// Увеличиваем таймауты для устойчивости
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	log.Fatal(server.ListenAndServe())
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -132,20 +120,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User '%s' joining room '%s'", initData.Username, initData.Room)
 
 	mu.Lock()
-	// Удаляем старый peer, если пользователь переподключается
-	if existingPeer, exists := peers[initData.Username+"@"+initData.Room]; exists {
-		if existingPeer.pc != nil {
-			existingPeer.pc.Close()
-		}
-		if existingPeer.conn != nil {
-			existingPeer.conn.Close()
-		}
-		delete(peers, initData.Username+"@"+initData.Room)
-		if roomPeers, roomExists := rooms[initData.Room]; roomExists {
-			delete(roomPeers, initData.Username)
-		}
-	}
-
 	if roomPeers, exists := rooms[initData.Room]; exists {
 		if _, userExists := roomPeers[initData.Username]; userExists {
 			conn.WriteJSON(map[string]interface{}{
@@ -162,11 +136,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{
-				"stun:stun.l.google.com:19302",
-				"stun:stun1.l.google.com:19302",
-				"stun:stun2.l.google.com:19302",
-			}},
+        {URLs: []string{
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+        }},
+
 		},
 	}
 
@@ -185,7 +160,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	rooms[initData.Room][initData.Username] = peer
-	peers[initData.Username+"@"+initData.Room] = peer // Используем username@room как ключ
+	peers[remoteAddr] = peer
 	mu.Unlock()
 
 	log.Printf("User '%s' joined room '%s'", initData.Username, initData.Room)
@@ -213,6 +188,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("SDP %s from %s (%s)\n%s",
 				sdpType, initData.Username, initData.Room, sdpStr)
 
+			// Анализ видео в SDP
 			hasVideo := strings.Contains(sdpStr, "m=video")
 			log.Printf("Video in SDP: %v", hasVideo)
 
@@ -230,7 +206,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// Пересылка сообщения другим участникам комнаты
 		mu.Lock()
 		for username, p := range rooms[peer.room] {
-			if username != peer.username && p.conn != nil {
+			if username != peer.username {
 				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					log.Printf("Error sending to %s: %v", username, err)
 				}
@@ -241,12 +217,10 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Очистка при отключении
 	mu.Lock()
-	delete(peers, initData.Username+"@"+initData.Room)
-	if roomPeers, exists := rooms[peer.room]; exists {
-		delete(roomPeers, peer.username)
-		if len(roomPeers) == 0 {
-			delete(rooms, peer.room)
-		}
+	delete(peers, remoteAddr)
+	delete(rooms[peer.room], peer.username)
+	if len(rooms[peer.room]) == 0 {
+		delete(rooms, peer.room)
 	}
 	mu.Unlock()
 
