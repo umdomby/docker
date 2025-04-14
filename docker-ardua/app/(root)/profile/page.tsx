@@ -1,4 +1,4 @@
-// app/(root)/profile/page.tsx
+// app/(root)/profile/index.tsx
 import { prisma } from '@/prisma/prisma-client';
 import { ProfileForm } from '@/components/profile-form';
 import { getUserSession } from '@/components/lib/get-user-session';

@@ -1,4 +1,4 @@
-// page.tsx
+// index.tsx
 "use server";
 
 import { prisma } from '@/prisma/prisma-client';

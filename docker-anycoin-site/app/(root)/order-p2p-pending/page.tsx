@@ -1,4 +1,4 @@
-// /app/((root))/order-p2p-pending/page.tsx
+// /app/((root))/order-p2p-pending/index.tsx
 "use server"
 import { Container } from '@/components/container';
 import { prisma } from '@/prisma/prisma-client';

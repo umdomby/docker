@@ -1,4 +1,4 @@
-// app/(root)/player/page.tsx
+// app/(root)/player/index.tsx
 "use server";
 
 import PlayerC from "@/components/PlayerC";

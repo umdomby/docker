@@ -674,7 +674,7 @@ export default function WebsocketController() {
                         gap: 0
                     }}>
                         <DialogHeader>
-                            <DialogTitle>Управление моторами</DialogTitle>
+                            <DialogTitle></DialogTitle>
                             <DialogDescription>
                             </DialogDescription>
                         </DialogHeader>

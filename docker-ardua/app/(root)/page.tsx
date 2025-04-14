@@ -7,6 +7,7 @@ import React, { Suspense } from 'react';
 import Loading from "@/app/(root)/loading";
 import {prisma} from "@/prisma/prisma-client";
 import SocketClient from "@/components/control/SocketClient";
+import WebRTC from  "@/components/webrtc";
 
 export default async function Home() {
     const session = await getUserSession();
@@ -41,6 +42,7 @@ export default async function Home() {
         <Container className="flex flex-col my-10">
             <Suspense fallback={<Loading />}>
                 <SocketClient/>
+                <WebRTC/>
             </Suspense>
         </Container>
     );
