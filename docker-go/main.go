@@ -81,6 +81,7 @@ func sendRoomInfo(room string) {
 				})
 				if err != nil {
 					log.Printf("Error sending room info to %s: %v", peer.username, err)
+					// Не удаляем сразу, даем шанс на переподключение
 				}
 			}
 		}
@@ -96,16 +97,16 @@ func main() {
 
 	log.Println("Server started on :8080")
 	logStatus()
-	server := &http.Server{Addr: ":8080"}
 
-	// Добавляем перезапуск сервера при ошибках
-	for {
-		err := server.ListenAndServe()
-		if err != nil {
-			log.Printf("Server error: %v. Restarting...", err)
-			time.Sleep(5 * time.Second) // Задержка перед перезапуском
-		}
+	server := &http.Server{
+		Addr: ":8080",
+		// Увеличиваем таймауты для устойчивости
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
+
+	log.Fatal(server.ListenAndServe())
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -114,11 +115,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println("WebSocket upgrade error:", err)
 		return
 	}
-	defer func() {
-		if conn != nil {
-			conn.Close()
-		}
-	}()
+	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New connection from: %s", remoteAddr)
@@ -135,6 +132,20 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User '%s' joining room '%s'", initData.Username, initData.Room)
 
 	mu.Lock()
+	// Удаляем старый peer, если пользователь переподключается
+	if existingPeer, exists := peers[initData.Username+"@"+initData.Room]; exists {
+		if existingPeer.pc != nil {
+			existingPeer.pc.Close()
+		}
+		if existingPeer.conn != nil {
+			existingPeer.conn.Close()
+		}
+		delete(peers, initData.Username+"@"+initData.Room)
+		if roomPeers, roomExists := rooms[initData.Room]; roomExists {
+			delete(roomPeers, initData.Username)
+		}
+	}
+
 	if roomPeers, exists := rooms[initData.Room]; exists {
 		if _, userExists := roomPeers[initData.Username]; userExists {
 			conn.WriteJSON(map[string]interface{}{
@@ -174,37 +185,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	mu.Lock()
 	rooms[initData.Room][initData.Username] = peer
-	peers[remoteAddr] = peer
+	peers[initData.Username+"@"+initData.Room] = peer // Используем username@room как ключ
 	mu.Unlock()
 
 	log.Printf("User '%s' joined room '%s'", initData.Username, initData.Room)
 	logStatus()
 	sendRoomInfo(initData.Room)
 
-	// Обработка входящих сообщений с переподключением
+	// Обработка входящих сообщений
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
-			log.Printf("Connection error from %s: %v. Attempting to reconnect...", initData.Username, err)
-
-			// Попытка переподключения
-			for i := 0; i < 3; i++ {
-				time.Sleep(time.Duration(i+1) * time.Second) // Экспоненциальная задержка
-				newConn, _, err := websocket.DefaultDialer.Dial("ws://"+r.Host+"/ws", nil)
-				if err == nil {
-					conn = newConn
-					peer.conn = newConn
-					log.Printf("Successfully reconnected %s", initData.Username)
-					break
-				}
-				log.Printf("Reconnection attempt %d failed for %s: %v", i+1, initData.Username, err)
-			}
-
-			if err != nil {
-				log.Printf("Failed to reconnect %s, closing connection", initData.Username)
-				break
-			}
-			continue
+			log.Printf("Connection closed by %s: %v", initData.Username, err)
+			break
 		}
 
 		var data map[string]interface{}
@@ -220,7 +213,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("SDP %s from %s (%s)\n%s",
 				sdpType, initData.Username, initData.Room, sdpStr)
 
-			// Анализ видео в SDP
 			hasVideo := strings.Contains(sdpStr, "m=video")
 			log.Printf("Video in SDP: %v", hasVideo)
 
@@ -241,8 +233,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if username != peer.username && p.conn != nil {
 				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					log.Printf("Error sending to %s: %v", username, err)
-					// Помечаем соединение как проблемное
-					p.conn = nil
 				}
 			}
 		}
@@ -251,10 +241,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Очистка при отключении
 	mu.Lock()
-	delete(peers, remoteAddr)
-	delete(rooms[peer.room], peer.username)
-	if len(rooms[peer.room]) == 0 {
-		delete(rooms, peer.room)
+	delete(peers, initData.Username+"@"+initData.Room)
+	if roomPeers, exists := rooms[peer.room]; exists {
+		delete(roomPeers, peer.username)
+		if len(roomPeers) == 0 {
+			delete(rooms, peer.room)
+		}
 	}
 	mu.Unlock()
 
