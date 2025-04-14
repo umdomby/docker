@@ -35,12 +35,12 @@ export default function WebRTCPage() {
     }
 
     return (
-        <main className={styles.container}>
+        <div>
             {isSupported === null ? (
                 <div>Loading...</div>
             ) : (
                 <VideoCallApp />
             )}
-        </main>
+        </div>
     );
 }
