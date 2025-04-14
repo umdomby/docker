@@ -13,9 +13,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 export const VideoCallApp = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
-    const [selectedDevices, setSelectedDevices] = useState({
-        video: '',
-        audio: ''
+    const [selectedDevices, setSelectedDevices] = useState(() => {
+        // Чтение сохраненных устройств из localStorage при инициализации
+        if (typeof window !== 'undefined') {
+            const savedDevices = localStorage.getItem('selectedDevices');
+            if (savedDevices) {
+                try {
+                    return JSON.parse(savedDevices);
+                } catch (e) {
+                    console.error('Failed to parse saved devices', e);
+                }
+            }
+        }
+        return { video: '', audio: '' };
     });
     const [roomId, setRoomId] = useState('room1');
     const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
@@ -31,6 +41,7 @@ export const VideoCallApp = () => {
         }
         return false;
     });
+
 
     // Загрузка сохраненных устройств из localStorage при монтировании
     useEffect(() => {
@@ -102,6 +113,10 @@ export const VideoCallApp = () => {
         };
         setSelectedDevices(newDevices);
     };
+
+    useEffect(() => {
+        localStorage.setItem('selectedDevices', JSON.stringify(selectedDevices));
+    }, [selectedDevices]);
 
     const handleJoinRoom = async () => {
         setIsJoining(true);
