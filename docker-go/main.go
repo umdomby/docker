@@ -85,31 +85,6 @@ func sendRoomInfo(room string) {
 	}
 }
 
-func cleanupPeer(peer *Peer, remoteAddr string) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	// Закрываем PeerConnection
-	if peer.pc != nil {
-		if err := peer.pc.Close(); err != nil {
-			log.Printf("Error closing PeerConnection for %s: %v", peer.username, err)
-		}
-	}
-
-	// Удаляем из комнаты
-	delete(rooms[peer.room], peer.username)
-	if len(rooms[peer.room]) == 0 {
-		delete(rooms, peer.room)
-	}
-
-	// Удаляем из списка пиров
-	delete(peers, remoteAddr)
-
-	log.Printf("User '%s' left room '%s'", peer.username, peer.room)
-	logStatus()
-	sendRoomInfo(peer.room)
-}
-
 func main() {
 	http.HandleFunc("/ws", handleWebSocket)
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
@@ -161,21 +136,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
-			{URLs: []string{
-				"stun:stun.l.google.com:19302",
-				"stun:stun1.l.google.com:19302",
-				"stun:stun2.l.google.com:19302",
-			}},
+        {URLs: []string{
+            "stun:stun.l.google.com:19302",
+            "stun:stun1.l.google.com:19302",
+            "stun:stun2.l.google.com:19302",
+        }},
+
 		},
 	}
 
 	peerConnection, err := webrtc.NewPeerConnection(config)
 	if err != nil {
 		log.Printf("PeerConnection error for %s: %v", initData.Username, err)
-		conn.WriteJSON(map[string]interface{}{
-			"type": "error",
-			"data": "Failed to create peer connection",
-		})
 		return
 	}
 
@@ -191,16 +163,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	peers[remoteAddr] = peer
 	mu.Unlock()
 
-	// Обработчик закрытия соединения
-	peerConnection.OnConnectionStateChange(func(pcs webrtc.PeerConnectionState) {
-		log.Printf("PeerConnection state for %s: %s", peer.username, pcs.String())
-		if pcs == webrtc.PeerConnectionStateDisconnected ||
-		   pcs == webrtc.PeerConnectionStateFailed ||
-		   pcs == webrtc.PeerConnectionStateClosed {
-			cleanupPeer(peer, remoteAddr)
-		}
-	})
-
 	log.Printf("User '%s' joined room '%s'", initData.Username, initData.Room)
 	logStatus()
 	sendRoomInfo(initData.Room)
@@ -210,7 +172,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("Connection closed by %s: %v", initData.Username, err)
-			cleanupPeer(peer, remoteAddr)
 			break
 		}
 
@@ -220,30 +181,26 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Обработка SDP
 		if sdp, ok := data["sdp"].(map[string]interface{}); ok {
 			sdpType := sdp["type"].(string)
 			sdpStr := sdp["sdp"].(string)
 
-			log.Printf("SDP %s from %s (%s)", sdpType, initData.Username, initData.Room)
+			log.Printf("SDP %s from %s (%s)\n%s",
+				sdpType, initData.Username, initData.Room, sdpStr)
 
-			// Проверка наличия видео в SDP
+			// Анализ видео в SDP
 			hasVideo := strings.Contains(sdpStr, "m=video")
 			log.Printf("Video in SDP: %v", hasVideo)
 
 			if !hasVideo && sdpType == "offer" {
 				log.Printf("WARNING: Offer from %s contains no video!", initData.Username)
 			}
-		}
-
-		// Обработка ICE-кандидатов
-		if ice, ok := data["ice"].(map[string]interface{}); ok {
-			candidate := ice["candidate"].(string)
-			if candidate == "" {
-				continue // Пустые кандидаты игнорируем
-			}
-
-			log.Printf("ICE from %s: %s", initData.Username, candidate)
+		} else if ice, ok := data["ice"].(map[string]interface{}); ok {
+			log.Printf("ICE from %s: %s:%v %s",
+				initData.Username,
+				ice["sdpMid"].(string),
+				ice["sdpMLineIndex"].(float64),
+				ice["candidate"].(string))
 		}
 
 		// Пересылка сообщения другим участникам комнаты
@@ -252,12 +209,22 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if username != peer.username {
 				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
 					log.Printf("Error sending to %s: %v", username, err)
-					// Если ошибка при отправке, закрываем соединение
-					p.conn.Close()
-					cleanupPeer(p, p.conn.RemoteAddr().String())
 				}
 			}
 		}
 		mu.Unlock()
 	}
+
+	// Очистка при отключении
+	mu.Lock()
+	delete(peers, remoteAddr)
+	delete(rooms[peer.room], peer.username)
+	if len(rooms[peer.room]) == 0 {
+		delete(rooms, peer.room)
+	}
+	mu.Unlock()
+
+	log.Printf("User '%s' left room '%s'", peer.username, peer.room)
+	logStatus()
+	sendRoomInfo(peer.room)
 }
