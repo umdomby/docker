@@ -31,10 +31,17 @@ export const useWebRTC = (
     // Функция для нормализации SDP
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
-        return sdp
-            .split('\r\n')
-            .filter(line => line.trim() !== '')
-            .join('\r\n') + '\r\n';
+
+        // Убедимся, что SDP начинается с обязательных строк
+        let normalized = sdp.trim();
+        if (!normalized.startsWith('v=')) {
+            normalized = 'v=0\r\n' + normalized;
+        }
+        if (!normalized.includes('\r\no=')) {
+            normalized = normalized.replace('\r\n', '\r\no=- 0 0 IN IP4 0.0.0.0\r\n');
+        }
+
+        return normalized + '\r\n';
     };
 
     // Проверка порядка медиа-секций
@@ -226,21 +233,15 @@ export const useWebRTC = (
                                     return;
                                 }
 
-                                // Проверяем порядок медиа-секций
-                                const offerSdp = pc.current.localDescription?.sdp;
-                                const answerSdp = data.sdp.sdp;
+                                // Создаем корректный объект RTCSessionDescriptionInit
+                                const answerDescription: RTCSessionDescriptionInit = {
+                                    type: 'answer' as RTCSdpType, // Явное приведение типа
+                                    sdp: normalizeSdp(data.sdp.sdp)
+                                };
 
-                                if (!validateMediaOrder(offerSdp, answerSdp)) {
-                                    console.log('Порядок медиа-секций не совпадает, реорганизуем...');
-                                    const reorderedSdp = reorderAnswerMedia(offerSdp, answerSdp);
-                                    if (reorderedSdp) {
-                                        data.sdp.sdp = reorderedSdp;
-                                    }
-                                }
-
-                                console.log('Устанавливаем удаленное описание с ответом');
+                                console.log('Устанавливаем удаленное описание с ответом:', answerDescription);
                                 await pc.current.setRemoteDescription(
-                                    new RTCSessionDescription(data.sdp)
+                                    new RTCSessionDescription(answerDescription)
                                 );
 
                                 setIsCallActive(true);
@@ -355,9 +356,22 @@ export const useWebRTC = (
                 console.log('Состояние сбора ICE изменилось:', pc.current?.iceGatheringState);
             };
 
-            pc.current.onicecandidateerror = (event) => {
-                console.error('Ошибка ICE кандидата:', event);
-                setError('Ошибка ICE кандидата');
+            pc.current.onicecandidate = (event) => {
+                if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
+                    // Добавляем проверку на null для candidate
+                    if (event.candidate.candidate && event.candidate.candidate !== '') {
+                        ws.current.send(JSON.stringify({
+                            type: 'ice_candidate',
+                            ice: {
+                                candidate: event.candidate.candidate,
+                                sdpMid: event.candidate.sdpMid,
+                                sdpMLineIndex: event.candidate.sdpMLineIndex
+                            },
+                            room: roomId,
+                            username
+                        }));
+                    }
+                }
             };
 
             const stream = await navigator.mediaDevices.getUserMedia({
