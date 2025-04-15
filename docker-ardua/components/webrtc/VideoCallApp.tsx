@@ -18,9 +18,7 @@ export const VideoCallApp = () => {
         audio: ''
     });
     const [roomId, setRoomId] = useState('room1');
-    // const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
     const [username, setUsername] = useState('123');
-    const [originalUsername, setOriginalUsername] = useState('');
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
@@ -37,10 +35,6 @@ export const VideoCallApp = () => {
         isInRoom,
         error
     } = useWebRTC(selectedDevices, username, roomId);
-
-    const generateUniqueUsername = (base: string) => {
-        return `${base}_${Math.floor(Math.random() * 1000)}`;
-    };
 
     const loadDevices = async () => {
         try {
@@ -87,11 +81,7 @@ export const VideoCallApp = () => {
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            // const uniqueUsername = generateUniqueUsername(username);
-            const uniqueUsername = username;
-            // setUsername(uniqueUsername);
-            setUsername(username);
-            joinRoom(uniqueUsername);
+            joinRoom(username);
         }
     }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
 
@@ -114,12 +104,6 @@ export const VideoCallApp = () => {
     const handleJoinRoom = async () => {
         setIsJoining(true);
         try {
-            if (!originalUsername) {
-                setOriginalUsername(username);
-            }
-            const uniqueUsername = generateUniqueUsername(originalUsername || username);
-            setUsername(username);
-            //await joinRoom(uniqueUsername);
             await joinRoom(username);
         } catch (error) {
             console.error('Error joining room:', error);
