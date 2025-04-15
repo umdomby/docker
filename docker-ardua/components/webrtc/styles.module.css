@@ -1,14 +1,13 @@
 /* app\webrtc\styles.module.css */
 .container {
     position: relative;
-    width: 99vw;
+    width: 100vw;
     height: 100vh;
     overflow: hidden;
     background-color: #000;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
-/* Стили для контейнера удаленного видео */
 .remoteVideoContainer {
     position: absolute;
     top: 0;
@@ -23,48 +22,12 @@
     transform-origin: center center;
 }
 
-/* Классы для поворота */
-.remoteVideoContainer.rotate0 {
-    transform: scaleX(1);
-}
-
-.remoteVideoContainer.rotate90 {
-    transform: rotate(90deg) translateY(-100%);
-    transform-origin: top left;
-    width: 100vh;
-    height: 100vw;
-}
-
-.remoteVideoContainer.rotate180 {
-    transform: rotate(180deg);
-}
-
-.remoteVideoContainer.rotate270 {
-    transform: rotate(270deg) translateX(-100%);
-    transform-origin: top left;
-    width: 100vh;
-    height: 100vw;
-}
-
-/* Стили для полноэкранного режима */
-:fullscreen .remoteVideoContainer {
-    width: 100vw;
-    height: 100vh;
-}
-
-:fullscreen .remoteVideoContainer.rotate90,
-:fullscreen .remoteVideoContainer.rotate270 {
-    width: 100vh;
-    height: 100vw;
-}
-
 .remoteVideo {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
 }
 
-/* Локальное видео */
 .localVideoContainer {
     position: absolute;
     bottom: 20px;
@@ -90,7 +53,6 @@
     transform: scaleX(-1);
 }
 
-/* Подписи к видео */
 .remoteVideoLabel,
 .localVideoLabel {
     position: absolute;
@@ -105,7 +67,6 @@
     backdrop-filter: blur(5px);
 }
 
-/* Панель управления */
 .topControls {
     position: absolute;
     top: 0;
@@ -137,7 +98,6 @@
     background-color: rgba(255, 255, 255, 0.25);
 }
 
-/* Элементы управления видео */
 .videoControls {
     display: flex;
     gap: 8px;
@@ -170,7 +130,17 @@
     color: white;
 }
 
-/* Панель настроек */
+/* Стили для полноэкранного режима */
+:fullscreen .remoteVideoContainer {
+    width: 100vw;
+    height: 100vh;
+}
+
+/* Адаптация поворотов для полноэкранного режима */
+:fullscreen .remoteVideoContainer {
+    transform-origin: center center !important;
+}
+
 .controlsOverlay {
     position: absolute;
     top: 70px;

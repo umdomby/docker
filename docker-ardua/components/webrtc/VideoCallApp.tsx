@@ -24,7 +24,8 @@ export const VideoCallApp = () => {
     const [autoJoin, setAutoJoin] = useState(false)
     const [showControls, setShowControls] = useState(false)
     const [videoRotation, setVideoRotation] = useState(0)
-    const [isFlipped, setIsFlipped] = useState(false)
+    const [isFlippedHorizontal, setIsFlippedHorizontal] = useState(false)
+    const [isFlippedVertical, setIsFlippedVertical] = useState(false)
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -143,13 +144,41 @@ export const VideoCallApp = () => {
         setVideoRotation(degrees)
     }
 
-    const flipVideo = () => {
-        setIsFlipped(!isFlipped)
+    const flipVideoHorizontal = () => {
+        setIsFlippedHorizontal(!isFlippedHorizontal)
+    }
+
+    const flipVideoVertical = () => {
+        setIsFlippedVertical(!isFlippedVertical)
     }
 
     const resetVideo = () => {
         setVideoRotation(0)
-        setIsFlipped(false)
+        setIsFlippedHorizontal(false)
+        setIsFlippedVertical(false)
+    }
+
+    const getTransformStyle = () => {
+        let transform = ''
+
+        // Поворот
+        switch(videoRotation) {
+            case 90:
+                transform += 'rotate(90deg) '
+                break
+            case 180:
+                transform += 'rotate(180deg) '
+                break
+            case 270:
+                transform += 'rotate(270deg) '
+                break
+        }
+
+        // Отражения
+        transform += `scaleX(${isFlippedHorizontal ? -1 : 1}) `
+        transform += `scaleY(${isFlippedVertical ? -1 : 1})`
+
+        return transform
     }
 
     return (
@@ -157,9 +186,10 @@ export const VideoCallApp = () => {
             {/* Основное видео (удаленный участник) */}
             <div
                 ref={videoContainerRef}
-                className={`${styles.remoteVideoContainer} ${styles[`rotate${videoRotation}`]}`}
+                className={styles.remoteVideoContainer}
                 style={{
-                    transform: `scaleX(${isFlipped ? -1 : 1})`
+                    transform: getTransformStyle(),
+                    transformOrigin: 'center center'
                 }}
             >
                 <VideoPlayer
@@ -218,11 +248,18 @@ export const VideoCallApp = () => {
                         ↻270°
                     </button>
                     <button
-                        onClick={flipVideo}
-                        className={`${styles.controlButton} ${isFlipped ? styles.active : ''}`}
+                        onClick={flipVideoHorizontal}
+                        className={`${styles.controlButton} ${isFlippedHorizontal ? styles.active : ''}`}
                         title="Отразить по горизонтали"
                     >
                         ⇄
+                    </button>
+                    <button
+                        onClick={flipVideoVertical}
+                        className={`${styles.controlButton} ${isFlippedVertical ? styles.active : ''}`}
+                        title="Отразить по вертикали"
+                    >
+                        ⇅
                     </button>
                     <button
                         onClick={resetVideo}
