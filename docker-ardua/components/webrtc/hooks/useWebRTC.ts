@@ -1,4 +1,3 @@
-// file: docker-ardua/components/webrtc/hooks/useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 
 interface WebSocketMessage {
@@ -28,6 +27,77 @@ export const useWebRTC = (
     const pendingIceCandidates = useRef<RTCIceCandidate[]>([]);
     const isNegotiating = useRef(false);
     const shouldCreateOffer = useRef(false);
+
+    // Функция для нормализации SDP
+    const normalizeSdp = (sdp: string | undefined): string => {
+        if (!sdp) return '';
+        return sdp
+            .split('\r\n')
+            .filter(line => line.trim() !== '')
+            .join('\r\n') + '\r\n';
+    };
+
+    // Проверка порядка медиа-секций
+    const validateMediaOrder = (offerSdp: string | undefined, answerSdp: string | undefined): boolean => {
+        if (!offerSdp || !answerSdp) return false;
+
+        const offerMedia = offerSdp.split('\r\n')
+            .filter(line => line.startsWith('m='))
+            .map(line => line.split(' ')[0]);
+
+        const answerMedia = answerSdp.split('\r\n')
+            .filter(line => line.startsWith('m='))
+            .map(line => line.split(' ')[0]);
+
+        return offerMedia.length === answerMedia.length &&
+            offerMedia.every((val, index) => val === answerMedia[index]);
+    };
+
+    // Реорганизация медиа-секций в ответе согласно офферу
+    const reorderAnswerMedia = (offerSdp: string | undefined, answerSdp: string): string => {
+        if (!offerSdp) return answerSdp;
+
+        const offerMediaOrder = offerSdp.split('\r\n')
+            .filter(line => line.startsWith('m='))
+            .map(line => line.split(' ')[0]);
+
+        const answerLines = answerSdp.split('\r\n');
+        const mediaSections: string[][] = [];
+        let currentSection: string[] = [];
+
+        // Разбиваем ответ на медиа-секции
+        for (const line of answerLines) {
+            if (line.startsWith('m=')) {
+                if (currentSection.length > 0) {
+                    mediaSections.push(currentSection);
+                }
+                currentSection = [line];
+            } else if (line !== '') {
+                currentSection.push(line);
+            }
+        }
+        if (currentSection.length > 0) {
+            mediaSections.push(currentSection);
+        }
+
+        // Сортируем медиа-секции согласно офферу
+        const reorderedSections: string[][] = [];
+        for (const mediaType of offerMediaOrder) {
+            const foundSection = mediaSections.find(section =>
+                section[0].startsWith(mediaType));
+            if (foundSection) {
+                reorderedSections.push(foundSection);
+            }
+        }
+
+        // Собираем обратно SDP
+        const reorderedLines: string[] = [];
+        for (const section of reorderedSections) {
+            reorderedLines.push(...section, '');
+        }
+
+        return reorderedLines.join('\r\n').trim() + '\r\n';
+    };
 
     const cleanup = () => {
         if (pc.current) {
@@ -70,18 +140,6 @@ export const useWebRTC = (
         ws.current = null;
     };
 
-    const normalizeSdp = (sdp: string | undefined): string => {
-        return sdp || '';
-    };
-
-    // const normalizeSdp = (sdp: string | undefined): string => {
-    //     if (!sdp) return '';
-    //     return sdp
-    //         .split('\r\n')
-    //         .filter(line => line.trim() !== '')
-    //         .join('\r\n') + '\r\n';
-    // };
-
     const connectWebSocket = () => {
         try {
             ws.current = new WebSocket('wss://anybet.site/ws');
@@ -89,7 +147,7 @@ export const useWebRTC = (
             ws.current.onopen = () => {
                 setIsConnected(true);
                 setError(null);
-                console.log('WebSocket connected');
+                console.log('WebSocket подключен');
 
                 if (shouldCreateOffer.current && pc.current) {
                     createAndSendOffer();
@@ -97,13 +155,13 @@ export const useWebRTC = (
             };
 
             ws.current.onerror = (event) => {
-                console.error('WebSocket error:', event);
+                console.error('Ошибка WebSocket:', event);
                 setError('Ошибка подключения');
                 setIsConnected(false);
             };
 
             ws.current.onclose = (event) => {
-                console.log('WebSocket disconnected, code:', event.code, 'reason:', event.reason);
+                console.log('WebSocket отключен, код:', event.code, 'причина:', event.reason);
                 setIsConnected(false);
                 setIsInRoom(false);
             };
@@ -111,7 +169,7 @@ export const useWebRTC = (
             ws.current.onmessage = async (event) => {
                 try {
                     const data: WebSocketMessage = JSON.parse(event.data);
-                    console.log('Received message:', data);
+                    console.log('Получено сообщение:', data);
 
                     if (data.type === 'room_info') {
                         setUsers(data.data.users || []);
@@ -123,7 +181,7 @@ export const useWebRTC = (
                         if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
                             try {
                                 if (isNegotiating.current) {
-                                    console.log('Already negotiating, ignoring offer');
+                                    console.log('Уже в процессе переговоров, игнорируем оффер');
                                     return;
                                 }
 
@@ -154,7 +212,7 @@ export const useWebRTC = (
                                 setIsCallActive(true);
                                 isNegotiating.current = false;
                             } catch (err) {
-                                console.error('Error handling offer:', err);
+                                console.error('Ошибка обработки оффера:', err);
                                 setError('Ошибка обработки предложения соединения');
                                 isNegotiating.current = false;
                             }
@@ -164,14 +222,20 @@ export const useWebRTC = (
                         if (pc.current && data.sdp) {
                             try {
                                 if (pc.current.signalingState !== 'have-local-offer') {
-                                    console.log('Not in have-local-offer state, ignoring answer');
+                                    console.log('Не в состоянии have-local-offer, игнорируем ответ');
                                     return;
                                 }
 
-                                // Добавьте логирование для отладки
-                                console.log('Local offer SDP:', pc.current.localDescription?.sdp);
-                                console.log('Remote answer SDP:', data.sdp.sdp);
+                                // Проверяем порядок медиа-секций
+                                const offerSdp = pc.current.localDescription?.sdp;
+                                const answerSdp = data.sdp.sdp;
 
+                                if (!validateMediaOrder(offerSdp, answerSdp)) {
+                                    console.log('Порядок медиа-секций не совпадает, реорганизуем...');
+                                    data.sdp.sdp = reorderAnswerMedia(offerSdp, answerSdp);
+                                }
+
+                                console.log('Устанавливаем удаленное описание с ответом');
                                 await pc.current.setRemoteDescription(
                                     new RTCSessionDescription(data.sdp)
                                 );
@@ -183,13 +247,13 @@ export const useWebRTC = (
                                     try {
                                         await pc.current.addIceCandidate(candidate);
                                     } catch (err) {
-                                        console.error('Error adding pending ICE candidate:', err);
+                                        console.error('Ошибка добавления ICE-кандидата:', err);
                                     }
                                 }
                                 pendingIceCandidates.current = [];
                             } catch (err) {
-                                console.error('Error setting answer:', err);
-                                setError('Ошибка установки ответа соединения');
+                                console.error('Ошибка установки ответа:', err);
+                                setError(`Ошибка установки ответа соединения: ${err instanceof Error ? err.message : String(err)}`);
                             }
                         }
                     }
@@ -204,20 +268,20 @@ export const useWebRTC = (
                                     pendingIceCandidates.current.push(candidate);
                                 }
                             } catch (err) {
-                                console.error('Error adding ICE candidate:', err);
+                                console.error('Ошибка добавления ICE-кандидата:', err);
                                 setError('Ошибка добавления ICE-кандидата');
                             }
                         }
                     }
                 } catch (err) {
-                    console.error('Error processing message:', err);
+                    console.error('Ошибка обработки сообщения:', err);
                     setError('Ошибка обработки сообщения сервера');
                 }
             };
 
             return true;
         } catch (err) {
-            console.error('WebSocket connection error:', err);
+            console.error('Ошибка подключения WebSocket:', err);
             setError('Не удалось подключиться к серверу');
             return false;
         }
@@ -234,23 +298,25 @@ export const useWebRTC = (
                 offerToReceiveVideo: true
             });
 
-            const normalizedOffer = {
+            // Исправленный способ стандартизации SDP
+            const standardizedOffer = {
                 ...offer,
-                sdp: normalizeSdp(offer.sdp)
+                sdp: normalizeSdp(offer.sdp) // Просто нормализуем, не меняем порядок
             };
 
-            await pc.current.setLocalDescription(normalizedOffer);
+            console.log('Устанавливаем локальное описание с оффером');
+            await pc.current.setLocalDescription(standardizedOffer);
 
             ws.current.send(JSON.stringify({
                 type: "offer",
-                sdp: normalizedOffer,
+                sdp: standardizedOffer,
                 room: roomId,
                 username
             }));
 
             setIsCallActive(true);
         } catch (err) {
-            console.error('Error creating offer:', err);
+            console.error('Ошибка создания оффера:', err);
             setError('Ошибка создания предложения соединения');
         }
     };
@@ -272,6 +338,24 @@ export const useWebRTC = (
             };
 
             pc.current = new RTCPeerConnection(config);
+
+            // Добавляем обработчики событий для отладки
+            pc.current.onnegotiationneeded = () => {
+                console.log('Требуется переговорный процесс');
+            };
+
+            pc.current.onsignalingstatechange = () => {
+                console.log('Состояние сигнализации изменилось:', pc.current?.signalingState);
+            };
+
+            pc.current.onicegatheringstatechange = () => {
+                console.log('Состояние сбора ICE изменилось:', pc.current?.iceGatheringState);
+            };
+
+            pc.current.onicecandidateerror = (event) => {
+                console.error('Ошибка ICE кандидата:', event);
+                setError('Ошибка ICE кандидата');
+            };
 
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: deviceIds.video ? {
@@ -312,9 +396,9 @@ export const useWebRTC = (
 
             pc.current.oniceconnectionstatechange = () => {
                 if (pc.current) {
-                    console.log('ICE connection state:', pc.current.iceConnectionState);
+                    console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
                     if (pc.current.iceConnectionState === 'failed') {
-                        console.log('Restarting ICE...');
+                        console.log('Перезапуск ICE...');
                         pc.current.restartIce();
                     }
                 }
@@ -322,7 +406,7 @@ export const useWebRTC = (
 
             return true;
         } catch (err) {
-            console.error('WebRTC initialization error:', err);
+            console.error('Ошибка инициализации WebRTC:', err);
             setError('Не удалось инициализировать WebRTC');
             cleanup();
             return false;
