@@ -5,7 +5,7 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -42,30 +42,29 @@ export const VideoCallApp = () => {
     } = useWebRTC(selectedDevices, username, roomId)
 
     // Загрузка сохраненных настроек
-    const loadSettings = () => {
+    const loadSettings = useCallback(() => {
         const savedSettings = localStorage.getItem('videoSettings')
         if (savedSettings) {
-            const {
-                rotation = 0,
-                flipH = false,
-                flipV = false
-            } = JSON.parse(savedSettings)
-
-            setVideoRotation(rotation)
-            setIsFlippedHorizontal(flipH)
-            setIsFlippedVertical(flipV)
+            try {
+                const { rotation = 0, flipH = false, flipV = false } = JSON.parse(savedSettings)
+                setVideoRotation(rotation)
+                setIsFlippedHorizontal(flipH)
+                setIsFlippedVertical(flipV)
+            } catch (e) {
+                console.error('Error parsing video settings', e)
+            }
         }
-    }
+    }, [])
 
     // Сохранение настроек
-    const saveSettings = () => {
+    const saveSettings = useCallback(() => {
         const settings = {
             rotation: videoRotation,
             flipH: isFlippedHorizontal,
             flipV: isFlippedVertical
         }
         localStorage.setItem('videoSettings', JSON.stringify(settings))
-    }
+    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
 
     const loadDevices = async () => {
         try {
@@ -118,7 +117,7 @@ export const VideoCallApp = () => {
         return () => {
             document.removeEventListener('fullscreenchange', handleFullscreenChange)
         }
-    }, [])
+    }, [loadSettings])
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
@@ -133,7 +132,7 @@ export const VideoCallApp = () => {
 
     useEffect(() => {
         saveSettings()
-    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
+    }, [videoRotation, isFlippedHorizontal, isFlippedVertical, saveSettings])
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
@@ -185,7 +184,7 @@ export const VideoCallApp = () => {
         setIsFlippedVertical(false)
     }
 
-    const getTransformStyle = () => {
+    const getTransformStyle = useCallback(() => {
         let transform = ''
 
         // Поворот
@@ -198,7 +197,7 @@ export const VideoCallApp = () => {
         transform += `scaleY(${isFlippedVertical ? -1 : 1})`
 
         return transform
-    }
+    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
 
     return (
         <div className={styles.container}>
