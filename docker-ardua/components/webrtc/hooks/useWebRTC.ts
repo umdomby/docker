@@ -54,8 +54,8 @@ export const useWebRTC = (
     };
 
     // Реорганизация медиа-секций в ответе согласно офферу
-    const reorderAnswerMedia = (offerSdp: string | undefined, answerSdp: string): string => {
-        if (!offerSdp) return answerSdp;
+    const reorderAnswerMedia = (offerSdp: string | undefined, answerSdp: string | undefined): string => {
+        if (!offerSdp || !answerSdp) return answerSdp || '';
 
         const offerMediaOrder = offerSdp.split('\r\n')
             .filter(line => line.startsWith('m='))
@@ -232,7 +232,10 @@ export const useWebRTC = (
 
                                 if (!validateMediaOrder(offerSdp, answerSdp)) {
                                     console.log('Порядок медиа-секций не совпадает, реорганизуем...');
-                                    data.sdp.sdp = reorderAnswerMedia(offerSdp, answerSdp);
+                                    const reorderedSdp = reorderAnswerMedia(offerSdp, answerSdp);
+                                    if (reorderedSdp) {
+                                        data.sdp.sdp = reorderedSdp;
+                                    }
                                 }
 
                                 console.log('Устанавливаем удаленное описание с ответом');
@@ -333,8 +336,8 @@ export const useWebRTC = (
                 ],
                 iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require',
-                sdpSemantics: 'unified-plan'
+                rtcpMuxPolicy: 'require'
+                // sdpSemantics удалено, так как Unified Plan теперь используется по умолчанию
             };
 
             pc.current = new RTCPeerConnection(config);
