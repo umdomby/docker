@@ -24,13 +24,18 @@ export const useWebRTC = (
     const [isConnected, setIsConnected] = useState(false);
     const [isInRoom, setIsInRoom] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [retryCount, setRetryCount] = useState(0);
 
     const ws = useRef<WebSocket | null>(null);
     const pc = useRef<RTCPeerConnection | null>(null);
     const pendingIceCandidates = useRef<RTCIceCandidate[]>([]);
     const isNegotiating = useRef(false);
     const shouldCreateOffer = useRef(false);
-    const reconnectAttempts = useRef(0);
+    const connectionTimeout = useRef<NodeJS.Timeout | null>(null);
+    const statsInterval = useRef<NodeJS.Timeout | null>(null);
+
+    // Максимальное количество попыток переподключения
+    const MAX_RETRIES = 3;
 
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
@@ -52,64 +57,19 @@ export const useWebRTC = (
         return normalized + '\r\n';
     };
 
-    const validateMediaOrder = (offerSdp: string | undefined, answerSdp: string | undefined): boolean => {
-        if (!offerSdp || !answerSdp) return false;
-
-        const offerMedia = offerSdp.split('\r\n')
-            .filter(line => line.startsWith('m='))
-            .map(line => line.split(' ')[0]);
-
-        const answerMedia = answerSdp.split('\r\n')
-            .filter(line => line.startsWith('m='))
-            .map(line => line.split(' ')[0]);
-
-        return offerMedia.length === answerMedia.length &&
-            offerMedia.every((val, index) => val === answerMedia[index]);
-    };
-
-    const reorderAnswerMedia = (offerSdp: string | undefined, answerSdp: string | undefined): string => {
-        if (!offerSdp || !answerSdp) return answerSdp || '';
-
-        const offerMediaOrder = offerSdp.split('\r\n')
-            .filter(line => line.startsWith('m='))
-            .map(line => line.split(' ')[0]);
-
-        const answerLines = answerSdp.split('\r\n');
-        const mediaSections: string[][] = [];
-        let currentSection: string[] = [];
-
-        for (const line of answerLines) {
-            if (line.startsWith('m=')) {
-                if (currentSection.length > 0) {
-                    mediaSections.push(currentSection);
-                }
-                currentSection = [line];
-            } else if (line !== '') {
-                currentSection.push(line);
-            }
-        }
-        if (currentSection.length > 0) {
-            mediaSections.push(currentSection);
-        }
-
-        const reorderedSections: string[][] = [];
-        for (const mediaType of offerMediaOrder) {
-            const foundSection = mediaSections.find(section =>
-                section[0].startsWith(mediaType));
-            if (foundSection) {
-                reorderedSections.push(foundSection);
-            }
-        }
-
-        const reorderedLines: string[] = [];
-        for (const section of reorderedSections) {
-            reorderedLines.push(...section, '');
-        }
-
-        return reorderedLines.join('\r\n').trim() + '\r\n';
-    };
-
     const cleanup = () => {
+        // Очистка таймеров
+        if (connectionTimeout.current) {
+            clearTimeout(connectionTimeout.current);
+            connectionTimeout.current = null;
+        }
+
+        if (statsInterval.current) {
+            clearInterval(statsInterval.current);
+            statsInterval.current = null;
+        }
+
+        // Очистка WebRTC соединения
         if (pc.current) {
             pc.current.onicecandidate = null;
             pc.current.ontrack = null;
@@ -119,6 +79,7 @@ export const useWebRTC = (
             pc.current = null;
         }
 
+        // Остановка медиапотоков
         if (localStream) {
             localStream.getTracks().forEach(track => track.stop());
             setLocalStream(null);
@@ -148,7 +109,7 @@ export const useWebRTC = (
         setIsInRoom(false);
         ws.current?.close();
         ws.current = null;
-        reconnectAttempts.current = 0;
+        setRetryCount(0);
     };
 
     const connectWebSocket = async (): Promise<boolean> => {
@@ -190,10 +151,12 @@ export const useWebRTC = (
                     ws.current?.removeEventListener('open', onOpen);
                     ws.current?.removeEventListener('error', onError);
                     ws.current?.removeEventListener('close', onClose);
-                    clearTimeout(timeout);
+                    if (connectionTimeout.current) {
+                        clearTimeout(connectionTimeout.current);
+                    }
                 };
 
-                const timeout = setTimeout(() => {
+                connectionTimeout.current = setTimeout(() => {
                     cleanupEvents();
                     setError('Таймаут подключения WebSocket');
                     resolve(false);
@@ -274,17 +237,9 @@ export const useWebRTC = (
                                 return;
                             }
 
-                            const offerSdp = pc.current.localDescription?.sdp;
-                            const answerSdp = data.sdp.sdp;
-
-                            if (!validateMediaOrder(offerSdp, answerSdp)) {
-                                console.log('Порядок медиа-секций не совпадает, реорганизуем...');
-                                data.sdp.sdp = reorderAnswerMedia(offerSdp, answerSdp);
-                            }
-
                             const answerDescription: RTCSessionDescriptionInit = {
                                 type: 'answer',
-                                sdp: data.sdp.sdp
+                                sdp: normalizeSdp(data.sdp.sdp)
                             };
 
                             console.log('Устанавливаем удаленное описание с ответом');
@@ -294,17 +249,20 @@ export const useWebRTC = (
 
                             setIsCallActive(true);
 
-                            for (const candidate of pendingIceCandidates.current) {
-                                try {
-                                    await pc.current.addIceCandidate(candidate);
-                                } catch (err) {
-                                    console.error('Ошибка добавления ICE-кандидата:', err);
+                            // Обрабатываем ожидающие кандидаты
+                            while (pendingIceCandidates.current.length > 0) {
+                                const candidate = pendingIceCandidates.current.shift();
+                                if (candidate) {
+                                    try {
+                                        await pc.current.addIceCandidate(candidate);
+                                    } catch (err) {
+                                        console.error('Ошибка добавления отложенного ICE кандидата:', err);
+                                    }
                                 }
                             }
-                            pendingIceCandidates.current = [];
                         } catch (err) {
                             console.error('Ошибка установки ответа:', err);
-                            setError(`Ошибка установки ответа соединения: ${err instanceof Error ? err.message : String(err)}`);
+                            setError(`Ошибка установки ответа: ${err instanceof Error ? err.message : String(err)}`);
                         }
                     }
                 }
@@ -380,12 +338,6 @@ export const useWebRTC = (
                             'stun:stun3.l.google.com:19302',
                             'stun:stun4.l.google.com:19302'
                         ]
-                    },
-                    {
-                        urls: 'stun:stun.voipbuster.com:3478'
-                    },
-                    {
-                        urls: 'stun:stun.ideasip.com'
                     }
                 ],
                 iceTransportPolicy: 'all',
@@ -395,6 +347,7 @@ export const useWebRTC = (
 
             pc.current = new RTCPeerConnection(config);
 
+            // Обработчики событий WebRTC
             pc.current.onnegotiationneeded = () => {
                 console.log('Требуется переговорный процесс');
             };
@@ -408,26 +361,25 @@ export const useWebRTC = (
             };
 
             pc.current.onicecandidateerror = (event) => {
-                const ignorableErrors = [701, 702, 703];
+                const ignorableErrors = [701, 702, 703]; // Игнорируем стандартные ошибки STUN
                 if (!ignorableErrors.includes(event.errorCode)) {
-                    console.error('Критическая ошибка ICE кандидата:', {
-                        errorCode: event.errorCode,
-                        errorText: event.errorText,
-                        address: event.address,
-                        port: event.port,
-                        url: event.url
-                    });
-                    setError(`Ошибка соединения: ${event.errorText}`);
+                    console.error('Критическая ошибка ICE кандидата:', event);
+                    setError(`Ошибка ICE соединения: ${event.errorText}`);
                 }
             };
 
+            // Получаем медиапоток с устройства
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: deviceIds.video ? {
                     deviceId: { exact: deviceIds.video },
                     width: { ideal: 640 },
                     height: { ideal: 480 },
                     frameRate: { ideal: 30 }
-                } : true,
+                } : {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 30 }
+                },
                 audio: deviceIds.audio ? {
                     deviceId: { exact: deviceIds.audio },
                     echoCancellation: true,
@@ -436,14 +388,22 @@ export const useWebRTC = (
                 } : true
             });
 
+            // Проверяем наличие видеотрека
+            const videoTracks = stream.getVideoTracks();
+            if (videoTracks.length === 0) {
+                throw new Error('Не удалось получить видеопоток с устройства');
+            }
+
             setLocalStream(stream);
             stream.getTracks().forEach(track => {
                 pc.current?.addTrack(track, stream);
             });
 
+            // Обработка ICE кандидатов
             pc.current.onicecandidate = (event) => {
                 if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
                     try {
+                        // Фильтруем нежелательные кандидаты
                         if (event.candidate.candidate &&
                             event.candidate.candidate.length > 0 &&
                             !event.candidate.candidate.includes('0.0.0.0')) {
@@ -465,12 +425,29 @@ export const useWebRTC = (
                 }
             };
 
+            // Обработка входящих медиапотоков
             pc.current.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    setRemoteStream(event.streams[0]);
+                    // Проверяем, что видеопоток содержит данные
+                    const videoTrack = event.streams[0].getVideoTracks()[0];
+                    if (videoTrack) {
+                        const videoElement = document.createElement('video');
+                        videoElement.srcObject = new MediaStream([videoTrack]);
+                        videoElement.onloadedmetadata = () => {
+                            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                                setRemoteStream(event.streams[0]);
+                                setIsCallActive(true);
+                            } else {
+                                console.warn('Получен пустой видеопоток');
+                            }
+                        };
+                    } else {
+                        console.warn('Входящий поток не содержит видео');
+                    }
                 }
             };
 
+            // Обработка состояния ICE соединения
             pc.current.oniceconnectionstatechange = () => {
                 if (!pc.current) return;
 
@@ -511,11 +488,110 @@ export const useWebRTC = (
                 }
             };
 
+            // Запускаем мониторинг статистики соединения
+            startConnectionMonitoring();
+
             return true;
         } catch (err) {
             console.error('Ошибка инициализации WebRTC:', err);
-            setError('Не удалось инициализировать WebRTC');
+            setError(`Не удалось инициализировать WebRTC: ${err instanceof Error ? err.message : String(err)}`);
             cleanup();
+            return false;
+        }
+    };
+
+    const startConnectionMonitoring = () => {
+        if (statsInterval.current) {
+            clearInterval(statsInterval.current);
+        }
+
+        statsInterval.current = setInterval(async () => {
+            if (!pc.current || !isCallActive) return;
+
+            try {
+                const stats = await pc.current.getStats();
+                let hasActiveVideo = false;
+
+                stats.forEach(report => {
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        if (report.bytesReceived > 0) {
+                            hasActiveVideo = true;
+                        }
+                    }
+                });
+
+                if (!hasActiveVideo && isCallActive) {
+                    console.warn('Нет активного видеопотока, пытаемся восстановить...');
+                    resetConnection();
+                }
+            } catch (err) {
+                console.error('Ошибка получения статистики:', err);
+            }
+        }, 5000);
+    };
+
+    const resetConnection = async () => {
+        if (retryCount >= MAX_RETRIES) {
+            setError('Не удалось восстановить соединение после нескольких попыток');
+            leaveRoom();
+            return;
+        }
+
+        setRetryCount(prev => prev + 1);
+        console.log(`Попытка восстановления #${retryCount + 1}`);
+
+        try {
+            await leaveRoom();
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            await joinRoom(username);
+        } catch (err) {
+            console.error('Ошибка при восстановлении соединения:', err);
+        }
+    };
+
+    const restartMediaDevices = async () => {
+        try {
+            if (localStream) {
+                localStream.getTracks().forEach(track => track.stop());
+            }
+
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: deviceIds.video ? {
+                    deviceId: { exact: deviceIds.video },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 30 }
+                } : {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 30 }
+                },
+                audio: deviceIds.audio ? {
+                    deviceId: { exact: deviceIds.audio },
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                } : true
+            });
+
+            setLocalStream(stream);
+
+            if (pc.current) {
+                const senders = pc.current.getSenders();
+                stream.getTracks().forEach(track => {
+                    const sender = senders.find(s => s.track?.kind === track.kind);
+                    if (sender) {
+                        sender.replaceTrack(track);
+                    } else {
+                        pc.current?.addTrack(track, stream);
+                    }
+                });
+            }
+
+            return true;
+        } catch (err) {
+            console.error('Ошибка перезагрузки медиаустройств:', err);
+            setError('Ошибка доступа к медиаустройствам');
             return false;
         }
     };
@@ -524,7 +600,6 @@ export const useWebRTC = (
         setError(null);
         setIsInRoom(false);
         setIsConnected(false);
-        reconnectAttempts.current = 0;
 
         try {
             // 1. Подключаем WebSocket
@@ -550,25 +625,27 @@ export const useWebRTC = (
                     try {
                         const data = JSON.parse(event.data);
                         if (data.type === 'room_info') {
-                            cleanup();
+                            cleanupEvents();
                             resolve();
                         } else if (data.type === 'error') {
-                            cleanup();
+                            cleanupEvents();
                             reject(new Error(data.data || 'Ошибка входа в комнату'));
                         }
                     } catch (err) {
-                        cleanup();
+                        cleanupEvents();
                         reject(err);
                     }
                 };
 
-                const cleanup = () => {
+                const cleanupEvents = () => {
                     ws.current?.removeEventListener('message', onMessage);
-                    clearTimeout(timeout);
+                    if (connectionTimeout.current) {
+                        clearTimeout(connectionTimeout.current);
+                    }
                 };
 
-                const timeout = setTimeout(() => {
-                    cleanup();
+                connectionTimeout.current = setTimeout(() => {
+                    cleanupEvents();
                     reject(new Error('Таймаут ожидания ответа от сервера'));
                 }, 10000);
 
@@ -600,12 +677,11 @@ export const useWebRTC = (
                 ws.current = null;
             }
 
-            // Автоматическая повторная попытка (максимум 3 раза)
-            if (reconnectAttempts.current < 3) {
-                reconnectAttempts.current++;
+            // Автоматическая повторная попытка
+            if (retryCount < MAX_RETRIES) {
                 setTimeout(() => {
                     joinRoom(uniqueUsername).catch(console.error);
-                }, 2000 * reconnectAttempts.current);
+                }, 2000 * (retryCount + 1));
             }
         }
     };
@@ -625,6 +701,9 @@ export const useWebRTC = (
         isCallActive,
         isConnected,
         isInRoom,
-        error
+        error,
+        retryCount,
+        resetConnection,
+        restartMediaDevices
     };
 };
