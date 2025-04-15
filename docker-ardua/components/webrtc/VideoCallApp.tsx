@@ -1,31 +1,32 @@
 // file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
 
-import { useWebRTC } from './hooks/useWebRTC';
-import styles from './styles.module.css';
-import { VideoPlayer } from './components/VideoPlayer';
-import { DeviceSelector } from './components/DeviceSelector';
-import { useEffect, useState, useRef } from 'react';
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
+import { useWebRTC } from './hooks/useWebRTC'
+import styles from './styles.module.css'
+import { VideoPlayer } from './components/VideoPlayer'
+import { DeviceSelector } from './components/DeviceSelector'
+import { useEffect, useState, useRef } from 'react'
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
 
 export const VideoCallApp = () => {
-    const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+    const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
     const [selectedDevices, setSelectedDevices] = useState({
         video: '',
         audio: ''
-    });
-    const [roomId, setRoomId] = useState('room1');
-    const [username, setUsername] = useState('123');
-    const [hasPermission, setHasPermission] = useState(false);
-    const [devicesLoaded, setDevicesLoaded] = useState(false);
-    const [isJoining, setIsJoining] = useState(false);
-    const [autoJoin, setAutoJoin] = useState(false);
-    const [showControls, setShowControls] = useState(false);
-    const [videoRotation, setVideoRotation] = useState(0);
-    const [isFlipped, setIsFlipped] = useState(false);
-    const videoContainerRef = useRef<HTMLDivElement>(null);
+    })
+    const [roomId, setRoomId] = useState('room1')
+    const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
+    const [hasPermission, setHasPermission] = useState(false)
+    const [devicesLoaded, setDevicesLoaded] = useState(false)
+    const [isJoining, setIsJoining] = useState(false)
+    const [autoJoin, setAutoJoin] = useState(false)
+    const [showControls, setShowControls] = useState(false)
+    const [videoRotation, setVideoRotation] = useState(0)
+    const [isFlipped, setIsFlipped] = useState(false)
+    const videoContainerRef = useRef<HTMLDivElement>(null)
+    const [isFullscreen, setIsFullscreen] = useState(false)
 
     const {
         localStream,
@@ -37,129 +38,126 @@ export const VideoCallApp = () => {
         isConnected,
         isInRoom,
         error
-    } = useWebRTC(selectedDevices, username, roomId);
+    } = useWebRTC(selectedDevices, username, roomId)
 
     const loadDevices = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: true,
                 audio: true
-            });
+            })
 
-            stream.getTracks().forEach(track => track.stop());
+            stream.getTracks().forEach(track => track.stop())
 
-            const devices = await navigator.mediaDevices.enumerateDevices();
-            setDevices(devices);
-            setHasPermission(true);
-            setDevicesLoaded(true);
+            const devices = await navigator.mediaDevices.enumerateDevices()
+            setDevices(devices)
+            setHasPermission(true)
+            setDevicesLoaded(true)
 
-            const savedVideoDevice = localStorage.getItem('videoDevice');
-            const savedAudioDevice = localStorage.getItem('audioDevice');
+            const savedVideoDevice = localStorage.getItem('videoDevice')
+            const savedAudioDevice = localStorage.getItem('audioDevice')
 
             const videoDevice = devices.find(d =>
                 d.kind === 'videoinput' &&
                 (savedVideoDevice ? d.deviceId === savedVideoDevice : true)
-            );
+            )
             const audioDevice = devices.find(d =>
                 d.kind === 'audioinput' &&
                 (savedAudioDevice ? d.deviceId === savedAudioDevice : true)
-            );
+            )
 
             setSelectedDevices({
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
-            });
+            })
         } catch (error) {
-            console.error('Device access error:', error);
-            setHasPermission(false);
-            setDevicesLoaded(true);
+            console.error('Device access error:', error)
+            setHasPermission(false)
+            setDevicesLoaded(true)
         }
-    };
+    }
 
     useEffect(() => {
-        const savedAutoJoin = localStorage.getItem('autoJoin') === 'true';
-        setAutoJoin(savedAutoJoin);
-        loadDevices();
-    }, []);
+        const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
+        setAutoJoin(savedAutoJoin)
+        loadDevices()
+
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement)
+        }
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange)
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange)
+        }
+    }, [])
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            joinRoom(username);
+            joinRoom(username)
         }
-    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
+    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices])
 
     useEffect(() => {
         if (selectedDevices.video) {
-            localStorage.setItem('videoDevice', selectedDevices.video);
+            localStorage.setItem('videoDevice', selectedDevices.video)
         }
         if (selectedDevices.audio) {
-            localStorage.setItem('audioDevice', selectedDevices.audio);
+            localStorage.setItem('audioDevice', selectedDevices.audio)
         }
-    }, [selectedDevices]);
+    }, [selectedDevices])
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
             ...prev,
             [type]: deviceId
-        }));
-    };
+        }))
+    }
 
     const handleJoinRoom = async () => {
-        setIsJoining(true);
+        setIsJoining(true)
         try {
-            await joinRoom(username);
+            await joinRoom(username)
         } catch (error) {
-            console.error('Error joining room:', error);
+            console.error('Error joining room:', error)
         } finally {
-            setIsJoining(false);
+            setIsJoining(false)
         }
-    };
+    }
 
     const toggleFullscreen = async () => {
-        if (!videoContainerRef.current) return;
+        if (!videoContainerRef.current) return
 
         try {
             if (!document.fullscreenElement) {
-                await videoContainerRef.current.requestFullscreen();
+                await videoContainerRef.current.requestFullscreen()
             } else {
-                await document.exitFullscreen();
+                await document.exitFullscreen()
             }
         } catch (err) {
-            console.error('Fullscreen error:', err);
+            console.error('Fullscreen error:', err)
         }
-    };
+    }
 
     const rotateVideo = (degrees: number) => {
-        setVideoRotation(degrees);
-    };
+        setVideoRotation(degrees)
+    }
 
     const flipVideo = () => {
-        setIsFlipped(!isFlipped);
-    };
+        setIsFlipped(!isFlipped)
+    }
 
     const resetVideo = () => {
-        setVideoRotation(0);
-        setIsFlipped(false);
-    };
-
-    // Обработчик изменения полноэкранного режима
-    useEffect(() => {
-        const handleFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
-        };
-
-        document.addEventListener('fullscreenchange', handleFullscreenChange);
-        return () => {
-            document.removeEventListener('fullscreenchange', handleFullscreenChange);
-        };
-    }, []);
+        setVideoRotation(0)
+        setIsFlipped(false)
+    }
 
     return (
         <div className={styles.container}>
             {/* Основное видео (удаленный участник) */}
             <div
                 ref={videoContainerRef}
-                className={`${styles.remoteVideoContainer} ${styles[videoRotation]}`}
+                className={`${styles.remoteVideoContainer} ${styles[`rotate${videoRotation}`]}`}
                 style={{
                     transform: `scaleX(${isFlipped ? -1 : 1})`
                 }}
@@ -236,9 +234,9 @@ export const VideoCallApp = () => {
                     <button
                         onClick={toggleFullscreen}
                         className={styles.controlButton}
-                        title={document.fullscreenElement ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+                        title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
                     >
-                        {document.fullscreenElement ? '✕' : '⛶'}
+                        {isFullscreen ? '✕' : '⛶'}
                     </button>
                 </div>
             </div>
@@ -248,10 +246,92 @@ export const VideoCallApp = () => {
                 <div className={styles.controlsOverlay}>
                     {error && <div className={styles.error}>{error}</div>}
                     <div className={styles.controls}>
-                        {/* ... остальные элементы управления ... */}
+                        <div className={styles.connectionStatus}>
+                            Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
+                            {isCallActive && ' (Звонок активен)'}
+                        </div>
+
+                        <div className={styles.inputGroup}>
+                            <div className="flex items-center space-x-2">
+                                <Checkbox
+                                    id="autoJoin"
+                                    checked={autoJoin}
+                                    onCheckedChange={(checked) => {
+                                        setAutoJoin(!!checked)
+                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false')
+                                    }}
+                                />
+                                <label
+                                    htmlFor="autoJoin"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Автоматическое подключение
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className={styles.inputGroup}>
+                            <Input
+                                id="room"
+                                value={roomId}
+                                onChange={(e) => setRoomId(e.target.value)}
+                                disabled={isInRoom}
+                                placeholder="ID комнаты"
+                            />
+                        </div>
+
+                        <div className={styles.inputGroup}>
+                            <Input
+                                id="username"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                disabled={isInRoom}
+                                placeholder="Ваше имя"
+                            />
+                        </div>
+
+                        {!isInRoom ? (
+                            <Button
+                                onClick={handleJoinRoom}
+                                disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
+                                className={styles.button}
+                            >
+                                {isJoining ? 'Подключение...' : 'Войти в комнату'}
+                            </Button>
+                        ) : (
+                            <Button
+                                onClick={leaveRoom}
+                                className={styles.button}
+                            >
+                                Покинуть комнату
+                            </Button>
+                        )}
+
+                        <div className={styles.userList}>
+                            <h3>Участники ({users.length}):</h3>
+                            <ul>
+                                {users.map((user, index) => (
+                                    <li key={index}>{user}</li>
+                                ))}
+                            </ul>
+                        </div>
+
+                        <div className={styles.deviceSelection}>
+                            <h3>Выбор устройств:</h3>
+                            {devicesLoaded ? (
+                                <DeviceSelector
+                                    devices={devices}
+                                    selectedDevices={selectedDevices}
+                                    onChange={handleDeviceChange}
+                                    onRefresh={loadDevices}
+                                />
+                            ) : (
+                                <div>Загрузка устройств...</div>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}
         </div>
-    );
-};
+    )
+}

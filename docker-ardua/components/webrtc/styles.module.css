@@ -1,13 +1,14 @@
 /* app\webrtc\styles.module.css */
 .container {
     position: relative;
-    width: 100vw;
+    width: 99vw;
     height: 100vh;
     overflow: hidden;
     background-color: #000;
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+/* Стили для контейнера удаленного видео */
 .remoteVideoContainer {
     position: absolute;
     top: 0;
@@ -19,15 +20,19 @@
     align-items: center;
     background-color: #000;
     transition: transform 0.3s ease;
+    transform-origin: center center;
 }
 
 /* Классы для поворота */
 .remoteVideoContainer.rotate0 {
-    transform: none;
+    transform: scaleX(1);
 }
 
 .remoteVideoContainer.rotate90 {
-    transform: rotate(90deg);
+    transform: rotate(90deg) translateY(-100%);
+    transform-origin: top left;
+    width: 100vh;
+    height: 100vw;
 }
 
 .remoteVideoContainer.rotate180 {
@@ -35,16 +40,31 @@
 }
 
 .remoteVideoContainer.rotate270 {
-    transform: rotate(270deg);
+    transform: rotate(270deg) translateX(-100%);
+    transform-origin: top left;
+    width: 100vh;
+    height: 100vw;
+}
+
+/* Стили для полноэкранного режима */
+:fullscreen .remoteVideoContainer {
+    width: 100vw;
+    height: 100vh;
+}
+
+:fullscreen .remoteVideoContainer.rotate90,
+:fullscreen .remoteVideoContainer.rotate270 {
+    width: 100vh;
+    height: 100vw;
 }
 
 .remoteVideo {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    transition: transform 0.3s ease;
 }
 
+/* Локальное видео */
 .localVideoContainer {
     position: absolute;
     bottom: 20px;
@@ -70,6 +90,7 @@
     transform: scaleX(-1);
 }
 
+/* Подписи к видео */
 .remoteVideoLabel,
 .localVideoLabel {
     position: absolute;
@@ -84,6 +105,7 @@
     backdrop-filter: blur(5px);
 }
 
+/* Панель управления */
 .topControls {
     position: absolute;
     top: 0;
@@ -115,6 +137,7 @@
     background-color: rgba(255, 255, 255, 0.25);
 }
 
+/* Элементы управления видео */
 .videoControls {
     display: flex;
     gap: 8px;
@@ -147,16 +170,125 @@
     color: white;
 }
 
-/* Адаптация для полноэкранного режима */
-:fullscreen .remoteVideoContainer {
-    width: 100vw;
-    height: 100vh;
+/* Панель настроек */
+.controlsOverlay {
+    position: absolute;
+    top: 70px;
+    left: 0;
+    right: 0;
+    background-color: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 25px;
+    z-index: 15;
+    max-height: calc(100vh - 100px);
+    overflow-y: auto;
+    backdrop-filter: blur(10px);
+    border-radius: 0 0 12px 12px;
+    animation: fadeIn 0.3s ease-out;
 }
 
-:fullscreen .remoteVideoContainer.rotate90,
-:fullscreen .remoteVideoContainer.rotate270 {
-    width: 100vh;
-    height: 100vw;
+.controls {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 600px;
+    margin: 0 auto;
 }
 
-/* ... остальные стили ... */
+.inputGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.button {
+    width: 100%;
+    padding: 12px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.userList {
+    margin-top: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.userList h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 16px;
+}
+
+.userList ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.userList li {
+    padding: 8px 12px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+}
+
+.error {
+    color: #ff6b6b;
+    background-color: rgba(255, 107, 107, 0.1);
+    padding: 12px;
+    border-radius: 6px;
+    border-left: 4px solid #ff6b6b;
+    margin-bottom: 20px;
+}
+
+.connectionStatus {
+    padding: 12px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-weight: 500;
+}
+
+.deviceSelection {
+    margin-top: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+}
+
+.deviceSelection h3 {
+    margin-top: 0;
+    margin-bottom: 15px;
+}
+
+/* Анимации */
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Адаптация для мобильных устройств */
+@media (max-width: 768px) {
+    .localVideoContainer {
+        width: 25vw;
+        height: 20vh;
+    }
+
+    .controlsOverlay {
+        padding: 15px;
+    }
+
+    .controlButton {
+        width: 36px;
+        height: 36px;
+        font-size: 14px;
+    }
+
+    .videoControls {
+        gap: 6px;
+    }
+}
