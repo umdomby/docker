@@ -5,10 +5,16 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+
+type VideoSettings = {
+    rotation: number
+    flipH: boolean
+    flipV: boolean
+}
 
 export const VideoCallApp = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
@@ -23,9 +29,11 @@ export const VideoCallApp = () => {
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
     const [showControls, setShowControls] = useState(false)
-    const [videoRotation, setVideoRotation] = useState(0)
-    const [isFlippedHorizontal, setIsFlippedHorizontal] = useState(false)
-    const [isFlippedVertical, setIsFlippedVertical] = useState(false)
+    const [videoSettings, setVideoSettings] = useState<VideoSettings>({
+        rotation: 0,
+        flipH: false,
+        flipV: false
+    })
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
 
@@ -42,29 +50,37 @@ export const VideoCallApp = () => {
     } = useWebRTC(selectedDevices, username, roomId)
 
     // Загрузка сохраненных настроек
-    const loadSettings = useCallback(() => {
-        const savedSettings = localStorage.getItem('videoSettings')
-        if (savedSettings) {
-            try {
-                const { rotation = 0, flipH = false, flipV = false } = JSON.parse(savedSettings)
-                setVideoRotation(rotation)
-                setIsFlippedHorizontal(flipH)
-                setIsFlippedVertical(flipV)
-            } catch (e) {
-                console.error('Error parsing video settings', e)
+    const loadSettings = () => {
+        try {
+            const saved = localStorage.getItem('videoSettings')
+            if (saved) {
+                const parsed = JSON.parse(saved) as VideoSettings
+                setVideoSettings(parsed)
+                applyVideoTransform(parsed)
             }
+        } catch (e) {
+            console.error('Failed to load video settings', e)
         }
-    }, [])
+    }
 
     // Сохранение настроек
-    const saveSettings = useCallback(() => {
-        const settings = {
-            rotation: videoRotation,
-            flipH: isFlippedHorizontal,
-            flipV: isFlippedVertical
-        }
+    const saveSettings = (settings: VideoSettings) => {
         localStorage.setItem('videoSettings', JSON.stringify(settings))
-    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
+    }
+
+    // Применение трансформаций к видео
+    const applyVideoTransform = (settings: VideoSettings) => {
+        if (!videoContainerRef.current) return
+
+        const { rotation, flipH, flipV } = settings
+        let transform = ''
+
+        if (rotation !== 0) transform += `rotate(${rotation}deg) `
+        transform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
+
+        videoContainerRef.current.style.transform = transform
+        videoContainerRef.current.style.transformOrigin = 'center center'
+    }
 
     const loadDevices = async () => {
         try {
@@ -111,13 +127,17 @@ export const VideoCallApp = () => {
 
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement)
+            // Принудительно применяем трансформации при изменении полноэкранного режима
+            if (videoContainerRef.current) {
+                applyVideoTransform(videoSettings)
+            }
         }
 
         document.addEventListener('fullscreenchange', handleFullscreenChange)
         return () => {
             document.removeEventListener('fullscreenchange', handleFullscreenChange)
         }
-    }, [loadSettings])
+    }, [])
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
@@ -130,9 +150,12 @@ export const VideoCallApp = () => {
         if (selectedDevices.audio) localStorage.setItem('audioDevice', selectedDevices.audio)
     }, [selectedDevices])
 
-    useEffect(() => {
-        saveSettings()
-    }, [videoRotation, isFlippedHorizontal, isFlippedVertical, saveSettings])
+    const updateVideoSettings = (newSettings: Partial<VideoSettings>) => {
+        const updated = { ...videoSettings, ...newSettings }
+        setVideoSettings(updated)
+        applyVideoTransform(updated)
+        saveSettings(updated)
+    }
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
@@ -167,37 +190,20 @@ export const VideoCallApp = () => {
     }
 
     const rotateVideo = (degrees: number) => {
-        setVideoRotation(degrees)
+        updateVideoSettings({ rotation: degrees })
     }
 
     const flipVideoHorizontal = () => {
-        setIsFlippedHorizontal(!isFlippedHorizontal)
+        updateVideoSettings({ flipH: !videoSettings.flipH })
     }
 
     const flipVideoVertical = () => {
-        setIsFlippedVertical(!isFlippedVertical)
+        updateVideoSettings({ flipV: !videoSettings.flipV })
     }
 
     const resetVideo = () => {
-        setVideoRotation(0)
-        setIsFlippedHorizontal(false)
-        setIsFlippedVertical(false)
+        updateVideoSettings({ rotation: 0, flipH: false, flipV: false })
     }
-
-    const getTransformStyle = useCallback(() => {
-        let transform = ''
-
-        // Поворот
-        if (videoRotation !== 0) {
-            transform += `rotate(${videoRotation}deg) `
-        }
-
-        // Отражения
-        transform += `scaleX(${isFlippedHorizontal ? -1 : 1}) `
-        transform += `scaleY(${isFlippedVertical ? -1 : 1})`
-
-        return transform
-    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
 
     return (
         <div className={styles.container}>
@@ -205,10 +211,6 @@ export const VideoCallApp = () => {
             <div
                 ref={videoContainerRef}
                 className={styles.remoteVideoContainer}
-                style={{
-                    transform: getTransformStyle(),
-                    transformOrigin: 'center center'
-                }}
             >
                 <VideoPlayer
                     stream={remoteStream}
@@ -239,42 +241,42 @@ export const VideoCallApp = () => {
                 <div className={styles.videoControls}>
                     <button
                         onClick={() => rotateVideo(0)}
-                        className={`${styles.controlButton} ${videoRotation === 0 ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.rotation === 0 ? styles.active : ''}`}
                         title="Обычная ориентация"
                     >
                         ↻0°
                     </button>
                     <button
                         onClick={() => rotateVideo(90)}
-                        className={`${styles.controlButton} ${videoRotation === 90 ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.rotation === 90 ? styles.active : ''}`}
                         title="Повернуть на 90°"
                     >
                         ↻90°
                     </button>
                     <button
                         onClick={() => rotateVideo(180)}
-                        className={`${styles.controlButton} ${videoRotation === 180 ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.rotation === 180 ? styles.active : ''}`}
                         title="Повернуть на 180°"
                     >
                         ↻180°
                     </button>
                     <button
                         onClick={() => rotateVideo(270)}
-                        className={`${styles.controlButton} ${videoRotation === 270 ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.rotation === 270 ? styles.active : ''}`}
                         title="Повернуть на 270°"
                     >
                         ↻270°
                     </button>
                     <button
                         onClick={flipVideoHorizontal}
-                        className={`${styles.controlButton} ${isFlippedHorizontal ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.flipH ? styles.active : ''}`}
                         title="Отразить по горизонтали"
                     >
                         ⇄
                     </button>
                     <button
                         onClick={flipVideoVertical}
-                        className={`${styles.controlButton} ${isFlippedVertical ? styles.active : ''}`}
+                        className={`${styles.controlButton} ${videoSettings.flipV ? styles.active : ''}`}
                         title="Отразить по вертикали"
                     >
                         ⇅
