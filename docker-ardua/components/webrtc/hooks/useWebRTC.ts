@@ -26,6 +26,8 @@ export const useWebRTC = (
     const ws = useRef<WebSocket | null>(null);
     const pc = useRef<RTCPeerConnection | null>(null);
     const pendingIceCandidates = useRef<RTCIceCandidate[]>([]);
+    const isNegotiating = useRef(false);
+    const shouldCreateOffer = useRef(false);
 
     const cleanup = () => {
         if (pc.current) {
@@ -49,6 +51,8 @@ export const useWebRTC = (
 
         setIsCallActive(false);
         pendingIceCandidates.current = [];
+        isNegotiating.current = false;
+        shouldCreateOffer.current = false;
     };
 
     const leaveRoom = () => {
@@ -82,6 +86,10 @@ export const useWebRTC = (
                 setIsConnected(true);
                 setError(null);
                 console.log('WebSocket connected');
+
+                if (shouldCreateOffer.current && pc.current) {
+                    createAndSendOffer();
+                }
             };
 
             ws.current.onerror = (event) => {
@@ -110,27 +118,28 @@ export const useWebRTC = (
                     else if (data.type === 'offer') {
                         if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
                             try {
-                                // Устанавливаем удаленное описание (offer)
+                                if (isNegotiating.current) {
+                                    console.log('Already negotiating, ignoring offer');
+                                    return;
+                                }
+
+                                isNegotiating.current = true;
                                 await pc.current.setRemoteDescription(
                                     new RTCSessionDescription(data.sdp)
                                 );
 
-                                // Создаем answer
                                 const answer = await pc.current.createAnswer({
                                     offerToReceiveAudio: true,
                                     offerToReceiveVideo: true
                                 });
 
-                                // Нормализуем SDP перед установкой
                                 const normalizedAnswer = {
                                     ...answer,
                                     sdp: normalizeSdp(answer.sdp)
                                 };
 
-                                // Устанавливаем локальное описание (answer)
                                 await pc.current.setLocalDescription(normalizedAnswer);
 
-                                // Отправляем answer обратно
                                 ws.current.send(JSON.stringify({
                                     type: 'answer',
                                     sdp: normalizedAnswer,
@@ -139,29 +148,33 @@ export const useWebRTC = (
                                 }));
 
                                 setIsCallActive(true);
+                                isNegotiating.current = false;
                             } catch (err) {
                                 console.error('Error handling offer:', err);
                                 setError('Ошибка обработки предложения соединения');
+                                isNegotiating.current = false;
                             }
                         }
                     }
                     else if (data.type === 'answer') {
-                        if (pc.current && pc.current.signalingState !== 'stable' && data.sdp) {
+                        if (pc.current && data.sdp) {
                             try {
-                                // Нормализуем SDP перед установкой
+                                if (pc.current.signalingState !== 'have-local-offer') {
+                                    console.log('Not in have-local-offer state, ignoring answer');
+                                    return;
+                                }
+
                                 const normalizedAnswer = {
                                     ...data.sdp,
                                     sdp: normalizeSdp(data.sdp.sdp)
                                 };
 
-                                // Устанавливаем удаленное описание (answer)
                                 await pc.current.setRemoteDescription(
                                     new RTCSessionDescription(normalizedAnswer)
                                 );
 
                                 setIsCallActive(true);
 
-                                // Добавляем отложенные ICE-кандидаты
                                 pendingIceCandidates.current.forEach(candidate => {
                                     pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
                                 });
@@ -194,6 +207,38 @@ export const useWebRTC = (
             console.error('WebSocket connection error:', err);
             setError('Не удалось подключиться к серверу');
             return false;
+        }
+    };
+
+    const createAndSendOffer = async () => {
+        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            const offer = await pc.current.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true
+            });
+
+            const normalizedOffer = {
+                ...offer,
+                sdp: normalizeSdp(offer.sdp)
+            };
+
+            await pc.current.setLocalDescription(normalizedOffer);
+
+            ws.current.send(JSON.stringify({
+                type: "offer",
+                sdp: normalizedOffer,
+                room: roomId,
+                username
+            }));
+
+            setIsCallActive(true);
+        } catch (err) {
+            console.error('Error creating offer:', err);
+            setError('Ошибка создания предложения соединения');
         }
     };
 
@@ -271,20 +316,6 @@ export const useWebRTC = (
         }
     };
 
-    const reconnect = async () => {
-        cleanup();
-
-        if (ws.current) {
-            ws.current.close();
-        }
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        if (isInRoom) {
-            await joinRoom(username);
-        }
-    };
-
     const joinRoom = async (uniqueUsername: string) => {
         setError(null);
 
@@ -303,34 +334,13 @@ export const useWebRTC = (
                 username: uniqueUsername
             }));
             setIsInRoom(true);
+            shouldCreateOffer.current = true;
 
-            if (pc.current) {
-                try {
-                    const offer = await pc.current.createOffer({
-                        offerToReceiveAudio: true,
-                        offerToReceiveVideo: true
-                    });
-
-                    const normalizedOffer = {
-                        ...offer,
-                        sdp: normalizeSdp(offer.sdp)
-                    };
-
-                    await pc.current.setLocalDescription(normalizedOffer);
-
-                    ws.current.send(JSON.stringify({
-                        type: "offer",
-                        sdp: normalizedOffer,
-                        room: roomId,
-                        username: uniqueUsername
-                    }));
-
-                    setIsCallActive(true);
-                } catch (err) {
-                    console.error('Error creating offer:', err);
-                    setError('Ошибка создания предложения соединения');
-                }
+            if (ws.current.readyState === WebSocket.OPEN) {
+                await createAndSendOffer();
             }
+        } else {
+            shouldCreateOffer.current = true;
         }
     };
 
