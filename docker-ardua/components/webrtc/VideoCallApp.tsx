@@ -41,6 +41,17 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username, roomId)
 
+    // Загрузка сохраненных настроек ориентации
+    useEffect(() => {
+        const savedRotation = localStorage.getItem('videoRotation')
+        const savedFlipH = localStorage.getItem('videoFlipHorizontal')
+        const savedFlipV = localStorage.getItem('videoFlipVertical')
+
+        if (savedRotation) setVideoRotation(Number(savedRotation))
+        if (savedFlipH) setIsFlippedHorizontal(savedFlipH === 'true')
+        if (savedFlipV) setIsFlippedVertical(savedFlipV === 'true')
+    }, [])
+
     const loadDevices = async () => {
         try {
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -99,14 +110,18 @@ export const VideoCallApp = () => {
         }
     }, [autoJoin, hasPermission, devicesLoaded, selectedDevices])
 
+    // Сохранение настроек устройств
     useEffect(() => {
-        if (selectedDevices.video) {
-            localStorage.setItem('videoDevice', selectedDevices.video)
-        }
-        if (selectedDevices.audio) {
-            localStorage.setItem('audioDevice', selectedDevices.audio)
-        }
+        if (selectedDevices.video) localStorage.setItem('videoDevice', selectedDevices.video)
+        if (selectedDevices.audio) localStorage.setItem('audioDevice', selectedDevices.audio)
     }, [selectedDevices])
+
+    // Сохранение настроек ориентации
+    useEffect(() => {
+        localStorage.setItem('videoRotation', String(videoRotation))
+        localStorage.setItem('videoFlipHorizontal', String(isFlippedHorizontal))
+        localStorage.setItem('videoFlipVertical', String(isFlippedVertical))
+    }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
         setSelectedDevices(prev => ({
@@ -162,16 +177,8 @@ export const VideoCallApp = () => {
         let transform = ''
 
         // Поворот
-        switch(videoRotation) {
-            case 90:
-                transform += 'rotate(90deg) '
-                break
-            case 180:
-                transform += 'rotate(180deg) '
-                break
-            case 270:
-                transform += 'rotate(270deg) '
-                break
+        if (videoRotation !== 0) {
+            transform += `rotate(${videoRotation}deg) `
         }
 
         // Отражения
