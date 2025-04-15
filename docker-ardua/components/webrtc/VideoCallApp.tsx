@@ -67,16 +67,10 @@ export const VideoCallApp = () => {
                 (savedAudioDevice ? d.deviceId === savedAudioDevice : true)
             );
 
-            const newSelectedDevices = {
+            setSelectedDevices({
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
-            };
-
-            setSelectedDevices(newSelectedDevices);
-
-            if (autoJoin && hasPermission && newSelectedDevices.video && newSelectedDevices.audio) {
-                handleJoinRoom();
-            }
+            });
         } catch (error) {
             console.error('Device access error:', error);
             setHasPermission(false);
@@ -89,6 +83,14 @@ export const VideoCallApp = () => {
         setAutoJoin(savedAutoJoin);
         loadDevices();
     }, []);
+
+    useEffect(() => {
+        if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
+            const uniqueUsername = generateUniqueUsername(username);
+            setUsername(uniqueUsername);
+            joinRoom(uniqueUsername);
+        }
+    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
 
     useEffect(() => {
         if (selectedDevices.video) {
@@ -176,7 +178,7 @@ export const VideoCallApp = () => {
                 {!isInRoom ? (
                     <Button
                         onClick={handleJoinRoom}
-                        disabled={!hasPermission || isJoining || autoJoin}
+                        disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
                         className={styles.button}
                     >
                         {isJoining ? 'Подключение...' : 'Войти в комнату'}

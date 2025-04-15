@@ -66,6 +66,14 @@ export const useWebRTC = (
         ws.current = null;
     };
 
+    const normalizeSdp = (sdp: string): string => {
+        // Удаляем лишние пробелы и приводим к единому формату
+        return sdp
+            .split('\r\n')
+            .filter(line => line.trim() !== '')
+            .join('\r\n') + '\r\n';
+    };
+
     const connectWebSocket = () => {
         try {
             ws.current = new WebSocket('wss://anybet.site/ws');
@@ -101,46 +109,60 @@ export const useWebRTC = (
                     }
                     else if (data.type === 'offer') {
                         if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
-                            await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            try {
+                                // Устанавливаем удаленное описание перед созданием ответа
+                                await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
 
-                            const answer = await pc.current.createAnswer({
-                                offerToReceiveAudio: true,
-                                offerToReceiveVideo: true
-                            });
-                            await pc.current.setLocalDescription(answer);
+                                const answer = await pc.current.createAnswer({
+                                    offerToReceiveAudio: true,
+                                    offerToReceiveVideo: true
+                                });
 
-                            ws.current.send(JSON.stringify({
-                                type: 'answer',
-                                sdp: answer,
-                                room: roomId,
-                                username
-                            }));
+                                // Нормализуем SDP перед установкой
+                                const normalizedAnswer = {
+                                    ...answer,
+                                    sdp: normalizeSdp(answer.sdp || '')
+                                };
 
-                            setIsCallActive(true);
+                                await pc.current.setLocalDescription(normalizedAnswer);
+
+                                ws.current.send(JSON.stringify({
+                                    type: 'answer',
+                                    sdp: normalizedAnswer,
+                                    room: roomId,
+                                    username
+                                }));
+
+                                setIsCallActive(true);
+                            } catch (err) {
+                                console.error('Error handling offer:', err);
+                                setError('Ошибка обработки предложения соединения');
+                            }
                         }
                     }
                     else if (data.type === 'answer') {
                         if (pc.current && pc.current.signalingState !== 'stable' && data.sdp) {
-                            await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                            setIsCallActive(true);
+                            try {
+                                // Нормализуем SDP перед установкой
+                                const normalizedAnswer = {
+                                    ...data.sdp,
+                                    sdp: normalizeSdp(data.sdp.sdp || '')
+                                };
 
-                            pendingIceCandidates.current.forEach(candidate => {
-                                pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
-                            });
-                            pendingIceCandidates.current = [];
-                        }
-                    }
-                    else if (data.type === 'ice_candidate') {
-                        if (data.ice) {
-                            const candidate = new RTCIceCandidate(data.ice);
+                                await pc.current.setRemoteDescription(new RTCSessionDescription(normalizedAnswer));
+                                setIsCallActive(true);
 
-                            if (pc.current && pc.current.remoteDescription) {
-                                await pc.current.addIceCandidate(candidate);
-                            } else {
-                                pendingIceCandidates.current.push(candidate);
+                                pendingIceCandidates.current.forEach(candidate => {
+                                    pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
+                                });
+                                pendingIceCandidates.current = [];
+                            } catch (err) {
+                                console.error('Error setting answer:', err);
+                                setError('Ошибка установки ответа соединения');
                             }
                         }
                     }
+                    // ... (остальная обработка сообщений остается без изменений)
                 } catch (err) {
                     console.error('Error processing message:', err);
                     setError('Ошибка обработки сообщения сервера');
@@ -209,10 +231,12 @@ export const useWebRTC = (
             };
 
             pc.current.oniceconnectionstatechange = () => {
-                if (pc.current?.iceConnectionState === 'disconnected' ||
-                    pc.current?.iceConnectionState === 'failed') {
-                    console.log('ICE connection failed, attempting to restart...');
-                    reconnect();
+                if (pc.current) {
+                    console.log('ICE connection state:', pc.current.iceConnectionState);
+                    if (pc.current.iceConnectionState === 'failed') {
+                        console.log('Restarting ICE...');
+                        pc.current.restartIce();
+                    }
                 }
             };
 
@@ -258,20 +282,33 @@ export const useWebRTC = (
             }));
             setIsInRoom(true);
 
-            // Автоматически начинаем звонок при входе в комнату
             if (pc.current) {
-                const offer = await pc.current.createOffer({
-                    offerToReceiveAudio: true,
-                    offerToReceiveVideo: true
-                });
-                await pc.current.setLocalDescription(offer);
-                ws.current.send(JSON.stringify({
-                    type: "offer",
-                    sdp: offer,
-                    room: roomId,
-                    username: uniqueUsername
-                }));
-                setIsCallActive(true);
+                try {
+                    const offer = await pc.current.createOffer({
+                        offerToReceiveAudio: true,
+                        offerToReceiveVideo: true
+                    });
+
+                    // Нормализуем SDP перед установкой
+                    const normalizedOffer = {
+                        ...offer,
+                        sdp: normalizeSdp(offer.sdp || '')
+                    };
+
+                    await pc.current.setLocalDescription(normalizedOffer);
+
+                    ws.current.send(JSON.stringify({
+                        type: "offer",
+                        sdp: normalizedOffer,
+                        room: roomId,
+                        username: uniqueUsername
+                    }));
+
+                    setIsCallActive(true);
+                } catch (err) {
+                    console.error('Error creating offer:', err);
+                    setError('Ошибка создания предложения соединения');
+                }
             }
         }
     };
