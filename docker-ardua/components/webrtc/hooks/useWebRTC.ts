@@ -3,7 +3,10 @@ import { useEffect, useRef, useState } from 'react';
 interface WebSocketMessage {
     type: string;
     data?: any;
-    sdp?: RTCSessionDescriptionInit;
+    sdp?: {
+        type: RTCSdpType;
+        sdp: string;
+    };
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
@@ -28,11 +31,9 @@ export const useWebRTC = (
     const isNegotiating = useRef(false);
     const shouldCreateOffer = useRef(false);
 
-    // Функция для нормализации SDP
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        // Убедимся, что SDP начинается с обязательных строк
         let normalized = sdp.trim();
         if (!normalized.startsWith('v=')) {
             normalized = 'v=0\r\n' + normalized;
@@ -44,7 +45,6 @@ export const useWebRTC = (
         return normalized + '\r\n';
     };
 
-    // Проверка порядка медиа-секций
     const validateMediaOrder = (offerSdp: string | undefined, answerSdp: string | undefined): boolean => {
         if (!offerSdp || !answerSdp) return false;
 
@@ -60,7 +60,6 @@ export const useWebRTC = (
             offerMedia.every((val, index) => val === answerMedia[index]);
     };
 
-    // Реорганизация медиа-секций в ответе согласно офферу
     const reorderAnswerMedia = (offerSdp: string | undefined, answerSdp: string | undefined): string => {
         if (!offerSdp || !answerSdp) return answerSdp || '';
 
@@ -72,7 +71,6 @@ export const useWebRTC = (
         const mediaSections: string[][] = [];
         let currentSection: string[] = [];
 
-        // Разбиваем ответ на медиа-секции
         for (const line of answerLines) {
             if (line.startsWith('m=')) {
                 if (currentSection.length > 0) {
@@ -87,7 +85,6 @@ export const useWebRTC = (
             mediaSections.push(currentSection);
         }
 
-        // Сортируем медиа-секции согласно офферу
         const reorderedSections: string[][] = [];
         for (const mediaType of offerMediaOrder) {
             const foundSection = mediaSections.find(section =>
@@ -97,7 +94,6 @@ export const useWebRTC = (
             }
         }
 
-        // Собираем обратно SDP
         const reorderedLines: string[] = [];
         for (const section of reorderedSections) {
             reorderedLines.push(...section, '');
@@ -233,20 +229,26 @@ export const useWebRTC = (
                                     return;
                                 }
 
-                                // Создаем корректный объект RTCSessionDescriptionInit
+                                const offerSdp = pc.current.localDescription?.sdp;
+                                const answerSdp = data.sdp.sdp;
+
+                                if (!validateMediaOrder(offerSdp, answerSdp)) {
+                                    console.log('Порядок медиа-секций не совпадает, реорганизуем...');
+                                    data.sdp.sdp = reorderAnswerMedia(offerSdp, answerSdp);
+                                }
+
                                 const answerDescription: RTCSessionDescriptionInit = {
-                                    type: 'answer' as RTCSdpType, // Явное приведение типа
-                                    sdp: normalizeSdp(data.sdp.sdp)
+                                    type: 'answer',
+                                    sdp: data.sdp.sdp
                                 };
 
-                                console.log('Устанавливаем удаленное описание с ответом:', answerDescription);
+                                console.log('Устанавливаем удаленное описание с ответом');
                                 await pc.current.setRemoteDescription(
                                     new RTCSessionDescription(answerDescription)
                                 );
 
                                 setIsCallActive(true);
 
-                                // Добавляем ожидающие ICE-кандидаты
                                 for (const candidate of pendingIceCandidates.current) {
                                     try {
                                         await pc.current.addIceCandidate(candidate);
@@ -302,10 +304,9 @@ export const useWebRTC = (
                 offerToReceiveVideo: true
             });
 
-            // Исправленный способ стандартизации SDP
             const standardizedOffer = {
                 ...offer,
-                sdp: normalizeSdp(offer.sdp) // Просто нормализуем, не меняем порядок
+                sdp: normalizeSdp(offer.sdp)
             };
 
             console.log('Устанавливаем локальное описание с оффером');
@@ -338,12 +339,10 @@ export const useWebRTC = (
                 iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require'
-                // sdpSemantics удалено, так как Unified Plan теперь используется по умолчанию
             };
 
             pc.current = new RTCPeerConnection(config);
 
-            // Добавляем обработчики событий для отладки
             pc.current.onnegotiationneeded = () => {
                 console.log('Требуется переговорный процесс');
             };
@@ -356,22 +355,9 @@ export const useWebRTC = (
                 console.log('Состояние сбора ICE изменилось:', pc.current?.iceGatheringState);
             };
 
-            pc.current.onicecandidate = (event) => {
-                if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
-                    // Добавляем проверку на null для candidate
-                    if (event.candidate.candidate && event.candidate.candidate !== '') {
-                        ws.current.send(JSON.stringify({
-                            type: 'ice_candidate',
-                            ice: {
-                                candidate: event.candidate.candidate,
-                                sdpMid: event.candidate.sdpMid,
-                                sdpMLineIndex: event.candidate.sdpMLineIndex
-                            },
-                            room: roomId,
-                            username
-                        }));
-                    }
-                }
+            pc.current.onicecandidateerror = (event) => {
+                console.error('Ошибка ICE кандидата:', event);
+                setError('Ошибка ICE кандидата');
             };
 
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -396,12 +382,18 @@ export const useWebRTC = (
 
             pc.current.onicecandidate = (event) => {
                 if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
-                    ws.current.send(JSON.stringify({
-                        type: 'ice_candidate',
-                        ice: event.candidate,
-                        room: roomId,
-                        username
-                    }));
+                    if (event.candidate.candidate && event.candidate.candidate !== '') {
+                        ws.current.send(JSON.stringify({
+                            type: 'ice_candidate',
+                            ice: {
+                                candidate: event.candidate.candidate,
+                                sdpMid: event.candidate.sdpMid,
+                                sdpMLineIndex: event.candidate.sdpMLineIndex
+                            },
+                            room: roomId,
+                            username
+                        }));
+                    }
                 }
             };
 
