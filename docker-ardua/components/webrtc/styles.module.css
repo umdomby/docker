@@ -24,12 +24,16 @@
 :fullscreen .remoteVideoContainer {
     width: 100vw;
     height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 .remoteVideo {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
+    transition: transform 0.3s ease;
 }
 
 .localVideoContainer {

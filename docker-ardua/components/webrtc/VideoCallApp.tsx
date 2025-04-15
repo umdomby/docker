@@ -41,16 +41,31 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username, roomId)
 
-    // Загрузка сохраненных настроек ориентации
-    useEffect(() => {
-        const savedRotation = localStorage.getItem('videoRotation')
-        const savedFlipH = localStorage.getItem('videoFlipHorizontal')
-        const savedFlipV = localStorage.getItem('videoFlipVertical')
+    // Загрузка сохраненных настроек
+    const loadSettings = () => {
+        const savedSettings = localStorage.getItem('videoSettings')
+        if (savedSettings) {
+            const {
+                rotation = 0,
+                flipH = false,
+                flipV = false
+            } = JSON.parse(savedSettings)
 
-        if (savedRotation) setVideoRotation(Number(savedRotation))
-        if (savedFlipH) setIsFlippedHorizontal(savedFlipH === 'true')
-        if (savedFlipV) setIsFlippedVertical(savedFlipV === 'true')
-    }, [])
+            setVideoRotation(rotation)
+            setIsFlippedHorizontal(flipH)
+            setIsFlippedVertical(flipV)
+        }
+    }
+
+    // Сохранение настроек
+    const saveSettings = () => {
+        const settings = {
+            rotation: videoRotation,
+            flipH: isFlippedHorizontal,
+            flipV: isFlippedVertical
+        }
+        localStorage.setItem('videoSettings', JSON.stringify(settings))
+    }
 
     const loadDevices = async () => {
         try {
@@ -92,6 +107,7 @@ export const VideoCallApp = () => {
     useEffect(() => {
         const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
         setAutoJoin(savedAutoJoin)
+        loadSettings()
         loadDevices()
 
         const handleFullscreenChange = () => {
@@ -110,17 +126,13 @@ export const VideoCallApp = () => {
         }
     }, [autoJoin, hasPermission, devicesLoaded, selectedDevices])
 
-    // Сохранение настроек устройств
     useEffect(() => {
         if (selectedDevices.video) localStorage.setItem('videoDevice', selectedDevices.video)
         if (selectedDevices.audio) localStorage.setItem('audioDevice', selectedDevices.audio)
     }, [selectedDevices])
 
-    // Сохранение настроек ориентации
     useEffect(() => {
-        localStorage.setItem('videoRotation', String(videoRotation))
-        localStorage.setItem('videoFlipHorizontal', String(isFlippedHorizontal))
-        localStorage.setItem('videoFlipVertical', String(isFlippedVertical))
+        saveSettings()
     }, [videoRotation, isFlippedHorizontal, isFlippedVertical])
 
     const handleDeviceChange = (type: 'video' | 'audio', deviceId: string) => {
