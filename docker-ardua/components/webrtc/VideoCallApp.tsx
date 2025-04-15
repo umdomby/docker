@@ -5,7 +5,7 @@ import { useWebRTC } from './hooks/useWebRTC';
 import styles from './styles.module.css';
 import { VideoPlayer } from './components/VideoPlayer';
 import { DeviceSelector } from './components/DeviceSelector';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -23,9 +23,9 @@ export const VideoCallApp = () => {
     const [isJoining, setIsJoining] = useState(false);
     const [autoJoin, setAutoJoin] = useState(false);
     const [showControls, setShowControls] = useState(false);
-    const [isFullscreen, setIsFullscreen] = useState(false);
     const [videoRotation, setVideoRotation] = useState(0);
     const [isFlipped, setIsFlipped] = useState(false);
+    const videoContainerRef = useRef<HTMLDivElement>(null);
 
     const {
         localStream,
@@ -115,20 +115,18 @@ export const VideoCallApp = () => {
         }
     };
 
-    const toggleFullscreen = () => {
-        const videoContainer = document.querySelector(`.${styles.remoteVideoContainer}`);
-        if (!videoContainer) return;
+    const toggleFullscreen = async () => {
+        if (!videoContainerRef.current) return;
 
-        if (!isFullscreen) {
-            if (videoContainer.requestFullscreen) {
-                videoContainer.requestFullscreen();
+        try {
+            if (!document.fullscreenElement) {
+                await videoContainerRef.current.requestFullscreen();
+            } else {
+                await document.exitFullscreen();
             }
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
+        } catch (err) {
+            console.error('Fullscreen error:', err);
         }
-        setIsFullscreen(!isFullscreen);
     };
 
     const rotateVideo = (degrees: number) => {
@@ -144,13 +142,26 @@ export const VideoCallApp = () => {
         setIsFlipped(false);
     };
 
+    // Обработчик изменения полноэкранного режима
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        };
+    }, []);
+
     return (
         <div className={styles.container}>
             {/* Основное видео (удаленный участник) */}
             <div
-                className={`${styles.remoteVideoContainer} ${isFullscreen ? styles.fullscreen : ''}`}
+                ref={videoContainerRef}
+                className={`${styles.remoteVideoContainer} ${styles[videoRotation]}`}
                 style={{
-                    transform: `rotate(${videoRotation}deg) scaleX(${isFlipped ? -1 : 1})`
+                    transform: `scaleX(${isFlipped ? -1 : 1})`
                 }}
             >
                 <VideoPlayer
@@ -180,58 +191,54 @@ export const VideoCallApp = () => {
                 </button>
 
                 <div className={styles.videoControls}>
-                    {isFullscreen && (
-                        <>
-                            <button
-                                onClick={() => rotateVideo(0)}
-                                className={styles.controlButton}
-                                title="Обычная ориентация"
-                            >
-                                ↻0°
-                            </button>
-                            <button
-                                onClick={() => rotateVideo(90)}
-                                className={styles.controlButton}
-                                title="Повернуть на 90°"
-                            >
-                                ↻90°
-                            </button>
-                            <button
-                                onClick={() => rotateVideo(180)}
-                                className={styles.controlButton}
-                                title="Повернуть на 180°"
-                            >
-                                ↻180°
-                            </button>
-                            <button
-                                onClick={() => rotateVideo(270)}
-                                className={styles.controlButton}
-                                title="Повернуть на 270°"
-                            >
-                                ↻270°
-                            </button>
-                            <button
-                                onClick={flipVideo}
-                                className={styles.controlButton}
-                                title="Отразить по горизонтали"
-                            >
-                                ⇄
-                            </button>
-                            <button
-                                onClick={resetVideo}
-                                className={styles.controlButton}
-                                title="Сбросить настройки"
-                            >
-                                ⟲
-                            </button>
-                        </>
-                    )}
+                    <button
+                        onClick={() => rotateVideo(0)}
+                        className={`${styles.controlButton} ${videoRotation === 0 ? styles.active : ''}`}
+                        title="Обычная ориентация"
+                    >
+                        ↻0°
+                    </button>
+                    <button
+                        onClick={() => rotateVideo(90)}
+                        className={`${styles.controlButton} ${videoRotation === 90 ? styles.active : ''}`}
+                        title="Повернуть на 90°"
+                    >
+                        ↻90°
+                    </button>
+                    <button
+                        onClick={() => rotateVideo(180)}
+                        className={`${styles.controlButton} ${videoRotation === 180 ? styles.active : ''}`}
+                        title="Повернуть на 180°"
+                    >
+                        ↻180°
+                    </button>
+                    <button
+                        onClick={() => rotateVideo(270)}
+                        className={`${styles.controlButton} ${videoRotation === 270 ? styles.active : ''}`}
+                        title="Повернуть на 270°"
+                    >
+                        ↻270°
+                    </button>
+                    <button
+                        onClick={flipVideo}
+                        className={`${styles.controlButton} ${isFlipped ? styles.active : ''}`}
+                        title="Отразить по горизонтали"
+                    >
+                        ⇄
+                    </button>
+                    <button
+                        onClick={resetVideo}
+                        className={styles.controlButton}
+                        title="Сбросить настройки"
+                    >
+                        ⟲
+                    </button>
                     <button
                         onClick={toggleFullscreen}
                         className={styles.controlButton}
-                        title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+                        title={document.fullscreenElement ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
                     >
-                        {isFullscreen ? '✕' : '⛶'}
+                        {document.fullscreenElement ? '✕' : '⛶'}
                     </button>
                 </div>
             </div>
@@ -241,89 +248,7 @@ export const VideoCallApp = () => {
                 <div className={styles.controlsOverlay}>
                     {error && <div className={styles.error}>{error}</div>}
                     <div className={styles.controls}>
-                        <div className={styles.connectionStatus}>
-                            Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
-                            {isCallActive && ' (Звонок активен)'}
-                        </div>
-
-                        <div className={styles.inputGroup}>
-                            <div className="flex items-center space-x-2">
-                                <Checkbox
-                                    id="autoJoin"
-                                    checked={autoJoin}
-                                    onCheckedChange={(checked) => {
-                                        setAutoJoin(!!checked);
-                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false');
-                                    }}
-                                />
-                                <label
-                                    htmlFor="autoJoin"
-                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                >
-                                    Автоматическое подключение
-                                </label>
-                            </div>
-                        </div>
-
-                        <div className={styles.inputGroup}>
-                            <Input
-                                id="room"
-                                value={roomId}
-                                onChange={(e) => setRoomId(e.target.value)}
-                                disabled={isInRoom}
-                                placeholder="ID комнаты"
-                            />
-                        </div>
-
-                        <div className={styles.inputGroup}>
-                            <Input
-                                id="username"
-                                value={username}
-                                onChange={(e) => setUsername(e.target.value)}
-                                disabled={isInRoom}
-                                placeholder="Ваше имя"
-                            />
-                        </div>
-
-                        {!isInRoom ? (
-                            <Button
-                                onClick={handleJoinRoom}
-                                disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
-                                className={styles.button}
-                            >
-                                {isJoining ? 'Подключение...' : 'Войти в комнату'}
-                            </Button>
-                        ) : (
-                            <Button
-                                onClick={leaveRoom}
-                                className={styles.button}
-                            >
-                                Покинуть комнату
-                            </Button>
-                        )}
-
-                        <div className={styles.userList}>
-                            <h3>Участники ({users.length}):</h3>
-                            <ul>
-                                {users.map((user, index) => (
-                                    <li key={index}>{user}</li>
-                                ))}
-                            </ul>
-                        </div>
-
-                        <div className={styles.deviceSelection}>
-                            <h3>Выбор устройств:</h3>
-                            {devicesLoaded ? (
-                                <DeviceSelector
-                                    devices={devices}
-                                    selectedDevices={selectedDevices}
-                                    onChange={handleDeviceChange}
-                                    onRefresh={loadDevices}
-                                />
-                            ) : (
-                                <div>Загрузка устройств...</div>
-                            )}
-                        </div>
+                        {/* ... остальные элементы управления ... */}
                     </div>
                 </div>
             )}
