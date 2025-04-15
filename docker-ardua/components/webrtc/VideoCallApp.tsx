@@ -114,10 +114,7 @@ export const VideoCallApp = () => {
 
     return (
         <div className={styles.container}>
-            <h1 className={styles.title}>WebRTC Video Call</h1>
-
             {error && <div className={styles.error}>{error}</div>}
-
             <div className={styles.controls}>
                 <div className={styles.connectionStatus}>
                     Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
@@ -144,7 +141,6 @@ export const VideoCallApp = () => {
                 </div>
 
                 <div className={styles.inputGroup}>
-                    <Label htmlFor="room">Комната:</Label>
                     <Input
                         id="room"
                         value={roomId}
@@ -154,7 +150,6 @@ export const VideoCallApp = () => {
                 </div>
 
                 <div className={styles.inputGroup}>
-                    <Label htmlFor="username">Имя пользователя:</Label>
                     <Input
                         id="username"
                         value={username}
