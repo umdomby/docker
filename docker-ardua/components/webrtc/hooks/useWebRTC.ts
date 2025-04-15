@@ -34,15 +34,24 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        let normalized = sdp.trim();
-        if (!normalized.startsWith('v=')) {
-            normalized = 'v=0\r\n' + normalized;
+        // Убедимся, что SDP содержит все обязательные поля
+        let lines = sdp.trim().split('\r\n');
+
+        // Добавляем обязательные строки, если их нет
+        if (!lines[0].startsWith('v=')) {
+            lines.unshift('v=0');
         }
-        if (!normalized.includes('\r\no=')) {
-            normalized = normalized.replace('\r\n', '\r\no=- 0 0 IN IP4 0.0.0.0\r\n');
+        if (!lines.some(line => line.startsWith('o='))) {
+            lines.splice(1, 0, 'o=- 0 0 IN IP4 0.0.0.0');
+        }
+        if (!lines.some(line => line.startsWith('s='))) {
+            lines.splice(2, 0, 's=-');
+        }
+        if (!lines.some(line => line.startsWith('t='))) {
+            lines.splice(3, 0, 't=0 0');
         }
 
-        return normalized + '\r\n';
+        return lines.join('\r\n') + '\r\n';
     };
 
     const validateMediaOrder = (offerSdp: string | undefined, answerSdp: string | undefined): boolean => {
@@ -332,9 +341,21 @@ export const useWebRTC = (
 
             const config: RTCConfiguration = {
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                    { urls: 'stun:stun2.l.google.com:19302' }
+                    {
+                        urls: [
+                            'stun:stun.l.google.com:19302',
+                            'stun:stun1.l.google.com:19302',
+                            'stun:stun2.l.google.com:19302',
+                            'stun:stun3.l.google.com:19302',
+                            'stun:stun4.l.google.com:19302'
+                        ]
+                    },
+                    {
+                        urls: 'stun:stun.voipbuster.com:3478'
+                    },
+                    {
+                        urls: 'stun:stun.ideasip.com'
+                    }
                 ],
                 iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
@@ -356,8 +377,42 @@ export const useWebRTC = (
             };
 
             pc.current.onicecandidateerror = (event) => {
-                console.error('Ошибка ICE кандидата:', event);
-                setError('Ошибка ICE кандидата');
+                // Игнорируем определенные типы ошибок
+                const ignorableErrors = [
+                    701, // STUN: DNS resolution failed
+                    702, // STUN: Server returned error response
+                    703  // STUN: Authentication failed
+                ];
+
+                if (!ignorableErrors.includes(event.errorCode)) {
+                    console.error('Критическая ошибка ICE кандидата:', {
+                        errorCode: event.errorCode,
+                        errorText: event.errorText,
+                        address: event.address,
+                        port: event.port,
+                        url: event.url
+                    });
+                    setError(`Ошибка соединения: ${event.errorText}`);
+                } else {
+                    console.log('Игнорируемая ошибка ICE:', event.errorText);
+                }
+            };
+
+            const iceTimeout = setTimeout(() => {
+                if (pc.current?.iceGatheringState !== 'complete') {
+                    console.warn('Таймаут сбора ICE кандидатов');
+                    if (pc.current?.localDescription) {
+                        // Форсируем завершение если есть локальное описание
+                        pc.current.dispatchEvent(new Event('icecandidate', { candidate: null }));
+                    }
+                }
+            }, 5000); // 5 секунд таймаут
+
+            pc.current.onicegatheringstatechange = () => {
+                console.log('Состояние сбора ICE изменилось:', pc.current?.iceGatheringState);
+                if (pc.current?.iceGatheringState === 'complete') {
+                    clearTimeout(iceTimeout);
+                }
             };
 
             const stream = await navigator.mediaDevices.getUserMedia({
@@ -382,17 +437,22 @@ export const useWebRTC = (
 
             pc.current.onicecandidate = (event) => {
                 if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
-                    if (event.candidate.candidate && event.candidate.candidate !== '') {
-                        ws.current.send(JSON.stringify({
-                            type: 'ice_candidate',
-                            ice: {
-                                candidate: event.candidate.candidate,
-                                sdpMid: event.candidate.sdpMid,
-                                sdpMLineIndex: event.candidate.sdpMLineIndex
-                            },
-                            room: roomId,
-                            username
-                        }));
+                    try {
+                        // Фильтруем нежелательные кандидаты
+                        if (shouldSendIceCandidate(event.candidate)) {
+                            ws.current.send(JSON.stringify({
+                                type: 'ice_candidate',
+                                ice: {
+                                    candidate: event.candidate.candidate,
+                                    sdpMid: event.candidate.sdpMid || '0',
+                                    sdpMLineIndex: event.candidate.sdpMLineIndex || 0
+                                },
+                                room: roomId,
+                                username
+                            }));
+                        }
+                    } catch (err) {
+                        console.error('Ошибка отправки ICE кандидата:', err);
                     }
                 }
             };
@@ -404,12 +464,44 @@ export const useWebRTC = (
             };
 
             pc.current.oniceconnectionstatechange = () => {
-                if (pc.current) {
-                    console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
-                    if (pc.current.iceConnectionState === 'failed') {
+                if (!pc.current) return;
+
+                console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
+
+                switch (pc.current.iceConnectionState) {
+                    case 'failed':
                         console.log('Перезапуск ICE...');
-                        pc.current.restartIce();
-                    }
+                        // Попытка восстановления соединения
+                        setTimeout(() => {
+                            if (pc.current && pc.current.iceConnectionState === 'failed') {
+                                pc.current.restartIce();
+                                if (isInRoom && !isCallActive) {
+                                    createAndSendOffer().catch(console.error);
+                                }
+                            }
+                        }, 1000);
+                        break;
+
+                    case 'disconnected':
+                        console.log('Соединение прервано...');
+                        setIsCallActive(false);
+                        // Попытка восстановления через 2 секунды
+                        setTimeout(() => {
+                            if (pc.current && pc.current.iceConnectionState === 'disconnected') {
+                                createAndSendOffer().catch(console.error);
+                            }
+                        }, 2000);
+                        break;
+
+                    case 'connected':
+                        console.log('Соединение установлено!');
+                        setIsCallActive(true);
+                        break;
+
+                    case 'closed':
+                        console.log('Соединение закрыто');
+                        setIsCallActive(false);
+                        break;
                 }
             };
 
@@ -422,31 +514,71 @@ export const useWebRTC = (
         }
     };
 
+    function shouldSendIceCandidate(candidate: RTCIceCandidate): boolean {
+        // Не отправляем кандидаты с пустым описанием
+        if (!candidate.candidate || candidate.candidate.length === 0) {
+            return false;
+        }
+
+        // Фильтруем определенные типы кандидатов
+        const excludedTypes = ['host', 'srflx'];
+        const candidateType = candidate.candidate.split(' ')[7];
+
+        // Фильтруем локальные IP-адреса
+        const isLocalIP = candidate.candidate.includes('192.168.') ||
+            candidate.candidate.includes('172.') ||
+            candidate.candidate.includes('10.');
+
+        return !excludedTypes.includes(candidateType) && !isLocalIP;
+    }
+
     const joinRoom = async (uniqueUsername: string) => {
         setError(null);
+        setIsInRoom(false);
 
-        if (!connectWebSocket()) {
-            return;
-        }
+        try {
+            // Сначала инициализируем WebRTC
+            if (!(await initializeWebRTC())) {
+                throw new Error('Не удалось инициализировать WebRTC');
+            }
 
-        if (!(await initializeWebRTC())) {
-            return;
-        }
+            // Затем подключаем WebSocket
+            if (!connectWebSocket()) {
+                throw new Error('Не удалось подключиться к WebSocket');
+            }
 
-        if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify({
+            // Ждем подключения WebSocket
+            await new Promise((resolve, reject) => {
+                const checkConnection = () => {
+                    if (ws.current?.readyState === WebSocket.OPEN) {
+                        resolve(true);
+                    } else if (ws.current?.readyState === WebSocket.CLOSED) {
+                        reject(new Error('WebSocket закрыт'));
+                    } else {
+                        setTimeout(checkConnection, 100);
+                    }
+                };
+                checkConnection();
+            });
+
+            // Отправляем запрос на присоединение
+            ws.current?.send(JSON.stringify({
                 action: "join",
                 room: roomId,
                 username: uniqueUsername
             }));
+
             setIsInRoom(true);
             shouldCreateOffer.current = true;
 
-            if (ws.current.readyState === WebSocket.OPEN) {
+            // Создаем оффер только если мы первые в комнате
+            if (users.length === 0) {
                 await createAndSendOffer();
             }
-        } else {
-            shouldCreateOffer.current = true;
+        } catch (err) {
+            console.error('Ошибка входа в комнату:', err);
+            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+            cleanup();
         }
     };
 
