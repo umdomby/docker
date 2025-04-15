@@ -164,6 +164,10 @@ export const useWebRTC = (
                                     return;
                                 }
 
+                                // Добавьте логирование для отладки
+                                console.log('Local offer SDP:', pc.current.localDescription?.sdp);
+                                console.log('Remote answer SDP:', data.sdp.sdp);
+
                                 const normalizedAnswer = {
                                     ...data.sdp,
                                     sdp: normalizeSdp(data.sdp.sdp)
@@ -175,9 +179,14 @@ export const useWebRTC = (
 
                                 setIsCallActive(true);
 
-                                pendingIceCandidates.current.forEach(candidate => {
-                                    pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
-                                });
+                                // Исправленная часть - добавляем кандидаты без повторного создания
+                                for (const candidate of pendingIceCandidates.current) {
+                                    try {
+                                        await pc.current.addIceCandidate(candidate);
+                                    } catch (err) {
+                                        console.error('Error adding pending ICE candidate:', err);
+                                    }
+                                }
                                 pendingIceCandidates.current = [];
                             } catch (err) {
                                 console.error('Error setting answer:', err);
@@ -187,12 +196,17 @@ export const useWebRTC = (
                     }
                     else if (data.type === 'ice_candidate') {
                         if (data.ice) {
-                            const candidate = new RTCIceCandidate(data.ice);
+                            try {
+                                const candidate = new RTCIceCandidate(data.ice);
 
-                            if (pc.current && pc.current.remoteDescription) {
-                                await pc.current.addIceCandidate(candidate);
-                            } else {
-                                pendingIceCandidates.current.push(candidate);
+                                if (pc.current && pc.current.remoteDescription) {
+                                    await pc.current.addIceCandidate(candidate);
+                                } else {
+                                    pendingIceCandidates.current.push(candidate);
+                                }
+                            } catch (err) {
+                                console.error('Error adding ICE candidate:', err);
+                                setError('Ошибка добавления ICE-кандидата');
                             }
                         }
                     }
@@ -246,7 +260,7 @@ export const useWebRTC = (
         try {
             cleanup();
 
-            const config = {
+            const config: RTCConfiguration = {
                 iceServers: [
                     { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:stun1.l.google.com:19302' },
@@ -255,7 +269,7 @@ export const useWebRTC = (
                 iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
-                sdpSemantics: 'unified-plan' as const
+                sdpSemantics: 'unified-plan'
             };
 
             pc.current = new RTCPeerConnection(config);
