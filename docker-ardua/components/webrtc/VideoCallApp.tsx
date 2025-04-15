@@ -17,11 +17,12 @@ export const VideoCallApp = () => {
         audio: ''
     });
     const [roomId, setRoomId] = useState('room1');
-    const [username, setUsername] = useState('123');
+    const [username, setUsername] = useState('user' + Math.floor(Math.random() * 1000));
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
     const [autoJoin, setAutoJoin] = useState(false);
+    const [isInitialized, setIsInitialized] = useState(false);
 
     const {
         localStream,
@@ -65,10 +66,13 @@ export const VideoCallApp = () => {
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
             });
+
+            setIsInitialized(true);
         } catch (error) {
             console.error('Device access error:', error);
             setHasPermission(false);
             setDevicesLoaded(true);
+            setIsInitialized(true);
         }
     };
 
@@ -79,10 +83,10 @@ export const VideoCallApp = () => {
     }, []);
 
     useEffect(() => {
-        if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            handleJoinRoom();
+        if (autoJoin && isInitialized && hasPermission && selectedDevices.video && selectedDevices.audio) {
+            handleJoin();
         }
-    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
+    }, [autoJoin, isInitialized, hasPermission, selectedDevices]);
 
     useEffect(() => {
         if (selectedDevices.video) {
@@ -100,22 +104,22 @@ export const VideoCallApp = () => {
         }));
     };
 
-    const handleJoinRoom = async () => {
+    const handleJoin = async () => {
+        if (!hasPermission || isInRoom) return;
+
         setIsJoining(true);
         try {
-            // Сначала убедимся, что устройства выбраны
-            if (!selectedDevices.video || !selectedDevices.audio) {
-                throw new Error('Выберите видео и аудио устройства');
-            }
-
-            // Выполняем joinRoom с тем же именем пользователя
             await joinRoom(username);
         } catch (error) {
             console.error('Error joining room:', error);
-            setError(error instanceof Error ? error.message : 'Ошибка подключения');
         } finally {
             setIsJoining(false);
         }
+    };
+
+    const handleJoinButtonClick = async () => {
+        if (isInRoom) return;
+        await handleJoin();
     };
 
     return (
@@ -171,8 +175,8 @@ export const VideoCallApp = () => {
 
                 {!isInRoom ? (
                     <Button
-                        onClick={handleJoinRoom}
-                        disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
+                        onClick={handleJoinButtonClick}
+                        disabled={!hasPermission || isJoining}
                         className={styles.button}
                     >
                         {isJoining ? 'Подключение...' : 'Войти в комнату'}
