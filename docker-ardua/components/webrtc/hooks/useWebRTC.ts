@@ -1,4 +1,4 @@
-// file: client/app/webrtc/hooks/useWebRTC.ts
+// file: docker-ardua/components/webrtc/hooks/useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 
 interface WebSocketMessage {
@@ -66,8 +66,8 @@ export const useWebRTC = (
         ws.current = null;
     };
 
-    const normalizeSdp = (sdp: string): string => {
-        // Удаляем лишние пробелы и приводим к единому формату
+    const normalizeSdp = (sdp: string | undefined): string => {
+        if (!sdp) return '';
         return sdp
             .split('\r\n')
             .filter(line => line.trim() !== '')
@@ -110,9 +110,12 @@ export const useWebRTC = (
                     else if (data.type === 'offer') {
                         if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
                             try {
-                                // Устанавливаем удаленное описание перед созданием ответа
-                                await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                                // Устанавливаем удаленное описание (offer)
+                                await pc.current.setRemoteDescription(
+                                    new RTCSessionDescription(data.sdp)
+                                );
 
+                                // Создаем answer
                                 const answer = await pc.current.createAnswer({
                                     offerToReceiveAudio: true,
                                     offerToReceiveVideo: true
@@ -121,11 +124,13 @@ export const useWebRTC = (
                                 // Нормализуем SDP перед установкой
                                 const normalizedAnswer = {
                                     ...answer,
-                                    sdp: normalizeSdp(answer.sdp || '')
+                                    sdp: normalizeSdp(answer.sdp)
                                 };
 
+                                // Устанавливаем локальное описание (answer)
                                 await pc.current.setLocalDescription(normalizedAnswer);
 
+                                // Отправляем answer обратно
                                 ws.current.send(JSON.stringify({
                                     type: 'answer',
                                     sdp: normalizedAnswer,
@@ -146,12 +151,17 @@ export const useWebRTC = (
                                 // Нормализуем SDP перед установкой
                                 const normalizedAnswer = {
                                     ...data.sdp,
-                                    sdp: normalizeSdp(data.sdp.sdp || '')
+                                    sdp: normalizeSdp(data.sdp.sdp)
                                 };
 
-                                await pc.current.setRemoteDescription(new RTCSessionDescription(normalizedAnswer));
+                                // Устанавливаем удаленное описание (answer)
+                                await pc.current.setRemoteDescription(
+                                    new RTCSessionDescription(normalizedAnswer)
+                                );
+
                                 setIsCallActive(true);
 
+                                // Добавляем отложенные ICE-кандидаты
                                 pendingIceCandidates.current.forEach(candidate => {
                                     pc.current?.addIceCandidate(new RTCIceCandidate(candidate));
                                 });
@@ -162,7 +172,17 @@ export const useWebRTC = (
                             }
                         }
                     }
-                    // ... (остальная обработка сообщений остается без изменений)
+                    else if (data.type === 'ice_candidate') {
+                        if (data.ice) {
+                            const candidate = new RTCIceCandidate(data.ice);
+
+                            if (pc.current && pc.current.remoteDescription) {
+                                await pc.current.addIceCandidate(candidate);
+                            } else {
+                                pendingIceCandidates.current.push(candidate);
+                            }
+                        }
+                    }
                 } catch (err) {
                     console.error('Error processing message:', err);
                     setError('Ошибка обработки сообщения сервера');
@@ -183,12 +203,14 @@ export const useWebRTC = (
 
             const config = {
                 iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' }
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' }
                 ],
-                sdpSemantics: 'unified-plan' as const,
-                bundlePolicy: 'max-bundle' as const,
-                rtcpMuxPolicy: 'require' as const,
-                iceTransportPolicy: 'all' as const
+                iceTransportPolicy: 'all',
+                bundlePolicy: 'max-bundle',
+                rtcpMuxPolicy: 'require',
+                sdpSemantics: 'unified-plan' as const
             };
 
             pc.current = new RTCPeerConnection(config);
@@ -289,10 +311,9 @@ export const useWebRTC = (
                         offerToReceiveVideo: true
                     });
 
-                    // Нормализуем SDP перед установкой
                     const normalizedOffer = {
                         ...offer,
-                        sdp: normalizeSdp(offer.sdp || '')
+                        sdp: normalizeSdp(offer.sdp)
                     };
 
                     await pc.current.setLocalDescription(normalizedOffer);
