@@ -1,7 +1,7 @@
 /* app\webrtc\styles.module.css */
 .container {
     position: relative;
-    width: 100vw;
+    width: 99vw;
     height: 100vh;
     overflow: hidden;
     background-color: #000;

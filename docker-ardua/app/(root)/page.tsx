@@ -39,11 +39,11 @@ export default async function Home() {
     }
 
     return (
-        <Container className="flex flex-col my-10">
+        // <Container className="flex flex-col my-10">
             <Suspense fallback={<Loading />}>
                 <SocketClient/>
                 <WebRTC/>
             </Suspense>
-        </Container>
+        // </Container>
     );
 }
