@@ -18,7 +18,8 @@ export const VideoCallApp = () => {
         audio: ''
     });
     const [roomId, setRoomId] = useState('room1');
-    const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
+    // const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
+    const [username, setUsername] = useState('123');
     const [originalUsername, setOriginalUsername] = useState('');
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
@@ -86,8 +87,10 @@ export const VideoCallApp = () => {
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            const uniqueUsername = generateUniqueUsername(username);
-            setUsername(uniqueUsername);
+            // const uniqueUsername = generateUniqueUsername(username);
+            const uniqueUsername = username;
+            // setUsername(uniqueUsername);
+            setUsername(username);
             joinRoom(uniqueUsername);
         }
     }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
@@ -115,8 +118,9 @@ export const VideoCallApp = () => {
                 setOriginalUsername(username);
             }
             const uniqueUsername = generateUniqueUsername(originalUsername || username);
-            setUsername(uniqueUsername);
-            await joinRoom(uniqueUsername);
+            setUsername(username);
+            //await joinRoom(uniqueUsername);
+            await joinRoom(username);
         } catch (error) {
             console.error('Error joining room:', error);
         } finally {
