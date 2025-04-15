@@ -1,3 +1,4 @@
+// file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
 
 import { useWebRTC } from './hooks/useWebRTC';
@@ -17,12 +18,11 @@ export const VideoCallApp = () => {
         audio: ''
     });
     const [roomId, setRoomId] = useState('room1');
-    const [username, setUsername] = useState('user' + Math.floor(Math.random() * 1000));
+    const [username, setUsername] = useState('123');
     const [hasPermission, setHasPermission] = useState(false);
     const [devicesLoaded, setDevicesLoaded] = useState(false);
     const [isJoining, setIsJoining] = useState(false);
     const [autoJoin, setAutoJoin] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
 
     const {
         localStream,
@@ -66,13 +66,10 @@ export const VideoCallApp = () => {
                 video: videoDevice?.deviceId || '',
                 audio: audioDevice?.deviceId || ''
             });
-
-            setIsInitialized(true);
         } catch (error) {
             console.error('Device access error:', error);
             setHasPermission(false);
             setDevicesLoaded(true);
-            setIsInitialized(true);
         }
     };
 
@@ -83,10 +80,10 @@ export const VideoCallApp = () => {
     }, []);
 
     useEffect(() => {
-        if (autoJoin && isInitialized && hasPermission && selectedDevices.video && selectedDevices.audio) {
-            handleJoin();
+        if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
+            joinRoom(username);
         }
-    }, [autoJoin, isInitialized, hasPermission, selectedDevices]);
+    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
 
     useEffect(() => {
         if (selectedDevices.video) {
@@ -104,9 +101,7 @@ export const VideoCallApp = () => {
         }));
     };
 
-    const handleJoin = async () => {
-        if (!hasPermission || isInRoom) return;
-
+    const handleJoinRoom = async () => {
         setIsJoining(true);
         try {
             await joinRoom(username);
@@ -115,11 +110,6 @@ export const VideoCallApp = () => {
         } finally {
             setIsJoining(false);
         }
-    };
-
-    const handleJoinButtonClick = async () => {
-        if (isInRoom) return;
-        await handleJoin();
     };
 
     return (
@@ -175,8 +165,8 @@ export const VideoCallApp = () => {
 
                 {!isInRoom ? (
                     <Button
-                        onClick={handleJoinButtonClick}
-                        disabled={!hasPermission || isJoining}
+                        onClick={handleJoinRoom}
+                        disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
                         className={styles.button}
                     >
                         {isJoining ? 'Подключение...' : 'Войти в комнату'}

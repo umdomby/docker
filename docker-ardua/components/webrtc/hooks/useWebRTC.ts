@@ -71,12 +71,16 @@ export const useWebRTC = (
     };
 
     const normalizeSdp = (sdp: string | undefined): string => {
-        if (!sdp) return '';
-        return sdp
-            .split('\r\n')
-            .filter(line => line.trim() !== '')
-            .join('\r\n') + '\r\n';
+        return sdp || '';
     };
+
+    // const normalizeSdp = (sdp: string | undefined): string => {
+    //     if (!sdp) return '';
+    //     return sdp
+    //         .split('\r\n')
+    //         .filter(line => line.trim() !== '')
+    //         .join('\r\n') + '\r\n';
+    // };
 
     const connectWebSocket = () => {
         try {
@@ -168,18 +172,13 @@ export const useWebRTC = (
                                 console.log('Local offer SDP:', pc.current.localDescription?.sdp);
                                 console.log('Remote answer SDP:', data.sdp.sdp);
 
-                                const normalizedAnswer = {
-                                    ...data.sdp,
-                                    sdp: normalizeSdp(data.sdp.sdp)
-                                };
-
                                 await pc.current.setRemoteDescription(
-                                    new RTCSessionDescription(normalizedAnswer)
+                                    new RTCSessionDescription(data.sdp)
                                 );
 
                                 setIsCallActive(true);
 
-                                // Исправленная часть - добавляем кандидаты без повторного создания
+                                // Добавляем ожидающие ICE-кандидаты
                                 for (const candidate of pendingIceCandidates.current) {
                                     try {
                                         await pc.current.addIceCandidate(candidate);
