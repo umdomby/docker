@@ -1,4 +1,3 @@
-// file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
 
 import { useWebRTC } from './hooks/useWebRTC';
@@ -81,7 +80,7 @@ export const VideoCallApp = () => {
 
     useEffect(() => {
         if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            joinRoom(username);
+            handleJoinRoom();
         }
     }, [autoJoin, hasPermission, devicesLoaded, selectedDevices]);
 
@@ -104,9 +103,16 @@ export const VideoCallApp = () => {
     const handleJoinRoom = async () => {
         setIsJoining(true);
         try {
+            // Сначала убедимся, что устройства выбраны
+            if (!selectedDevices.video || !selectedDevices.audio) {
+                throw new Error('Выберите видео и аудио устройства');
+            }
+
+            // Выполняем joinRoom с тем же именем пользователя
             await joinRoom(username);
         } catch (error) {
             console.error('Error joining room:', error);
+            setError(error instanceof Error ? error.message : 'Ошибка подключения');
         } finally {
             setIsJoining(false);
         }
