@@ -22,6 +22,7 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     })
+    const [videoTransform, setVideoTransform] = useState('')
     const [roomId, setRoomId] = useState('room1')
     const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
     const [hasPermission, setHasPermission] = useState(false)
@@ -36,6 +37,7 @@ export const VideoCallApp = () => {
     })
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
+    const remoteVideoRef = useRef<HTMLVideoElement>(null)
 
     const {
         localStream,
@@ -70,16 +72,20 @@ export const VideoCallApp = () => {
 
     // Применение трансформаций к видео
     const applyVideoTransform = (settings: VideoSettings) => {
-        if (!videoContainerRef.current) return
-
         const { rotation, flipH, flipV } = settings
         let transform = ''
-
         if (rotation !== 0) transform += `rotate(${rotation}deg) `
         transform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
+        setVideoTransform(transform)
 
-        videoContainerRef.current.style.transform = transform
-        videoContainerRef.current.style.transformOrigin = 'center center'
+        // Принудительно применяем трансформации к видеоэлементу
+        if (remoteVideoRef.current) {
+            remoteVideoRef.current.style.transform = transform
+            remoteVideoRef.current.style.transformOrigin = 'center center'
+            remoteVideoRef.current.style.width = '100%'
+            remoteVideoRef.current.style.height = '100%'
+            remoteVideoRef.current.style.objectFit = 'contain'
+        }
     }
 
     const loadDevices = async () => {
@@ -126,10 +132,14 @@ export const VideoCallApp = () => {
         loadDevices()
 
         const handleFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement)
-            // Принудительно применяем трансформации при изменении полноэкранного режима
-            if (videoContainerRef.current) {
-                applyVideoTransform(videoSettings)
+            const isNowFullscreen = !!document.fullscreenElement
+            setIsFullscreen(isNowFullscreen)
+
+            // При изменении полноэкранного режима повторно применяем трансформации
+            if (remoteVideoRef.current) {
+                setTimeout(() => {
+                    applyVideoTransform(videoSettings)
+                }, 50)
             }
         }
 
@@ -181,6 +191,10 @@ export const VideoCallApp = () => {
         try {
             if (!document.fullscreenElement) {
                 await videoContainerRef.current.requestFullscreen()
+                // Принудительно применяем трансформации после перехода в полноэкранный режим
+                setTimeout(() => {
+                    applyVideoTransform(videoSettings)
+                }, 50)
             } else {
                 await document.exitFullscreen()
             }
@@ -213,8 +227,10 @@ export const VideoCallApp = () => {
                 className={styles.remoteVideoContainer}
             >
                 <VideoPlayer
+                    ref={remoteVideoRef}
                     stream={remoteStream}
                     className={styles.remoteVideo}
+                    transform={videoTransform}
                 />
                 <div className={styles.remoteVideoLabel}>Удаленный участник</div>
             </div>
