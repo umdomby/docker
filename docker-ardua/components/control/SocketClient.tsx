@@ -368,109 +368,174 @@ export default function SocketClient() {
     }, [isConnected, isIdentified, sendCommand])
 
     return (
-        <div className="p-2 space-y-2 max-w-full">
-            <div className="flex items-center space-x-2 flex-wrap gap-y-2">
-                <h1 className="text-lg font-bold">ESP8266 Control</h1>
-
-                <div
-                    className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
-                    title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
+        <div className="flex flex-col items-center min-h-screen p-4 bg-gray-50">
+            <div className="w-full max-w-md space-y-4 bg-white rounded-lg shadow-md p-6">
+                {/* Header and Status */}
+                <div className="flex flex-col items-center space-y-2">
+                    <h1 className="text-2xl font-bold text-gray-800">ESP8266 Control Panel</h1>
+                    <div className="flex items-center space-x-2">
+                        <div className={`w-4 h-4 rounded-full ${
+                            isConnected
+                                ? (isIdentified
+                                    ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
+                                    : 'bg-yellow-500')
+                                : 'bg-red-500'
+                        }`}></div>
+                        <span className="text-sm font-medium text-gray-600">
+                            {isConnected
+                                ? (isIdentified
+                                    ? (espConnected ? 'Connected' : 'Waiting for ESP')
+                                    : 'Connecting...')
+                                : 'Disconnected'}
+                        </span>
+                    </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                    <Select
-                        value={inputDeviceId}
-                        onValueChange={handleDeviceChange}
-                        disabled={isConnected && !autoReconnect}
-                    >
-                        <SelectTrigger className="w-[100px] h-8">
-                            <SelectValue placeholder="Device ID"/>
-                        </SelectTrigger>
-                        <SelectContent>
-                            {deviceList.map(id => (
-                                <SelectItem key={id} value={id}>{id}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                {/* Device Selection */}
+                <div className="space-y-2">
+                    <Label className="block text-sm font-medium text-gray-700">Device ID</Label>
+                    <div className="flex space-x-2">
+                        <Select
+                            value={inputDeviceId}
+                            onValueChange={handleDeviceChange}
+                            disabled={isConnected && !autoReconnect}
+                        >
+                            <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="Select device"/>
+                            </SelectTrigger>
+                            <SelectContent>
+                                {deviceList.map(id => (
+                                    <SelectItem key={id} value={id}>{id}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
 
-                    <Input
-                        value={newDeviceId}
-                        onChange={(e) => setNewDeviceId(e.target.value)}
-                        placeholder="New ID"
-                        className="w-[80px] h-8"
-                    />
+                {/* New Device Input */}
+                <div className="space-y-2">
+                    <Label className="block text-sm font-medium text-gray-700">Add New Device</Label>
+                    <div className="flex space-x-2">
+                        <Input
+                            value={newDeviceId}
+                            onChange={(e) => setNewDeviceId(e.target.value)}
+                            placeholder="Enter new device ID"
+                            className="flex-1"
+                        />
+                        <Button
+                            onClick={saveNewDeviceId}
+                            disabled={!newDeviceId}
+                            className="bg-blue-600 hover:bg-blue-700"
+                        >
+                            Add
+                        </Button>
+                    </div>
+                </div>
+
+                {/* Connection Controls */}
+                <div className="flex space-x-2">
                     <Button
-                        onClick={saveNewDeviceId}
-                        size="sm"
-                        className="h-8"
-                        disabled={!newDeviceId}
+                        onClick={() => connectWebSocket(currentDeviceIdRef.current)}
+                        disabled={isConnected}
+                        className="flex-1 bg-green-600 hover:bg-green-700"
                     >
-                        Add
+                        Connect
+                    </Button>
+                    <Button
+                        onClick={disconnectWebSocket}
+                        disabled={!isConnected || autoConnect}
+                        className="flex-1 bg-red-600 hover:bg-red-700"
+                    >
+                        Disconnect
                     </Button>
                 </div>
 
-                <Button
-                    onClick={() => connectWebSocket(currentDeviceIdRef.current)}
-                    disabled={isConnected}
-                    size="sm"
-                    className="h-8"
-                >
-                    Connect
-                </Button>
-
-                <Button
-                    onClick={disconnectWebSocket}
-                    disabled={!isConnected || autoConnect}
-                    size="sm"
-                    variant="destructive"
-                    className="h-8"
-                >
-                    Disconnect
-                </Button>
-
-                <div className="flex items-center space-x-2">
-                    <Checkbox
-                        id="auto-reconnect"
-                        checked={autoReconnect}
-                        onCheckedChange={toggleAutoReconnect}
-                    />
-                    <Label htmlFor="auto-reconnect">Auto reconnect</Label>
+                {/* Options */}
+                <div className="space-y-3">
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="auto-reconnect"
+                            checked={autoReconnect}
+                            onCheckedChange={toggleAutoReconnect}
+                        />
+                        <Label htmlFor="auto-reconnect" className="text-sm font-medium text-gray-700">
+                            Auto reconnect when changing device
+                        </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                        <Checkbox
+                            id="auto-connect"
+                            checked={autoConnect}
+                            onCheckedChange={handleAutoConnectChange}
+                        />
+                        <Label htmlFor="auto-connect" className="text-sm font-medium text-gray-700">
+                            Auto connect on page load
+                        </Label>
+                    </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                    <Checkbox
-                        id="auto-connect"
-                        checked={autoConnect}
-                        onCheckedChange={handleAutoConnectChange}
-                    />
-                    <Label htmlFor="auto-connect">Auto connect</Label>
-                </div>
+                {/* Controls Button */}
+                <Button
+                    onClick={() => setControlVisible(!controlVisible)}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700"
+                >
+                    {controlVisible ? "Hide Motor Controls" : "Show Motor Controls"}
+                </Button>
 
-                <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                    <DialogTrigger asChild>
-                        <Button onClick={() => setControlVisible(!controlVisible)}>
-                            {controlVisible ? "Hide Controls" : "Show Controls"}
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent style={{
-                        width: '100%',
-                        height: '80vh',
-                        padding: 0,
-                        margin: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        alignItems: 'stretch',
-                        gap: 0
-                    }}>
-                        <DialogHeader>
-                            <DialogTitle>Управление моторами</DialogTitle>
-                            <DialogDescription>
-                            </DialogDescription>
-                        </DialogHeader>
+                {/* Logs Toggle */}
+                <Button
+                    onClick={() => setLogVisible(!logVisible)}
+                    variant="outline"
+                    className="w-full"
+                >
+                    {logVisible ? (
+                        <ChevronUp className="h-4 w-4 mr-2"/>
+                    ) : (
+                        <ChevronDown className="h-4 w-4 mr-2"/>
+                    )}
+                    {logVisible ? "Hide Logs" : "Show Logs"}
+                </Button>
 
-                        <div className="flex w-full justify-between" style={{ flex: 1 }}>
-                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                {/* Logs Display */}
+                {logVisible && (
+                    <div className="border rounded-md overflow-hidden">
+                        <div className="h-48 overflow-y-auto p-2 bg-gray-50 text-xs font-mono">
+                            {log.length === 0 ? (
+                                <div className="text-gray-500 italic">No logs yet</div>
+                            ) : (
+                                log.slice().reverse().map((entry, index) => (
+                                    <div
+                                        key={index}
+                                        className={`truncate py-1 ${
+                                            entry.type === 'client' ? 'text-blue-600' :
+                                                entry.type === 'esp' ? 'text-green-600' :
+                                                    entry.type === 'server' ? 'text-purple-600' :
+                                                        'text-red-600 font-semibold'
+                                        }`}
+                                    >
+                                        {entry.message}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Motor Controls Dialog */}
+            <Dialog open={controlVisible} onOpenChange={setControlVisible}>
+                <DialogContent className="sm:max-w-[425px] max-h-[80vh] flex flex-col">
+                    <DialogHeader>
+                        <DialogTitle className="text-center">Motor Controls</DialogTitle>
+                        <DialogDescription className="text-center">
+                            Use the joysticks to control each motor
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="flex-1 grid grid-cols-2 gap-4 py-4">
+                        <div className="flex flex-col items-center">
+                            <h3 className="font-medium mb-2">Motor A</h3>
+                            <div className="w-full h-40">
                                 <Joystick
                                     motor="A"
                                     onChange={handleMotorAControl}
@@ -478,8 +543,15 @@ export default function SocketClient() {
                                     speed={motorASpeed}
                                 />
                             </div>
+                            <div className="mt-2 text-sm">
+                                {motorADirection === 'stop' ? 'Stopped' :
+                                    `${motorADirection} at ${motorASpeed}%`}
+                            </div>
+                        </div>
 
-                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                        <div className="flex flex-col items-center">
+                            <h3 className="font-medium mb-2">Motor B</h3>
+                            <div className="w-full h-40">
                                 <Joystick
                                     motor="B"
                                     onChange={handleMotorBControl}
@@ -487,56 +559,25 @@ export default function SocketClient() {
                                     speed={motorBSpeed}
                                 />
                             </div>
-                        </div>
-
-                        <div className="p-2 flex justify-center">
-                            <Button
-                                onClick={emergencyStop}
-                                disabled={!isConnected || !isIdentified}
-                                size="sm"
-                                variant="destructive"
-                                className="h-8"
-                                title="Immediately stops both motors by sending zero speed commands"
-                            >
-                                E-Stop
-                            </Button>
-                        </div>
-
-                        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-                            <span className="sr-only">Закрыть</span>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </DialogClose>
-                    </DialogContent>
-                </Dialog>
-
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8"
-                    onClick={() => setLogVisible(!logVisible)}
-                >
-                    {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
-                    <span className="ml-1">Logs</span>
-                </Button>
-            </div>
-
-            {logVisible && (
-                <div className="border rounded-md overflow-hidden">
-                    <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
-                        {log.slice().reverse().map((entry, index) => (
-                            <div key={index} className={`truncate ${
-                                entry.type === 'client' ? 'text-blue-500' :
-                                    entry.type === 'esp' ? 'text-green-500' :
-                                        entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
-                            }`}>
-                                {entry.message}
+                            <div className="mt-2 text-sm">
+                                {motorBDirection === 'stop' ? 'Stopped' :
+                                    `${motorBDirection} at ${motorBSpeed}%`}
                             </div>
-                        ))}
+                        </div>
                     </div>
-                </div>
-            )}
+
+                    <div className="flex justify-center pt-2">
+                        <Button
+                            onClick={emergencyStop}
+                            disabled={!isConnected || !isIdentified}
+                            variant="destructive"
+                            className="w-32"
+                        >
+                            Emergency Stop
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
