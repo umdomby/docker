@@ -1,3 +1,4 @@
+// file: docker-ardua/components/control/SocketClient.tsx
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
@@ -368,8 +369,8 @@ export default function SocketClient() {
     }, [isConnected, isIdentified, sendCommand])
 
     return (
-        <div className="flex flex-col items-center min-h-screen p-4 bg-gray-50">
-            <div className="w-full max-w-md space-y-4 bg-white rounded-lg shadow-md p-6">
+        <div className="flex flex-col items-center min-h-screen p-4 bg-transparent">
+            <div className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-6 border border-gray-200 backdrop-blur-sm">
                 {/* Header and Status */}
                 <div className="flex flex-col items-center space-y-2">
                     <h1 className="text-2xl font-bold text-gray-800">ESP8266 Control Panel</h1>
@@ -400,12 +401,12 @@ export default function SocketClient() {
                             onValueChange={handleDeviceChange}
                             disabled={isConnected && !autoReconnect}
                         >
-                            <SelectTrigger className="flex-1">
+                            <SelectTrigger className="flex-1 bg-transparent">
                                 <SelectValue placeholder="Select device"/>
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
                                 {deviceList.map(id => (
-                                    <SelectItem key={id} value={id}>{id}</SelectItem>
+                                    <SelectItem key={id} value={id} className="hover:bg-gray-100/50">{id}</SelectItem>
                                 ))}
                             </SelectContent>
                         </Select>
@@ -420,7 +421,7 @@ export default function SocketClient() {
                             value={newDeviceId}
                             onChange={(e) => setNewDeviceId(e.target.value)}
                             placeholder="Enter new device ID"
-                            className="flex-1"
+                            className="flex-1 bg-transparent"
                         />
                         <Button
                             onClick={saveNewDeviceId}
@@ -457,6 +458,7 @@ export default function SocketClient() {
                             id="auto-reconnect"
                             checked={autoReconnect}
                             onCheckedChange={toggleAutoReconnect}
+                            className="border-gray-300 bg-transparent"
                         />
                         <Label htmlFor="auto-reconnect" className="text-sm font-medium text-gray-700">
                             Auto reconnect when changing device
@@ -467,6 +469,7 @@ export default function SocketClient() {
                             id="auto-connect"
                             checked={autoConnect}
                             onCheckedChange={handleAutoConnectChange}
+                            className="border-gray-300 bg-transparent"
                         />
                         <Label htmlFor="auto-connect" className="text-sm font-medium text-gray-700">
                             Auto connect on page load
@@ -486,7 +489,7 @@ export default function SocketClient() {
                 <Button
                     onClick={() => setLogVisible(!logVisible)}
                     variant="outline"
-                    className="w-full"
+                    className="w-full border-gray-300 bg-transparent hover:bg-gray-100/50"
                 >
                     {logVisible ? (
                         <ChevronUp className="h-4 w-4 mr-2"/>
@@ -498,8 +501,8 @@ export default function SocketClient() {
 
                 {/* Logs Display */}
                 {logVisible && (
-                    <div className="border rounded-md overflow-hidden">
-                        <div className="h-48 overflow-y-auto p-2 bg-gray-50 text-xs font-mono">
+                    <div className="border border-gray-200 rounded-md overflow-hidden bg-transparent backdrop-blur-sm">
+                        <div className="h-48 overflow-y-auto p-2 bg-transparent text-xs font-mono">
                             {log.length === 0 ? (
                                 <div className="text-gray-500 italic">No logs yet</div>
                             ) : (
@@ -524,7 +527,7 @@ export default function SocketClient() {
 
             {/* Motor Controls Dialog */}
             <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                <DialogContent className="sm:max-w-[425px] max-h-[80vh] flex flex-col">
+                <DialogContent className="sm:max-w-[425px] max-h-[80vh] flex flex-col bg-transparent backdrop-blur-sm border border-gray-200">
                     <DialogHeader>
                         <DialogTitle className="text-center">Motor Controls</DialogTitle>
                         <DialogDescription className="text-center">
