@@ -6,7 +6,6 @@
 }
 
 .sheetTrigger {
-    font-weight: 600;
     padding: 8px 16px;
 }
 
@@ -29,7 +28,6 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 14px;
     margin-bottom: 10px;
 }
 
@@ -132,7 +130,6 @@
     overflow-y: auto;
     padding: 8px;
     background-color: #F9FAFB;
-    font-size: 12px;
     line-height: 1.5;
 }
 
@@ -144,19 +141,19 @@
 }
 
 .clientLog {
-    color: #3B82F6;
+    color: var(--color-client);
 }
 
 .espLog {
-    color: #10B981;
+    color: var(--color-esp);
 }
 
 .serverLog {
-    color: #8B5CF6;
+    color: var(--color-server);
 }
 
 .errorLog {
-    color: #EF4444;
+    color: var(--color-error);
     font-weight: bold;
 }
 
