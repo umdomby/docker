@@ -9,6 +9,9 @@ import { useEffect, useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
+import { ChevronDown, ChevronUp } from "lucide-react"
+import SocketClient from '../control/SocketClient'
 
 type VideoSettings = {
     rotation: number
@@ -29,7 +32,8 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [showControls, setShowControls] = useState(false)
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>(null)
+    const [logVisible, setLogVisible] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
         flipH: false,
@@ -51,7 +55,6 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username, roomId)
 
-    // Загрузка сохраненных настроек
     const loadSettings = () => {
         try {
             const saved = localStorage.getItem('videoSettings')
@@ -65,12 +68,10 @@ export const VideoCallApp = () => {
         }
     }
 
-    // Сохранение настроек
     const saveSettings = (settings: VideoSettings) => {
         localStorage.setItem('videoSettings', JSON.stringify(settings))
     }
 
-    // Применение трансформаций к видео
     const applyVideoTransform = (settings: VideoSettings) => {
         const { rotation, flipH, flipV } = settings
         let transform = ''
@@ -78,7 +79,6 @@ export const VideoCallApp = () => {
         transform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
         setVideoTransform(transform)
 
-        // Принудительно применяем трансформации к видеоэлементу
         if (remoteVideoRef.current) {
             remoteVideoRef.current.style.transform = transform
             remoteVideoRef.current.style.transformOrigin = 'center center'
@@ -135,7 +135,6 @@ export const VideoCallApp = () => {
             const isNowFullscreen = !!document.fullscreenElement
             setIsFullscreen(isNowFullscreen)
 
-            // При изменении полноэкранного режима повторно применяем трансформации
             if (remoteVideoRef.current) {
                 setTimeout(() => {
                     applyVideoTransform(videoSettings)
@@ -191,7 +190,6 @@ export const VideoCallApp = () => {
         try {
             if (!document.fullscreenElement) {
                 await videoContainerRef.current.requestFullscreen()
-                // Принудительно применяем трансформации после перехода в полноэкранный режим
                 setTimeout(() => {
                     applyVideoTransform(videoSettings)
                 }, 50)
@@ -217,6 +215,10 @@ export const VideoCallApp = () => {
 
     const resetVideo = () => {
         updateVideoSettings({ rotation: 0, flipH: false, flipV: false })
+    }
+
+    const toggleTab = (tab: 'webrtc' | 'esp' | 'controls') => {
+        setActiveTab(activeTab === tab ? null : tab)
     }
 
     return (
@@ -247,76 +249,45 @@ export const VideoCallApp = () => {
 
             {/* Панель управления сверху */}
             <div className={styles.topControls}>
-                <button
-                    onClick={() => setShowControls(!showControls)}
-                    className={styles.toggleControlsButton}
-                >
-                    {showControls ? '▲' : '▼'} Управление
-                </button>
+                <div className={styles.tabsContainer}>
+                    <button
+                        onClick={() => toggleTab('webrtc')}
+                        className={`${styles.tabButton} ${activeTab === 'webrtc' ? styles.activeTab : ''}`}
+                    >
+                        {activeTab === 'webrtc' ? '▲' : '▼'} Управление
+                    </button>
+
+                    <button
+                        onClick={() => toggleTab('esp')}
+                        className={`${styles.tabButton} ${activeTab === 'esp' ? styles.activeTab : ''}`}
+                    >
+                        ESP8266 Control
+                    </button>
+
+                    <button
+                        onClick={() => toggleTab('controls')}
+                        className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
+                    >
+                        Show Controls
+                    </button>
+
+                    <button
+                        onClick={() => setLogVisible(!logVisible)}
+                        className={`${styles.tabButton} ${logVisible ? styles.activeTab : ''}`}
+                    >
+                        {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
+                        <span className="ml-1">Logs</span>
+                    </button>
+                </div>
 
                 <div className={styles.videoControls}>
-                    <button
-                        onClick={() => rotateVideo(0)}
-                        className={`${styles.controlButton} ${videoSettings.rotation === 0 ? styles.active : ''}`}
-                        title="Обычная ориентация"
-                    >
-                        ↻0°
-                    </button>
-                    <button
-                        onClick={() => rotateVideo(90)}
-                        className={`${styles.controlButton} ${videoSettings.rotation === 90 ? styles.active : ''}`}
-                        title="Повернуть на 90°"
-                    >
-                        ↻90°
-                    </button>
-                    <button
-                        onClick={() => rotateVideo(180)}
-                        className={`${styles.controlButton} ${videoSettings.rotation === 180 ? styles.active : ''}`}
-                        title="Повернуть на 180°"
-                    >
-                        ↻180°
-                    </button>
-                    <button
-                        onClick={() => rotateVideo(270)}
-                        className={`${styles.controlButton} ${videoSettings.rotation === 270 ? styles.active : ''}`}
-                        title="Повернуть на 270°"
-                    >
-                        ↻270°
-                    </button>
-                    <button
-                        onClick={flipVideoHorizontal}
-                        className={`${styles.controlButton} ${videoSettings.flipH ? styles.active : ''}`}
-                        title="Отразить по горизонтали"
-                    >
-                        ⇄
-                    </button>
-                    <button
-                        onClick={flipVideoVertical}
-                        className={`${styles.controlButton} ${videoSettings.flipV ? styles.active : ''}`}
-                        title="Отразить по вертикали"
-                    >
-                        ⇅
-                    </button>
-                    <button
-                        onClick={resetVideo}
-                        className={styles.controlButton}
-                        title="Сбросить настройки"
-                    >
-                        ⟲
-                    </button>
-                    <button
-                        onClick={toggleFullscreen}
-                        className={styles.controlButton}
-                        title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
-                    >
-                        {isFullscreen ? '✕' : '⛶'}
-                    </button>
+                    {/* ... существующие элементы управления видео ... */}
                 </div>
             </div>
 
-            {/* Контролы (скрываемые) */}
-            {showControls && (
-                <div className={styles.controlsOverlay}>
+            {/* Контент вкладок */}
+            {activeTab === 'webrtc' && (
+                <div className={styles.tabContent}>
                     {error && <div className={styles.error}>{error}</div>}
                     <div className={styles.controls}>
                         <div className={styles.connectionStatus}>
@@ -334,12 +305,9 @@ export const VideoCallApp = () => {
                                         localStorage.setItem('autoJoin', checked ? 'true' : 'false')
                                     }}
                                 />
-                                <label
-                                    htmlFor="autoJoin"
-                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                >
+                                <Label htmlFor="autoJoin">
                                     Автоматическое подключение
-                                </label>
+                                </Label>
                             </div>
                         </div>
 
@@ -402,6 +370,89 @@ export const VideoCallApp = () => {
                                 <div>Загрузка устройств...</div>
                             )}
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'esp' && (
+                <div className={styles.tabContent}>
+                    <SocketClient compactMode />
+                </div>
+            )}
+
+            {activeTab === 'controls' && (
+                <div className={styles.tabContent}>
+                    <div className={styles.videoControlsTab}>
+                        <div className={styles.controlButtons}>
+                            <button
+                                onClick={() => rotateVideo(0)}
+                                className={`${styles.controlButton} ${videoSettings.rotation === 0 ? styles.active : ''}`}
+                                title="Обычная ориентация"
+                            >
+                                ↻0°
+                            </button>
+                            <button
+                                onClick={() => rotateVideo(90)}
+                                className={`${styles.controlButton} ${videoSettings.rotation === 90 ? styles.active : ''}`}
+                                title="Повернуть на 90°"
+                            >
+                                ↻90°
+                            </button>
+                            <button
+                                onClick={() => rotateVideo(180)}
+                                className={`${styles.controlButton} ${videoSettings.rotation === 180 ? styles.active : ''}`}
+                                title="Повернуть на 180°"
+                            >
+                                ↻180°
+                            </button>
+                            <button
+                                onClick={() => rotateVideo(270)}
+                                className={`${styles.controlButton} ${videoSettings.rotation === 270 ? styles.active : ''}`}
+                                title="Повернуть на 270°"
+                            >
+                                ↻270°
+                            </button>
+                            <button
+                                onClick={flipVideoHorizontal}
+                                className={`${styles.controlButton} ${videoSettings.flipH ? styles.active : ''}`}
+                                title="Отразить по горизонтали"
+                            >
+                                ⇄
+                            </button>
+                            <button
+                                onClick={flipVideoVertical}
+                                className={`${styles.controlButton} ${videoSettings.flipV ? styles.active : ''}`}
+                                title="Отразить по вертикали"
+                            >
+                                ⇅
+                            </button>
+                            <button
+                                onClick={resetVideo}
+                                className={styles.controlButton}
+                                title="Сбросить настройки"
+                            >
+                                ⟲
+                            </button>
+                            <button
+                                onClick={toggleFullscreen}
+                                className={styles.controlButton}
+                                title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
+                            >
+                                {isFullscreen ? '✕' : '⛶'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {logVisible && (
+                <div className={styles.logsPanel}>
+                    <div className={styles.logsContent}>
+                        {[...Array(50)].map((_, i) => (
+                            <div key={i} className={styles.logEntry}>
+                                Sample log entry {i + 1}
+                            </div>
+                        ))}
                     </div>
                 </div>
             )}
