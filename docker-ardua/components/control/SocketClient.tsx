@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import styles from './styles.module.css'
+import Joystick from './Joystick'
 
 type MessageType = {
     type?: string
@@ -34,200 +34,7 @@ type LogEntry = {
     type: 'client' | 'esp' | 'server' | 'error'
 }
 
-const Joystick = ({
-                      motor,
-                      onChange,
-                      direction,
-                      speed
-                  }: {
-    motor: 'A' | 'B'
-    onChange: (value: number) => void
-    direction: 'forward' | 'backward' | 'stop'
-    speed: number
-}) => {
-    const containerRef = useRef<HTMLDivElement>(null)
-    const isDragging = useRef(false)
-    const touchId = useRef<number | null>(null)
-    const motorStyles = {
-        A: { bg: 'rgba(255, 87, 34, 0.2)', border: '2px solid #ff5722' },
-        B: { bg: 'rgba(76, 175, 80, 0.2)', border: '2px solid #4caf50' }
-    }
-
-    const updateValue = useCallback((clientY: number) => {
-        const container = containerRef.current
-        if (!container) return
-
-        const rect = container.getBoundingClientRect()
-        const y = clientY - rect.top
-        const height = rect.height
-        let value = ((height - y) / height) * 510 - 255
-        value = Math.max(-255, Math.min(255, value))
-
-        const intensity = Math.abs(value) / 255 * 0.3 + 0.2
-        container.style.backgroundColor = `rgba(${
-            motor === 'A' ? '255, 87, 34' : '76, 175, 80'
-        }, ${intensity})`
-
-        onChange(value)
-    }, [motor, onChange])
-
-    const handleStart = useCallback((clientY: number) => {
-        isDragging.current = true
-        const container = containerRef.current
-        if (container) {
-            container.style.transition = 'none'
-        }
-        updateValue(clientY)
-    }, [updateValue])
-
-    const handleMove = useCallback((clientY: number) => {
-        if (isDragging.current) {
-            updateValue(clientY)
-        }
-    }, [updateValue])
-
-    const handleEnd = useCallback(() => {
-        if (!isDragging.current) return
-        isDragging.current = false
-        touchId.current = null
-
-        const container = containerRef.current
-        if (container) {
-            container.style.transition = 'background-color 0.3s'
-            container.style.backgroundColor = motorStyles[motor].bg
-        }
-
-        onChange(0)
-    }, [motor, motorStyles, onChange])
-
-    useEffect(() => {
-        const container = containerRef.current
-        if (!container) return
-
-        const onTouchStart = (e: TouchEvent) => {
-            if (touchId.current === null) {
-                const touch = e.changedTouches[0]
-                touchId.current = touch.identifier
-                handleStart(touch.clientY)
-            }
-        }
-
-        const onTouchMove = (e: TouchEvent) => {
-            if (touchId.current !== null) {
-                const touch = Array.from(e.changedTouches).find(
-                    t => t.identifier === touchId.current
-                )
-                if (touch) {
-                    handleMove(touch.clientY)
-                }
-            }
-        }
-
-        const onTouchEnd = (e: TouchEvent) => {
-            if (touchId.current !== null) {
-                const touch = Array.from(e.changedTouches).find(
-                    t => t.identifier === touchId.current
-                )
-                if (touch) {
-                    handleEnd()
-                }
-            }
-        }
-
-        const onMouseDown = (e: MouseEvent) => {
-            e.preventDefault()
-            handleStart(e.clientY)
-        }
-
-        const onMouseMove = (e: MouseEvent) => {
-            e.preventDefault()
-            handleMove(e.clientY)
-        }
-
-        const onMouseUp = () => {
-            handleEnd()
-        }
-
-        container.addEventListener('touchstart', onTouchStart, { passive: false })
-        container.addEventListener('touchmove', onTouchMove, { passive: false })
-        container.addEventListener('touchend', onTouchEnd, { passive: false })
-        container.addEventListener('touchcancel', onTouchEnd, { passive: false })
-
-        container.addEventListener('mousedown', onMouseDown)
-        document.addEventListener('mousemove', onMouseMove)
-        document.addEventListener('mouseup', onMouseUp)
-        container.addEventListener('mouseleave', handleEnd)
-
-        const handleGlobalMouseUp = () => {
-            if (isDragging.current) {
-                handleEnd()
-            }
-        }
-
-        const handleGlobalTouchEnd = (e: TouchEvent) => {
-            if (isDragging.current && touchId.current !== null) {
-                const touch = Array.from(e.changedTouches).find(
-                    t => t.identifier === touchId.current
-                )
-                if (touch) {
-                    handleEnd()
-                }
-            }
-        }
-
-        document.addEventListener('mouseup', handleGlobalMouseUp)
-        document.addEventListener('touchend', handleGlobalTouchEnd)
-
-        return () => {
-            container.removeEventListener('touchstart', onTouchStart)
-            container.removeEventListener('touchmove', onTouchMove)
-            container.removeEventListener('touchend', onTouchEnd)
-            container.removeEventListener('touchcancel', onTouchEnd)
-
-            container.removeEventListener('mousedown', onMouseDown)
-            document.removeEventListener('mousemove', onMouseMove)
-            document.removeEventListener('mouseup', onMouseUp)
-            container.removeEventListener('mouseleave', handleEnd)
-
-            document.removeEventListener('mouseup', handleGlobalMouseUp)
-            document.removeEventListener('touchend', handleGlobalTouchEnd)
-        }
-    }, [handleEnd, handleMove, handleStart])
-
-    return (
-        <div
-            ref={containerRef}
-            style={{
-                position: 'relative',
-                width: '100%',
-                height: '100%',
-                minHeight: '150px',
-                borderRadius: '8px',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                touchAction: 'none',
-                userSelect: 'none',
-                ...motorStyles[motor]
-            }}
-        >
-            <div style={{
-                position: 'absolute',
-                bottom: '10px',
-                left: '0',
-                right: '0',
-                textAlign: 'center',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                color: '#333',
-                zIndex: '1'
-            }}>
-            </div>
-        </div>
-    )
-}
-
-export default function WebsocketController() {
+export default function SocketClient() {
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
@@ -242,7 +49,6 @@ export default function WebsocketController() {
     const [motorBSpeed, setMotorBSpeed] = useState(0)
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-    const [isLandscape, setIsLandscape] = useState(false)
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
 
@@ -260,14 +66,13 @@ export default function WebsocketController() {
         currentDeviceIdRef.current = inputDeviceId
     }, [inputDeviceId])
 
-
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
         if (savedDevices) {
             const devices = JSON.parse(savedDevices)
             setDeviceList(devices)
             if (devices.length > 0) {
-                const savedDeviceId = localStorage.getItem('selectedDeviceId') // Получаем сохраненный deviceId
+                const savedDeviceId = localStorage.getItem('selectedDeviceId')
                 const initialDeviceId = savedDeviceId && devices.includes(savedDeviceId)
                     ? savedDeviceId
                     : devices[0]
@@ -410,7 +215,6 @@ export default function WebsocketController() {
         socketRef.current = ws
     }, [addLog, cleanupWebSocket])
 
-
     useEffect(() => {
         if (autoConnect && !isConnected) {
             connectWebSocket(currentDeviceIdRef.current)
@@ -442,7 +246,7 @@ export default function WebsocketController() {
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
         currentDeviceIdRef.current = value
-        localStorage.setItem('selectedDeviceId', value) // Сохраняем выбранный deviceId в localStorage
+        localStorage.setItem('selectedDeviceId', value)
 
         if (autoReconnect) {
             await disconnectWebSocket()
@@ -547,16 +351,6 @@ export default function WebsocketController() {
     }, [sendCommand])
 
     useEffect(() => {
-        const checkOrientation = () => {
-            setIsLandscape(window.innerWidth > window.innerHeight)
-        }
-
-        checkOrientation()
-        window.addEventListener('resize', checkOrientation)
-        return () => window.removeEventListener('resize', checkOrientation)
-    }, [])
-
-    useEffect(() => {
         return () => {
             cleanupWebSocket()
             if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
@@ -571,12 +365,6 @@ export default function WebsocketController() {
         }, 1000)
         return () => clearInterval(interval)
     }, [isConnected, isIdentified, sendCommand])
-
-    const statusColor = isConnected
-        ? (isIdentified
-            ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
-            : 'bg-yellow-500')
-        : 'bg-red-500'
 
     return (
         <div className="p-2 space-y-2 max-w-full">
