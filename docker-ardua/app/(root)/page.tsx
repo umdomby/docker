@@ -41,7 +41,7 @@ export default async function Home() {
     return (
         // <Container className="flex flex-col my-10">
             <Suspense fallback={<Loading />}>
-                <SocketClient/>
+                {/*<SocketClient/>*/}
                 <WebRTC/>
             </Suspense>
         // </Container>
