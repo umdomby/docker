@@ -268,20 +268,8 @@ export const VideoCallApp = () => {
                         onClick={() => toggleTab('controls')}
                         className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
                     >
-                        Show Controls
+                        Video
                     </button>
-
-                    <button
-                        onClick={() => setLogVisible(!logVisible)}
-                        className={`${styles.tabButton} ${logVisible ? styles.activeTab : ''}`}
-                    >
-                        {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
-                        <span className="ml-1">Logs</span>
-                    </button>
-                </div>
-
-                <div className={styles.videoControls}>
-                    {/* ... существующие элементы управления видео ... */}
                 </div>
             </div>
 
