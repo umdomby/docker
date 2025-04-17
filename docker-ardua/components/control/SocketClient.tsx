@@ -1,6 +1,18 @@
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import {
+    Sheet,
+    SheetClose,
+    SheetContent,
+    SheetDescription,
+    SheetFooter,
+    SheetHeader,
+    SheetTitle,
+    SheetTrigger,
+} from "@/components/ui/sheet"
 import {
     Dialog, DialogClose,
     DialogContent, DialogDescription,
@@ -9,10 +21,9 @@ import {
     DialogTrigger,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
+import styles from './styles.module.css'
 
 type MessageType = {
     type?: string
@@ -258,14 +269,13 @@ export default function WebsocketController() {
         currentDeviceIdRef.current = inputDeviceId
     }, [inputDeviceId])
 
-
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
         if (savedDevices) {
             const devices = JSON.parse(savedDevices)
             setDeviceList(devices)
             if (devices.length > 0) {
-                const savedDeviceId = localStorage.getItem('selectedDeviceId') // Получаем сохраненный deviceId
+                const savedDeviceId = localStorage.getItem('selectedDeviceId')
                 const initialDeviceId = savedDeviceId && devices.includes(savedDeviceId)
                     ? savedDeviceId
                     : devices[0]
@@ -408,7 +418,6 @@ export default function WebsocketController() {
         socketRef.current = ws
     }, [addLog, cleanupWebSocket])
 
-
     useEffect(() => {
         if (autoConnect && !isConnected) {
             connectWebSocket(currentDeviceIdRef.current)
@@ -440,7 +449,7 @@ export default function WebsocketController() {
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
         currentDeviceIdRef.current = value
-        localStorage.setItem('selectedDeviceId', value) // Сохраняем выбранный deviceId в localStorage
+        localStorage.setItem('selectedDeviceId', value)
 
         if (autoReconnect) {
             await disconnectWebSocket()
@@ -570,182 +579,198 @@ export default function WebsocketController() {
         return () => clearInterval(interval)
     }, [isConnected, isIdentified, sendCommand])
 
-    const statusColor = isConnected
-        ? (isIdentified
-            ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
-            : 'bg-yellow-500')
-        : 'bg-red-500'
-
     return (
-        <div className="p-2 space-y-2 max-w-full">
-            <div className="flex items-center space-x-2 flex-wrap gap-y-2">
-                <h1 className="text-lg font-bold">ESP8266 Control</h1>
+        <div className={styles.container}>
+            <Sheet>
+                <SheetTrigger asChild>
+                    <Button variant="outline" className={styles.sheetTrigger}>ESP8266 Control</Button>
+                </SheetTrigger>
+                <SheetContent side="left" className={styles.sheetContent}>
+                    <SheetHeader>
+                        <SheetTitle>ESP8266 Control</SheetTitle>
+                        <SheetDescription>
+                            Управление подключением и настройками устройства
+                        </SheetDescription>
+                    </SheetHeader>
 
-                <div
-                    className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
-                    title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
-                </div>
+                    <div className={styles.controlsContainer}>
+                        <div className={styles.statusIndicator}>
+                            <div
+                                className={`${styles.statusDot} ${
+                                    isConnected
+                                        ? (isIdentified
+                                            ? (espConnected ? styles.connected : styles.pending)
+                                            : styles.pending)
+                                        : styles.disconnected
+                                }`}
+                            />
+                            <span>
+                {isConnected
+                    ? (isIdentified
+                        ? (espConnected ? 'Connected' : 'Waiting for ESP')
+                        : 'Identifying')
+                    : 'Disconnected'}
+              </span>
+                        </div>
 
-                <div className="flex items-center space-x-2">
-                    <Select
-                        value={inputDeviceId}
-                        onValueChange={handleDeviceChange}
-                        disabled={isConnected && !autoReconnect}
-                    >
-                        <SelectTrigger className="w-[100px] h-8">
-                            <SelectValue placeholder="Device ID"/>
-                        </SelectTrigger>
-                        <SelectContent>
-                            {deviceList.map(id => (
-                                <SelectItem key={id} value={id}>{id}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                        <div className={styles.deviceControl}>
+                            <Select
+                                value={inputDeviceId}
+                                onValueChange={handleDeviceChange}
+                                disabled={isConnected && !autoReconnect}
+                            >
+                                <SelectTrigger className={styles.selectTrigger}>
+                                    <SelectValue placeholder="Device ID"/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {deviceList.map(id => (
+                                        <SelectItem key={id} value={id}>{id}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
 
-                    <Input
-                        value={newDeviceId}
-                        onChange={(e) => setNewDeviceId(e.target.value)}
-                        placeholder="New ID"
-                        className="w-[80px] h-8"
-                    />
-                    <Button
-                        onClick={saveNewDeviceId}
-                        size="sm"
-                        className="h-8"
-                        disabled={!newDeviceId}
-                    >
-                        Add
-                    </Button>
-                </div>
-
-                <Button
-                    onClick={() => connectWebSocket(currentDeviceIdRef.current)}
-                    disabled={isConnected}
-                    size="sm"
-                    className="h-8"
-                >
-                    Connect
-                </Button>
-
-                <Button
-                    onClick={disconnectWebSocket}
-                    disabled={!isConnected || autoConnect}
-                    size="sm"
-                    variant="destructive"
-                    className="h-8"
-                >
-                    Disconnect
-                </Button>
-
-                <div className="flex items-center space-x-2">
-                    <Checkbox
-                        id="auto-reconnect"
-                        checked={autoReconnect}
-                        onCheckedChange={toggleAutoReconnect}
-                    />
-                    <Label htmlFor="auto-reconnect">Auto reconnect</Label>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                    <Checkbox
-                        id="auto-connect"
-                        checked={autoConnect}
-                        onCheckedChange={handleAutoConnectChange}
-                    />
-                    <Label htmlFor="auto-connect">Auto connect</Label>
-                </div>
-
-                <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                    <DialogTrigger asChild>
-                        <Button onClick={() => setControlVisible(!controlVisible)}>
-                            {controlVisible ? "Hide Controls" : "Show Controls"}
-                        </Button>
-                    </DialogTrigger>
-                    <DialogContent style={{
-                        width: '100%',
-                        height: '80vh',
-                        padding: 0,
-                        margin: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        justifyContent: 'space-between',
-                        alignItems: 'stretch',
-                        gap: 0
-                    }}>
-                        <DialogHeader>
-                            <DialogTitle></DialogTitle>
-                            <DialogDescription>
-                            </DialogDescription>
-                        </DialogHeader>
-
-                        <div className="flex w-full justify-between" style={{ flex: 1 }}>
-                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
-                                <Joystick
-                                    motor="A"
-                                    onChange={handleMotorAControl}
-                                    direction={motorADirection}
-                                    speed={motorASpeed}
+                            <div className={styles.newDevice}>
+                                <Input
+                                    value={newDeviceId}
+                                    onChange={(e) => setNewDeviceId(e.target.value)}
+                                    placeholder="New ID"
+                                    className={styles.newDeviceInput}
                                 />
-                            </div>
-
-                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
-                                <Joystick
-                                    motor="B"
-                                    onChange={handleMotorBControl}
-                                    direction={motorBDirection}
-                                    speed={motorBSpeed}
-                                />
+                                <Button
+                                    onClick={saveNewDeviceId}
+                                    size="sm"
+                                    disabled={!newDeviceId}
+                                    className={styles.addButton}
+                                >
+                                    Add
+                                </Button>
                             </div>
                         </div>
 
-                        <div className="p-2 flex justify-center">
+                        <div className={styles.connectionButtons}>
                             <Button
-                                onClick={emergencyStop}
-                                disabled={!isConnected || !isIdentified}
-                                size="sm"
-                                variant="destructive"
-                                className="h-8"
-                                title="Immediately stops both motors by sending zero speed commands"
+                                onClick={() => connectWebSocket(currentDeviceIdRef.current)}
+                                disabled={isConnected}
+                                className={styles.connectButton}
                             >
-                                E-Stop
+                                Connect
+                            </Button>
+                            <Button
+                                onClick={disconnectWebSocket}
+                                disabled={!isConnected || autoConnect}
+                                variant="destructive"
+                                className={styles.disconnectButton}
+                            >
+                                Disconnect
                             </Button>
                         </div>
 
-                        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
-                            <span className="sr-only">Закрыть</span>
-                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </DialogClose>
-                    </DialogContent>
-                </Dialog>
-
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-8"
-                    onClick={() => setLogVisible(!logVisible)}
-                >
-                    {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
-                    <span className="ml-1">Logs</span>
-                </Button>
-            </div>
-
-            {logVisible && (
-                <div className="border rounded-md overflow-hidden">
-                    <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
-                        {log.slice().reverse().map((entry, index) => (
-                            <div key={index} className={`truncate ${
-                                entry.type === 'client' ? 'text-blue-500' :
-                                    entry.type === 'esp' ? 'text-green-500' :
-                                        entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
-                            }`}>
-                                {entry.message}
+                        <div className={styles.checkboxGroup}>
+                            <div className={styles.checkboxItem}>
+                                <Checkbox
+                                    id="auto-reconnect"
+                                    checked={autoReconnect}
+                                    onCheckedChange={toggleAutoReconnect}
+                                    className={styles.checkbox}
+                                />
+                                <Label htmlFor="auto-reconnect">Auto reconnect</Label>
                             </div>
-                        ))}
+                            <div className={styles.checkboxItem}>
+                                <Checkbox
+                                    id="auto-connect"
+                                    checked={autoConnect}
+                                    onCheckedChange={handleAutoConnectChange}
+                                    className={styles.checkbox}
+                                />
+                                <Label htmlFor="auto-connect">Auto connect</Label>
+                            </div>
+                        </div>
+
+                        <Button
+                            onClick={() => setControlVisible(true)}
+                            className={styles.showControlsButton}
+                        >
+                            Show Controls
+                        </Button>
+
+                        <Button
+                            variant="ghost"
+                            onClick={() => setLogVisible(!logVisible)}
+                            className={styles.logsButton}
+                        >
+                            {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
+                            <span className="ml-1">Logs</span>
+                        </Button>
                     </div>
-                </div>
-            )}
+
+                    {logVisible && (
+                        <div className={styles.logContainer}>
+                            <div className={styles.logContent}>
+                                {log.slice().reverse().map((entry, index) => (
+                                    <div key={index} className={`${styles.logEntry} ${
+                                        entry.type === 'client' ? styles.clientLog :
+                                            entry.type === 'esp' ? styles.espLog :
+                                                entry.type === 'server' ? styles.serverLog : styles.errorLog
+                                    }`}>
+                                        {entry.message}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    <SheetFooter>
+                        <SheetClose asChild>
+                            <Button type="button" className={styles.closeButton}>
+                                Close
+                            </Button>
+                        </SheetClose>
+                    </SheetFooter>
+                </SheetContent>
+            </Sheet>
+
+            {/* Диалог с джойстиками управления */}
+            <Dialog open={controlVisible} onOpenChange={setControlVisible}>
+                <DialogContent className={styles.joystickDialog}>
+                    <DialogHeader>
+                        <DialogTitle>Motor Controls</DialogTitle>
+                        <DialogDescription>
+                            Use the joysticks to control the motors
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className={styles.joystickContainer}>
+                        <div className={styles.joystickWrapper}>
+                            <Joystick
+                                motor="A"
+                                onChange={handleMotorAControl}
+                                direction={motorADirection}
+                                speed={motorASpeed}
+                            />
+                        </div>
+
+                        <div className={styles.joystickWrapper}>
+                            <Joystick
+                                motor="B"
+                                onChange={handleMotorBControl}
+                                direction={motorBDirection}
+                                speed={motorBSpeed}
+                            />
+                        </div>
+                    </div>
+
+                    <div className={styles.emergencyStop}>
+                        <Button
+                            onClick={emergencyStop}
+                            disabled={!isConnected || !isIdentified}
+                            variant="destructive"
+                            className={styles.estopButton}
+                        >
+                            E-Stop
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
