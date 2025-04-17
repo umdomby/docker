@@ -8,6 +8,7 @@ import {
     DialogTitle,
     DialogTrigger,
 } from "@/components/ui/dialog"
+import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
@@ -16,7 +17,6 @@ import { Label } from "@/components/ui/label"
 import Joystick from './Joystick'
 import styles from './styles.module.css'
 
-// Типы данных
 type MessageType = {
     type?: string
     command?: string
@@ -36,7 +36,6 @@ type LogEntry = {
 }
 
 export default function SocketClient() {
-    // Состояния
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
@@ -47,7 +46,6 @@ export default function SocketClient() {
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
     const [logVisible, setLogVisible] = useState(false)
-    const [panelVisible, setPanelVisible] = useState(false) // Новое состояние для панели
     const [motorASpeed, setMotorASpeed] = useState(0)
     const [motorBSpeed, setMotorBSpeed] = useState(0)
     const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
@@ -55,19 +53,20 @@ export default function SocketClient() {
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
 
-    // Рефы
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+    const lastMotorACommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
+    const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
+    const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
+    const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const currentDeviceIdRef = useRef(inputDeviceId)
 
-    // Эффект для сохранения deviceId в ref
     useEffect(() => {
         currentDeviceIdRef.current = inputDeviceId
     }, [inputDeviceId])
 
-    // Загрузка сохраненных данных при монтировании
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
         if (savedDevices) {
@@ -93,15 +92,8 @@ export default function SocketClient() {
         if (savedAutoConnect) {
             setAutoConnect(savedAutoConnect === 'true')
         }
-
-        // Восстановление состояния панели из localStorage
-        const savedPanelState = localStorage.getItem('controlPanelVisible')
-        if (savedPanelState) {
-            setPanelVisible(savedPanelState === 'true')
-        }
     }, [])
 
-    // Сохранение нового deviceId
     const saveNewDeviceId = useCallback(() => {
         if (newDeviceId && !deviceList.includes(newDeviceId)) {
             const updatedList = [...deviceList, newDeviceId]
@@ -113,12 +105,10 @@ export default function SocketClient() {
         }
     }, [newDeviceId, deviceList])
 
-    // Добавление записи в лог
     const addLog = useCallback((msg: string, type: LogEntry['type']) => {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
     }, [])
 
-    // Очистка WebSocket соединения
     const cleanupWebSocket = useCallback(() => {
         if (socketRef.current) {
             socketRef.current.onopen = null
@@ -132,7 +122,6 @@ export default function SocketClient() {
         }
     }, [])
 
-    // Подключение к WebSocket
     const connectWebSocket = useCallback((deviceIdToConnect: string) => {
         cleanupWebSocket()
 
@@ -183,6 +172,7 @@ export default function SocketClient() {
                     }
                 }
                 else if (data.type === "esp_status") {
+                    console.log(`Received ESP status: ${data.status}`)
                     setEspConnected(data.status === "connected")
                     addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
                         data.status === "connected" ? 'esp' : 'error')
@@ -226,20 +216,17 @@ export default function SocketClient() {
         socketRef.current = ws
     }, [addLog, cleanupWebSocket])
 
-    // Автоподключение при изменении autoConnect
     useEffect(() => {
         if (autoConnect && !isConnected) {
             connectWebSocket(currentDeviceIdRef.current)
         }
     }, [autoConnect, connectWebSocket, isConnected])
 
-    // Обработчик изменения autoConnect
     const handleAutoConnectChange = useCallback((checked: boolean) => {
         setAutoConnect(checked)
         localStorage.setItem('autoConnect', checked.toString())
     }, [])
 
-    // Отключение от WebSocket
     const disconnectWebSocket = useCallback(() => {
         return new Promise<void>((resolve) => {
             cleanupWebSocket()
@@ -257,7 +244,6 @@ export default function SocketClient() {
         })
     }, [addLog, cleanupWebSocket])
 
-    // Изменение deviceId
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
         currentDeviceIdRef.current = value
@@ -269,13 +255,11 @@ export default function SocketClient() {
         }
     }, [autoReconnect, disconnectWebSocket, connectWebSocket])
 
-    // Переключение autoReconnect
     const toggleAutoReconnect = useCallback((checked: boolean) => {
         setAutoReconnect(checked)
         localStorage.setItem('autoReconnect', checked.toString())
     }, [])
 
-    // Отправка команды
     const sendCommand = useCallback((command: string, params?: any) => {
         if (!isIdentified) {
             addLog("Cannot send command: not identified", 'error')
@@ -306,7 +290,55 @@ export default function SocketClient() {
         }
     }, [addLog, deviceId, isIdentified, espConnected])
 
-    // Аварийная остановка
+    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
+        const lastCommandRef = motor === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
+        const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
+        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
+        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
+
+        return (value: number) => {
+            let direction: 'forward' | 'backward' | 'stop' = 'stop'
+            let speed = 0
+
+            if (value > 0) {
+                direction = 'forward'
+                speed = value
+            } else if (value < 0) {
+                direction = 'backward'
+                speed = -value
+            }
+
+            setSpeed(speed)
+            setDirection(direction)
+
+            const currentCommand = { speed, direction }
+            if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
+                return
+            }
+
+            lastCommandRef.current = currentCommand
+
+            if (throttleRef.current) {
+                clearTimeout(throttleRef.current)
+            }
+
+            if (speed === 0) {
+                sendCommand("set_speed", { motor, speed: 0 })
+                return
+            }
+
+            throttleRef.current = setTimeout(() => {
+                sendCommand("set_speed", { motor, speed })
+                sendCommand(direction === 'forward'
+                    ? `motor_${motor.toLowerCase()}_forward`
+                    : `motor_${motor.toLowerCase()}_backward`)
+            }, 40)
+        }
+    }, [sendCommand])
+
+    const handleMotorAControl = createMotorHandler('A')
+    const handleMotorBControl = createMotorHandler('B')
+
     const emergencyStop = useCallback(() => {
         sendCommand("set_speed", { motor: 'A', speed: 0 })
         sendCommand("set_speed", { motor: 'B', speed: 0 })
@@ -314,17 +346,20 @@ export default function SocketClient() {
         setMotorBSpeed(0)
         setMotorADirection('stop')
         setMotorBDirection('stop')
+
+        if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
+        if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
     }, [sendCommand])
 
-    // Очистка при размонтировании
     useEffect(() => {
         return () => {
             cleanupWebSocket()
+            if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
+            if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
             if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
         }
     }, [cleanupWebSocket])
 
-    // Heartbeat
     useEffect(() => {
         const interval = setInterval(() => {
             if (isConnected && isIdentified) sendCommand("heartbeat2")
@@ -332,258 +367,176 @@ export default function SocketClient() {
         return () => clearInterval(interval)
     }, [isConnected, isIdentified, sendCommand])
 
-    // Переключение видимости панели
-    const togglePanel = useCallback(() => {
-        const newState = !panelVisible
-        setPanelVisible(newState)
-        localStorage.setItem('controlPanelVisible', newState.toString())
-    }, [panelVisible])
-
     return (
         <div className="p-2 space-y-2 max-w-full">
-            {/* Заголовок и статус */}
-            <div className={styles.controlPanel}>
+            <div className="flex items-center space-x-2 flex-wrap gap-y-2">
+                <h1 className="text-lg font-bold">ESP8266 Control</h1>
+
                 <div
-                    className={styles.header}
-                    onClick={togglePanel}
-                    aria-expanded={panelVisible}
-                >
-                    <div className="flex items-center">
-            <span
-                className={styles.statusIndicator}
-                style={{
-                    backgroundColor: isConnected
-                        ? (isIdentified
-                            ? (espConnected ? '#4CAF50' : '#FFC107')
-                            : '#FFC107')
-                        : '#F44336'
-                }}
-            />
-                        <h1 className="text-lg font-bold">ESP8266 Control</h1>
-                    </div>
-                    <ChevronDown
-                        className={`${styles.chevron} ${panelVisible ? styles.rotated : ''}`}
-                        size={20}
-                    />
+                    className={`w-3 h-3 rounded-full ${isConnected ? (isIdentified ? (espConnected ? 'bg-green-500' : 'bg-yellow-500') : 'bg-yellow-500') : 'bg-red-500'}`}
+                    title={isConnected ? (isIdentified ? (espConnected ? 'Connected & Identified' : 'Connected (ESP not connected)') : 'Connected (Pending)') : 'Disconnected'}>
                 </div>
 
-                {/* Скрываемый контент */}
-                <div className={`${styles.hiddenContent} ${panelVisible ? styles.visible : ''}`}>
-                    <div className={styles.controlsGrid}>
-                        {/* Управление устройством */}
-                        <div className="flex items-center space-x-2">
-                            <Select
-                                value={inputDeviceId}
-                                onValueChange={handleDeviceChange}
-                                disabled={isConnected && !autoReconnect}
-                            >
-                                <SelectTrigger className="w-[100px] h-8">
-                                    <SelectValue placeholder="Device ID"/>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {deviceList.map(id => (
-                                        <SelectItem key={id} value={id}>{id}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                <div className="flex items-center space-x-2">
+                    <Select
+                        value={inputDeviceId}
+                        onValueChange={handleDeviceChange}
+                        disabled={isConnected && !autoReconnect}
+                    >
+                        <SelectTrigger className="w-[100px] h-8">
+                            <SelectValue placeholder="Device ID"/>
+                        </SelectTrigger>
+                        <SelectContent>
+                            {deviceList.map(id => (
+                                <SelectItem key={id} value={id}>{id}</SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
 
-                            <Input
-                                value={newDeviceId}
-                                onChange={(e) => setNewDeviceId(e.target.value)}
-                                placeholder="New ID"
-                                className="w-[80px] h-8"
-                            />
-                            <Button
-                                onClick={saveNewDeviceId}
-                                size="sm"
-                                className="h-8"
-                                disabled={!newDeviceId}
-                            >
-                                Add
-                            </Button>
+                    <Input
+                        value={newDeviceId}
+                        onChange={(e) => setNewDeviceId(e.target.value)}
+                        placeholder="New ID"
+                        className="w-[80px] h-8"
+                    />
+                    <Button
+                        onClick={saveNewDeviceId}
+                        size="sm"
+                        className="h-8"
+                        disabled={!newDeviceId}
+                    >
+                        Add
+                    </Button>
+                </div>
+
+                <Button
+                    onClick={() => connectWebSocket(currentDeviceIdRef.current)}
+                    disabled={isConnected}
+                    size="sm"
+                    className="h-8"
+                >
+                    Connect
+                </Button>
+
+                <Button
+                    onClick={disconnectWebSocket}
+                    disabled={!isConnected || autoConnect}
+                    size="sm"
+                    variant="destructive"
+                    className="h-8"
+                >
+                    Disconnect
+                </Button>
+
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id="auto-reconnect"
+                        checked={autoReconnect}
+                        onCheckedChange={toggleAutoReconnect}
+                    />
+                    <Label htmlFor="auto-reconnect">Auto reconnect</Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                    <Checkbox
+                        id="auto-connect"
+                        checked={autoConnect}
+                        onCheckedChange={handleAutoConnectChange}
+                    />
+                    <Label htmlFor="auto-connect">Auto connect</Label>
+                </div>
+
+                <Dialog open={controlVisible} onOpenChange={setControlVisible}>
+                    <DialogTrigger asChild>
+                        <Button onClick={() => setControlVisible(!controlVisible)}>
+                            {controlVisible ? "Hide Controls" : "Show Controls"}
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent style={{
+                        width: '100%',
+                        height: '80vh',
+                        padding: 0,
+                        margin: 0,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justifyContent: 'space-between',
+                        alignItems: 'stretch',
+                        gap: 0
+                    }}>
+                        <DialogHeader>
+                            <DialogTitle>Управление моторами</DialogTitle>
+                            <DialogDescription>
+                            </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="flex w-full justify-between" style={{ flex: 1 }}>
+                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                                <Joystick
+                                    motor="A"
+                                    onChange={handleMotorAControl}
+                                    direction={motorADirection}
+                                    speed={motorASpeed}
+                                />
+                            </div>
+
+                            <div className="w-[calc(50%-10px)] h-[50%] mt-[12%] landscape:h-[70%]">
+                                <Joystick
+                                    motor="B"
+                                    onChange={handleMotorBControl}
+                                    direction={motorBDirection}
+                                    speed={motorBSpeed}
+                                />
+                            </div>
                         </div>
 
-                        {/* Кнопки подключения */}
-                        <div className="flex space-x-2">
+                        <div className="p-2 flex justify-center">
                             <Button
-                                onClick={() => connectWebSocket(currentDeviceIdRef.current)}
-                                disabled={isConnected}
-                                size="sm"
-                                className="h-8"
-                            >
-                                Connect
-                            </Button>
-                            <Button
-                                onClick={disconnectWebSocket}
-                                disabled={!isConnected || autoConnect}
+                                onClick={emergencyStop}
+                                disabled={!isConnected || !isIdentified}
                                 size="sm"
                                 variant="destructive"
                                 className="h-8"
+                                title="Immediately stops both motors by sending zero speed commands"
                             >
-                                Disconnect
+                                E-Stop
                             </Button>
                         </div>
 
-                        {/* Настройки */}
-                        <div className="flex items-center space-x-2">
-                            <Checkbox
-                                id="auto-reconnect"
-                                checked={autoReconnect}
-                                onCheckedChange={toggleAutoReconnect}
-                            />
-                            <Label htmlFor="auto-reconnect">Auto reconnect</Label>
-                        </div>
+                        <DialogClose className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+                            <span className="sr-only">Закрыть</span>
+                            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </DialogClose>
+                    </DialogContent>
+                </Dialog>
 
-                        <div className="flex items-center space-x-2">
-                            <Checkbox
-                                id="auto-connect"
-                                checked={autoConnect}
-                                onCheckedChange={handleAutoConnectChange}
-                            />
-                            <Label htmlFor="auto-connect">Auto connect</Label>
-                        </div>
-                    </div>
-
-                    {/* Управление моторами */}
-                    <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                        <DialogTrigger asChild>
-                            <Button
-                                className="mt-2"
-                                onClick={() => setControlVisible(!controlVisible)}
-                            >
-                                {controlVisible ? "Hide Controls" : "Show Controls"}
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent style={{
-                            width: '100%',
-                            height: '80vh',
-                            padding: 0,
-                            margin: 0,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'space-between',
-                            alignItems: 'stretch',
-                            gap: 0
-                        }}>
-                            <DialogHeader>
-                                <DialogTitle>Motor Control</DialogTitle>
-                            </DialogHeader>
-
-                            <div className="flex w-full justify-between" style={{ flex: 1 }}>
-                                <div className="w-[calc(50%-10px)] h-[50%] mt-[12%]">
-                                    <Joystick
-                                        motor="A"
-                                        onChange={(value) => {
-                                            let direction: 'forward' | 'backward' | 'stop' = 'stop'
-                                            let speed = 0
-
-                                            if (value > 0) {
-                                                direction = 'forward'
-                                                speed = value
-                                            } else if (value < 0) {
-                                                direction = 'backward'
-                                                speed = -value
-                                            }
-
-                                            setMotorASpeed(speed)
-                                            setMotorADirection(direction)
-
-                                            if (speed === 0) {
-                                                sendCommand("set_speed", { motor: 'A', speed: 0 })
-                                                return
-                                            }
-
-                                            setTimeout(() => {
-                                                sendCommand("set_speed", { motor: 'A', speed })
-                                                sendCommand(direction === 'forward'
-                                                    ? 'motor_a_forward'
-                                                    : 'motor_a_backward')
-                                            }, 40)
-                                        }}
-                                        direction={motorADirection}
-                                        speed={motorASpeed}
-                                    />
-                                </div>
-
-                                <div className="w-[calc(50%-10px)] h-[50%] mt-[12%]">
-                                    <Joystick
-                                        motor="B"
-                                        onChange={(value) => {
-                                            let direction: 'forward' | 'backward' | 'stop' = 'stop'
-                                            let speed = 0
-
-                                            if (value > 0) {
-                                                direction = 'forward'
-                                                speed = value
-                                            } else if (value < 0) {
-                                                direction = 'backward'
-                                                speed = -value
-                                            }
-
-                                            setMotorBSpeed(speed)
-                                            setMotorBDirection(direction)
-
-                                            if (speed === 0) {
-                                                sendCommand("set_speed", { motor: 'B', speed: 0 })
-                                                return
-                                            }
-
-                                            setTimeout(() => {
-                                                sendCommand("set_speed", { motor: 'B', speed })
-                                                sendCommand(direction === 'forward'
-                                                    ? 'motor_b_forward'
-                                                    : 'motor_b_backward')
-                                            }, 40)
-                                        }}
-                                        direction={motorBDirection}
-                                        speed={motorBSpeed}
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="p-2 flex justify-center">
-                                <Button
-                                    onClick={emergencyStop}
-                                    disabled={!isConnected || !isIdentified}
-                                    size="sm"
-                                    variant="destructive"
-                                    className="h-8"
-                                >
-                                    E-Stop
-                                </Button>
-                            </div>
-                        </DialogContent>
-                    </Dialog>
-                </div>
-            </div>
-
-            {/* Логи */}
-            <div className="flex flex-col">
                 <Button
                     size="sm"
                     variant="ghost"
-                    className="h-8 self-start"
+                    className="h-8"
                     onClick={() => setLogVisible(!logVisible)}
                 >
                     {logVisible ? <ChevronUp className="h-4 w-4"/> : <ChevronDown className="h-4 w-4"/>}
                     <span className="ml-1">Logs</span>
                 </Button>
+            </div>
 
-                {logVisible && (
-                    <div className={styles.logContainer}>
+            {logVisible && (
+                <div className="border rounded-md overflow-hidden">
+                    <div className="h-[100px] overflow-y-auto p-1 bg-gray-50 text-xs">
                         {log.slice().reverse().map((entry, index) => (
-                            <div
-                                key={index}
-                                className={`${entry.type === 'client' ? 'text-blue-500' :
+                            <div key={index} className={`truncate ${
+                                entry.type === 'client' ? 'text-blue-500' :
                                     entry.type === 'esp' ? 'text-green-500' :
-                                        entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'}`}
-                            >
+                                        entry.type === 'server' ? 'text-purple-500' : 'text-red-500 font-bold'
+                            }`}>
                                 {entry.message}
                             </div>
                         ))}
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     )
 }
