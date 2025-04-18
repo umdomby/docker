@@ -1,3 +1,4 @@
+// file: docker-ardua/components/control/SocketClient.tsx
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
@@ -42,18 +43,9 @@ interface SocketClientProps {
         isIdentified: boolean
         espConnected: boolean
     }) => void
-    onMotorAControl?: (value: number) => void
-    onMotorBControl?: (value: number) => void
-    onEmergencyStop?: () => void
 }
 
-export default function SocketClient({
-                                         compactMode,
-                                         onStatusChange,
-                                         onMotorAControl = () => {},
-                                         onMotorBControl = () => {},
-                                         onEmergencyStop = () => {}
-                                     }: SocketClientProps) {
+export default function SocketClient({ compactMode, onStatusChange }: SocketClientProps) {
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
@@ -112,6 +104,7 @@ export default function SocketClient({
         }
     }, [])
 
+    // Изменим useEffect для передачи статуса
     useEffect(() => {
         if (onStatusChange) {
             onStatusChange({
@@ -120,7 +113,8 @@ export default function SocketClient({
                 espConnected
             });
         }
-    }, [isConnected, isIdentified, espConnected, onStatusChange])
+    }, [isConnected, isIdentified, espConnected, onStatusChange]);
+
 
     const saveNewDeviceId = useCallback(() => {
         if (newDeviceId && !deviceList.includes(newDeviceId)) {
@@ -323,7 +317,6 @@ export default function SocketClient({
         const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
         const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
         const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
-        const motorHandler = motor === 'A' ? onMotorAControl : onMotorBControl
 
         return (value: number) => {
             let direction: 'forward' | 'backward' | 'stop' = 'stop'
@@ -339,7 +332,6 @@ export default function SocketClient({
 
             setSpeed(speed)
             setDirection(direction)
-            motorHandler(value) // Call the external handler
 
             const currentCommand = { speed, direction }
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
@@ -364,7 +356,7 @@ export default function SocketClient({
                     : `motor_${motor.toLowerCase()}_backward`)
             }, 40)
         }
-    }, [sendCommand, onMotorAControl, onMotorBControl])
+    }, [sendCommand])
 
     const handleMotorAControl = createMotorHandler('A')
     const handleMotorBControl = createMotorHandler('B')
@@ -376,11 +368,10 @@ export default function SocketClient({
         setMotorBSpeed(0)
         setMotorADirection('stop')
         setMotorBDirection('stop')
-        onEmergencyStop() // Call the external emergency stop handler
 
         if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
         if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
-    }, [sendCommand, onEmergencyStop])
+    }, [sendCommand])
 
     useEffect(() => {
         return () => {
@@ -578,7 +569,7 @@ export default function SocketClient({
                             </div>
                             <div className="mt-2 text-sm">
                                 {motorADirection === 'stop' ? 'Stopped' :
-                                    `${motorADirection} at ${Math.round(motorASpeed / 2.55)}%`}
+                                    `${motorADirection} at ${motorASpeed}%`}
                             </div>
                         </div>
 
@@ -594,7 +585,7 @@ export default function SocketClient({
                             </div>
                             <div className="mt-2 text-sm">
                                 {motorBDirection === 'stop' ? 'Stopped' :
-                                    `${motorBDirection} at ${Math.round(motorBSpeed / 2.55)}%`}
+                                    `${motorBDirection} at ${motorBSpeed}%`}
                             </div>
                         </div>
                     </div>
