@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { useMotorControlStore } from '@/stores/motorControlStore'
 import {StatusConnected_ESP8266, useESP8266StatusStore} from '@/components/dataStores/statusConnected_ESP8266'
+import Joystick from "@/components/control/Joystick";
 
 export default function SocketClient() {
     const [log, setLog] = useState<{message: string, type: 'client' | 'esp' | 'server' | 'error'}[]>([])
@@ -299,8 +300,7 @@ export default function SocketClient() {
                             <Joystick
                                 motor="left"
                                 onChange={handleMotorAControl}
-                                direction={motorASpeed > 0 ? 'forward' : motorASpeed < 0 ? 'backward' : 'stop'}
-                                speed={Math.abs(motorASpeed)}
+
                             />
                         </div>
                         <div className="flex flex-col items-center">
@@ -308,8 +308,7 @@ export default function SocketClient() {
                             <Joystick
                                 motor="right"
                                 onChange={handleMotorBControl}
-                                direction={motorBSpeed > 0 ? 'forward' : motorBSpeed < 0 ? 'backward' : 'stop'}
-                                speed={Math.abs(motorBSpeed)}
+
                             />
                         </div>
                     </div>
