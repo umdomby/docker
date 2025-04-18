@@ -5,7 +5,7 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState, useRef } from 'react'
+import {useEffect, useState, useRef, useCallback} from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -32,7 +32,7 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>(null)
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp') // По умолчанию открыта вкладка ESP
     const [logVisible, setLogVisible] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
@@ -42,6 +42,11 @@ export const VideoCallApp = () => {
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
+    const [socketStatus, setSocketStatus] = useState({
+        isConnected: false,
+        isIdentified: false,
+        espConnected: false
+    })
 
     const {
         localStream,
@@ -54,6 +59,23 @@ export const VideoCallApp = () => {
         isInRoom,
         error
     } = useWebRTC(selectedDevices, username, roomId)
+
+    const handleSocketStatusChange = useCallback((status: {
+        isConnected: boolean
+        isIdentified: boolean
+        espConnected: boolean
+    }) => {
+        setSocketStatus(prev => {
+            if (
+                prev.isConnected !== status.isConnected ||
+                prev.isIdentified !== status.isIdentified ||
+                prev.espConnected !== status.espConnected
+            ) {
+                return status;
+            }
+            return prev;
+        });
+    }, []);
 
     const loadSettings = () => {
         try {
@@ -261,15 +283,33 @@ export const VideoCallApp = () => {
                         onClick={() => toggleTab('esp')}
                         className={`${styles.tabButton} ${activeTab === 'esp' ? styles.activeTab : ''}`}
                     >
-                        ESP8266 Control
+                        {activeTab === 'esp' ? '▲' : '▼'} ESP8266 Control
                     </button>
 
                     <button
                         onClick={() => toggleTab('controls')}
                         className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
                     >
-                        Video
+                        {activeTab === 'controls' ? '▲' : '▼'} Video
                     </button>
+
+                    {/* Статус подключения ESP */}
+                    <div className={styles.statusIndicator}>
+                        <div className={`${styles.statusDot} ${
+                            socketStatus.isConnected
+                                ? (socketStatus.isIdentified
+                                    ? (socketStatus.espConnected ? styles.connected : styles.pending)
+                                    : styles.pending)
+                                : styles.disconnected
+                        }`}></div>
+                        <span className={styles.statusText}>
+                            {socketStatus.isConnected
+                                ? (socketStatus.isIdentified
+                                    ? (socketStatus.espConnected ? 'ESP Connected' : 'Waiting for ESP')
+                                    : 'Connecting...')
+                                : 'Disconnected'}
+                        </span>
+                    </div>
                 </div>
             </div>
 
@@ -364,7 +404,10 @@ export const VideoCallApp = () => {
 
             {activeTab === 'esp' && (
                 <div className={styles.tabContent}>
-                    <SocketClient compactMode />
+                    <SocketClient
+                        compactMode
+                        onStatusChange={handleSocketStatusChange}
+                    />
                 </div>
             )}
 

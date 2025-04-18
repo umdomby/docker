@@ -362,3 +362,57 @@
         width: 200px;
     }
 }
+
+
+.statusIndicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 15px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background-color: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(5px);
+}
+
+.statusDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+}
+
+.statusText {
+    font-size: 14px;
+    color: white;
+}
+
+.connected {
+    background-color: #10B981;
+}
+
+.pending {
+    background-color: #F59E0B;
+    animation: pulse 1.5s infinite;
+}
+
+.disconnected {
+    background-color: #EF4444;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.statusIndicator {
+    /* существующие стили */
+    will-change: contents; /* Оптимизация для браузера */
+}
+
+.statusDot, .statusText {
+    transition: all 0.3s ease;
+}
