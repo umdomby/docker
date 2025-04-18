@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
+import Joystick from "@/components/control/Joystick";
 
 type VideoSettings = {
     rotation: number
@@ -48,6 +49,7 @@ export const VideoCallApp = () => {
         espConnected: false
     })
     const [showCompactControls, setShowCompactControls] = useState(false)
+    const [showMotorControls, setShowMotorControls] = useState(false)
 
     const {
         localStream,
@@ -251,6 +253,10 @@ export const VideoCallApp = () => {
         setActiveTab(activeTab === tab ? null : tab)
     }
 
+    const toggleMotorControls = () => {
+        setShowMotorControls(!showMotorControls)
+    }
+
     return (
         <div className={styles.container}>
             {/* Основное видео (удаленный участник) */}
@@ -304,6 +310,7 @@ export const VideoCallApp = () => {
                     {/* Компактные элементы управления моторами */}
                     {showCompactControls && (
                         <button
+                            onClick={toggleMotorControls}
                             className={styles.tabButton}
                             style={{
                                 backgroundColor: 'rgba(76, 175, 80, 0.2)',
@@ -311,7 +318,7 @@ export const VideoCallApp = () => {
                                 marginLeft: '10px'
                             }}
                         >
-                           Motor Controls
+                            {showMotorControls ? 'Hide Motor Controls' : 'Show Motor Controls'}
                         </button>
                     )}
 
@@ -495,6 +502,25 @@ export const VideoCallApp = () => {
                             </button>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Motor Controls Overlay */}
+            {showMotorControls && (
+                <div>
+                    <Joystick
+                        motor="A"
+                        onChange={() => {}}
+                        direction="stop"
+                        speed={0}
+                    />
+
+                    <Joystick
+                        motor="B"
+                        onChange={() => {}}
+                        direction="stop"
+                        speed={0}
+                    />
                 </div>
             )}
 
