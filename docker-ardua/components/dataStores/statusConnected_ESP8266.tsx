@@ -1,5 +1,5 @@
 // components/dataStores/statusConnected_ESP8266.tsx
-"use client"
+'use client'
 
 import { create } from 'zustand'
 
@@ -25,7 +25,7 @@ export const useESP8266StatusStore = create<ESP8266StatusStore>((set) => ({
     setDeviceId: (deviceId) => set({ deviceId }),
 }))
 
-export const StatusConnected_ESP8266 = () => {
+export function StatusConnected_ESP8266() {
     const { isConnected, isIdentified, espConnected } = useESP8266StatusStore()
 
     return (

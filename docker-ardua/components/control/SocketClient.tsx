@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { useMotorControlStore } from '@/stores/motorControlStore'
-import { useESP8266StatusStore } from '@/components/dataStores/statusConnected_ESP8266'
+import {StatusConnected_ESP8266, useESP8266StatusStore} from '@/components/dataStores/statusConnected_ESP8266'
 
 export default function SocketClient() {
     const [log, setLog] = useState<{message: string, type: 'client' | 'esp' | 'server' | 'error'}[]>([])
