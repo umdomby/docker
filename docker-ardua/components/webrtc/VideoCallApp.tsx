@@ -32,7 +32,7 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp') // По умолчанию открыта вкладка ESP
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
     const [logVisible, setLogVisible] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
@@ -47,6 +47,7 @@ export const VideoCallApp = () => {
         isIdentified: false,
         espConnected: false
     })
+    const [showCompactControls, setShowCompactControls] = useState(false)
 
     const {
         localStream,
@@ -71,6 +72,13 @@ export const VideoCallApp = () => {
                 prev.isIdentified !== status.isIdentified ||
                 prev.espConnected !== status.espConnected
             ) {
+                // Сворачиваем панель управления ESP при успешном подключении
+                if (status.espConnected) {
+                    setActiveTab(null)
+                    setShowCompactControls(true)
+                } else {
+                    setShowCompactControls(false)
+                }
                 return status;
             }
             return prev;
@@ -292,6 +300,21 @@ export const VideoCallApp = () => {
                     >
                         {activeTab === 'controls' ? '▲' : '▼'} Video
                     </button>
+
+                    {/* Компактные элементы управления моторами */}
+                    {showCompactControls && (
+                        <button
+                            onClick={() => toggleTab('esp')}
+                            className={styles.tabButton}
+                            style={{
+                                backgroundColor: 'rgba(76, 175, 80, 0.2)',
+                                border: '1px solid #4caf50',
+                                marginLeft: '10px'
+                            }}
+                        >
+                            {activeTab === 'esp' ? '▲' : '▼'} Motor Controls
+                        </button>
+                    )}
 
                     {/* Статус подключения ESP */}
                     <div className={styles.statusIndicator}>
