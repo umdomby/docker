@@ -12,7 +12,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
-import Joystick from "@/components/control/Joystick";
 
 type VideoSettings = {
     rotation: number
@@ -505,24 +504,17 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            {/* Motor Controls Overlay */}
-            {showMotorControls && (
-                <div>
-                    <Joystick
-                        motor="A"
-                        onChange={() => {}}
-                        direction="stop"
-                        speed={0}
-                    />
-
-                    <Joystick
-                        motor="B"
-                        onChange={() => {}}
-                        direction="stop"
-                        speed={0}
-                    />
-                </div>
-            )}
+            <SocketClient
+                compactMode
+                onStatusChange={handleSocketStatusChange}
+                onMotorControl={(motor, value) => {
+                    if (motor === 'A') {
+                        useMotorControl.getState().setMotorA(value);
+                    } else {
+                        useMotorControl.getState().setMotorB(value);
+                    }
+                }}
+            />
 
             {logVisible && (
                 <div className={styles.logsPanel}>

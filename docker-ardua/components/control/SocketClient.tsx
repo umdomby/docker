@@ -18,6 +18,12 @@ import { Label } from "@/components/ui/label"
 import Joystick from './Joystick'
 import styles from './styles.module.css'
 
+interface SocketClientProps {
+    compactMode?: boolean;
+    onStatusChange?: (status: { /* ... */ }) => void;
+    onMotorControl?: (motor: 'A' | 'B', value: number) => void;
+}
+
 type MessageType = {
     type?: string
     command?: string

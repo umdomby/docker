@@ -60,7 +60,7 @@
     "ts-node": "^10.9.2",
     "vaul": "^0.9.9",
     "zod": "^3.24.1",
-    "zustand": "^4.5.5"
+    "zustand": "^5.0.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
