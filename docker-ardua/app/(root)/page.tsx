@@ -1,12 +1,11 @@
-"use server"
+// app/(root)/page.tsx
 import { Container } from '@/components/container';
 import { getUserSession } from '@/components/lib/get-user-session';
 import { redirect } from 'next/navigation';
 import React, { Suspense } from 'react';
 import Loading from "@/app/(root)/loading";
 import {prisma} from "@/prisma/prisma-client";
-import SocketClient from "@/components/control/SocketClient";
-import WebRTC from  "@/components/webrtc";
+import ClientHomePage from "@/app/(root)/ClientHomePage";
 
 export default async function Home() {
     const session = await getUserSession();
@@ -38,11 +37,8 @@ export default async function Home() {
     }
 
     return (
-        // <Container className="flex flex-col my-10">
-            <Suspense fallback={<Loading />}>
-                {/*<SocketClient/>*/}
-                <WebRTC/>
-            </Suspense>
-        // </Container>
+        <Suspense fallback={<Loading />}>
+            <ClientHomePage />
+        </Suspense>
     );
 }

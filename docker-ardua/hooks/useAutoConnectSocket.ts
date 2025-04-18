@@ -3,16 +3,44 @@
 
 import { useEffect } from 'react'
 import { useMotorControlStore } from '@/stores/motorControlStore'
+import { useESP8266StatusStore } from '@/components/dataStores/statusConnected_ESP8266'
 
 export const useAutoConnectSocket = () => {
+    const {
+        autoConnect,
+        deviceId,
+        initialize,
+        connectWebSocket,
+        setConnectionStatus
+    } = useMotorControlStore()
+
+    const {
+        setIsConnected,
+        setIsIdentified,
+        setEspConnected,
+        setDeviceId
+    } = useESP8266StatusStore()
+
     useEffect(() => {
-        const autoConnect = localStorage.getItem('autoConnect') === 'true'
-        const selectedDeviceId = localStorage.getItem('selectedDeviceId')
+        initialize()
+    }, [initialize])
 
-        if (autoConnect) {
-            // Здесь должна быть логика подключения к WebSocket
+    useEffect(() => {
+        if (autoConnect && deviceId) {
+            connectWebSocket(deviceId)
 
-            console.log('Auto-connecting to device:', selectedDeviceId)
+            setIsConnected(true)
+            setDeviceId(deviceId)
+
+            setTimeout(() => {
+                setIsIdentified(true)
+                setConnectionStatus(true, true, false)
+
+                setTimeout(() => {
+                    setEspConnected(true)
+                    setConnectionStatus(true, true, true)
+                }, 1000)
+            }, 500)
         }
-    }, [])
+    }, [autoConnect, deviceId, connectWebSocket, setIsConnected, setIsIdentified, setEspConnected, setDeviceId, setConnectionStatus])
 }

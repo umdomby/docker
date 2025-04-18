@@ -1,71 +1,49 @@
-// file: docker-ardua/components/control/SocketClient.tsx
+// components/control/SocketClient.tsx
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
-import {
-    Dialog, DialogClose,
-    DialogContent, DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog"
-import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
-import { ChevronDown, ChevronUp } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import Joystick from './Joystick'
-
-type MessageType = {
-    type?: string
-    command?: string
-    deviceId?: string
-    message?: string
-    params?: any
-    clientId?: number
-    status?: string
-    timestamp?: string
-    origin?: 'client' | 'esp' | 'server' | 'error'
-    reason?: string
-}
-
-type LogEntry = {
-    message: string
-    type: 'client' | 'esp' | 'server' | 'error'
-}
+import { ChevronDown, ChevronUp } from "lucide-react"
+import { useMotorControlStore } from '@/stores/motorControlStore'
+import { useESP8266StatusStore } from '@/components/dataStores/statusConnected_ESP8266'
 
 export default function SocketClient() {
-    const [log, setLog] = useState<LogEntry[]>([])
-    const [isConnected, setIsConnected] = useState(false)
-    const [isIdentified, setIsIdentified] = useState(false)
-    const [deviceId, setDeviceId] = useState('123')
-    const [inputDeviceId, setInputDeviceId] = useState('123')
+    const [log, setLog] = useState<{message: string, type: 'client' | 'esp' | 'server' | 'error'}[]>([])
+    const [inputDeviceId, setInputDeviceId] = useState('')
     const [newDeviceId, setNewDeviceId] = useState('')
-    const [deviceList, setDeviceList] = useState<string[]>(['123'])
-    const [espConnected, setEspConnected] = useState(false)
+    const [deviceList, setDeviceList] = useState<string[]>([])
     const [controlVisible, setControlVisible] = useState(false)
     const [logVisible, setLogVisible] = useState(false)
-    const [motorASpeed, setMotorASpeed] = useState(0)
-    const [motorBSpeed, setMotorBSpeed] = useState(0)
-    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [autoReconnect, setAutoReconnect] = useState(false)
-    const [autoConnect, setAutoConnect] = useState(false)
 
-    const reconnectAttemptRef = useRef(0)
-    const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
-    const socketRef = useRef<WebSocket | null>(null)
-    const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const lastMotorACommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
-    const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
-    const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
-    const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
-    const currentDeviceIdRef = useRef(inputDeviceId)
+    const {
+        isConnected,
+        isIdentified,
+        espConnected,
+        deviceId,
+        autoConnect,
+        setLeftMotorSpeed,
+        setRightMotorSpeed,
+        setConnectionStatus,
+        setDeviceId,
+        setAutoConnect,
+        connectWebSocket,
+        disconnectWebSocket
+    } = useMotorControlStore()
+
+    const {
+        setIsConnected,
+        setIsIdentified,
+        setEspConnected
+    } = useESP8266StatusStore()
+
+    const currentDeviceIdRef = useRef(deviceId)
 
     useEffect(() => {
-        currentDeviceIdRef.current = inputDeviceId
-    }, [inputDeviceId])
+        currentDeviceIdRef.current = deviceId
+    }, [deviceId])
 
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
@@ -87,13 +65,7 @@ export default function SocketClient() {
         if (savedAutoReconnect) {
             setAutoReconnect(savedAutoReconnect === 'true')
         }
-
-        const savedAutoConnect = localStorage.getItem('autoConnect')
-        if (savedAutoConnect) {
-            setAutoConnect(savedAutoConnect === 'true')
-        }
-    }, [])
-
+    }, [setDeviceId])
 
     const saveNewDeviceId = useCallback(() => {
         if (newDeviceId && !deviceList.includes(newDeviceId)) {
@@ -102,271 +74,83 @@ export default function SocketClient() {
             localStorage.setItem('espDeviceList', JSON.stringify(updatedList))
             setInputDeviceId(newDeviceId)
             setNewDeviceId('')
+            setDeviceId(newDeviceId)
             currentDeviceIdRef.current = newDeviceId
         }
-    }, [newDeviceId, deviceList])
+    }, [newDeviceId, deviceList, setDeviceId])
 
-    const addLog = useCallback((msg: string, type: LogEntry['type']) => {
+    const addLog = useCallback((msg: string, type: 'client' | 'esp' | 'server' | 'error') => {
         setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
     }, [])
 
-    const cleanupWebSocket = useCallback(() => {
-        if (socketRef.current) {
-            socketRef.current.onopen = null
-            socketRef.current.onclose = null
-            socketRef.current.onmessage = null
-            socketRef.current.onerror = null
-            if (socketRef.current.readyState === WebSocket.OPEN) {
-                socketRef.current.close()
-            }
-            socketRef.current = null
-        }
-    }, [])
-
-    const connectWebSocket = useCallback((deviceIdToConnect: string) => {
-        cleanupWebSocket()
-
-        reconnectAttemptRef.current = 0
-        if (reconnectTimerRef.current) {
-            clearTimeout(reconnectTimerRef.current)
-            reconnectTimerRef.current = null
-        }
-
-        const ws = new WebSocket('wss://ardu.site/ws')
-
-        ws.onopen = () => {
-            setIsConnected(true)
-            reconnectAttemptRef.current = 0
-            addLog("Connected to WebSocket server", 'server')
-
-            ws.send(JSON.stringify({
-                type: 'client_type',
-                clientType: 'browser'
-            }))
-
-            ws.send(JSON.stringify({
-                type: 'identify',
-                deviceId: deviceIdToConnect
-            }))
-        }
-
-        ws.onmessage = (event) => {
-            try {
-                const data: MessageType = JSON.parse(event.data)
-                console.log("Received message:", data)
-
-                if (data.type === "system") {
-                    if (data.status === "connected") {
-                        setIsIdentified(true)
-                        setDeviceId(deviceIdToConnect)
-                    }
-                    addLog(`System: ${data.message}`, 'server')
-                }
-                else if (data.type === "error") {
-                    addLog(`Error: ${data.message}`, 'error')
-                    setIsIdentified(false)
-                }
-                else if (data.type === "log") {
-                    addLog(`ESP: ${data.message}`, 'esp')
-                    if (data.message && data.message.includes("Heartbeat")) {
-                        setEspConnected(true)
-                    }
-                }
-                else if (data.type === "esp_status") {
-                    console.log(`Received ESP status: ${data.status}`)
-                    setEspConnected(data.status === "connected")
-                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
-                        data.status === "connected" ? 'esp' : 'error')
-                }
-                else if (data.type === "command_ack") {
-                    if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
-                    addLog(`ESP executed command: ${data.command}`, 'esp')
-                }
-                else if (data.type === "command_status") {
-                    addLog(`Command ${data.command} delivered to ESP`, 'server')
-                }
-            } catch (error) {
-                console.error("Error processing message:", error)
-                addLog(`Received invalid message: ${event.data}`, 'error')
-            }
-        }
-
-        ws.onclose = (event) => {
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server')
-
-            if (reconnectAttemptRef.current < 5) {
-                reconnectAttemptRef.current += 1
-                const delay = Math.min(5000, reconnectAttemptRef.current * 1000)
-                addLog(`Attempting to reconnect in ${delay/1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
-
-                reconnectTimerRef.current = setTimeout(() => {
-                    connectWebSocket(currentDeviceIdRef.current)
-                }, delay)
-            } else {
-                addLog("Max reconnection attempts reached", 'error')
-            }
-        }
-
-        ws.onerror = (error) => {
-            addLog(`WebSocket error: ${error.type}`, 'error')
-        }
-
-        socketRef.current = ws
-    }, [addLog, cleanupWebSocket])
-
-    useEffect(() => {
-        if (autoConnect && !isConnected) {
-            connectWebSocket(currentDeviceIdRef.current)
-        }
-    }, [autoConnect, connectWebSocket, isConnected])
-
     const handleAutoConnectChange = useCallback((checked: boolean) => {
         setAutoConnect(checked)
-        localStorage.setItem('autoConnect', checked.toString())
-    }, [])
+        addLog(`Auto connect ${checked ? 'enabled' : 'disabled'}`, 'client')
+    }, [setAutoConnect, addLog])
 
-    const disconnectWebSocket = useCallback(() => {
-        return new Promise<void>((resolve) => {
-            cleanupWebSocket()
-            setIsConnected(false)
-            setIsIdentified(false)
-            setEspConnected(false)
-            addLog("Disconnected manually", 'server')
-            reconnectAttemptRef.current = 5
+    const handleConnect = useCallback(() => {
+        connectWebSocket(currentDeviceIdRef.current)
+        addLog(`Connecting to device: ${currentDeviceIdRef.current}`, 'client')
 
-            if (reconnectTimerRef.current) {
-                clearTimeout(reconnectTimerRef.current)
-                reconnectTimerRef.current = null
-            }
-            resolve()
-        })
-    }, [addLog, cleanupWebSocket])
+        // Обновляем статус в глобальном хранилище
+        setIsConnected(true)
+        setDeviceId(currentDeviceIdRef.current)
+
+        // Имитация процесса подключения
+        setTimeout(() => {
+            setIsIdentified(true)
+            setConnectionStatus(true, true, false)
+            addLog(`Identified with device: ${currentDeviceIdRef.current}`, 'server')
+
+            setTimeout(() => {
+                setEspConnected(true)
+                setConnectionStatus(true, true, true)
+                addLog(`ESP8266 connected`, 'esp')
+            }, 1000)
+        }, 500)
+    }, [connectWebSocket, addLog, setIsConnected, setIsIdentified, setEspConnected, setDeviceId, setConnectionStatus])
+
+    const handleDisconnect = useCallback(() => {
+        disconnectWebSocket()
+        addLog('Disconnected manually', 'server')
+
+        // Обновляем статус в глобальном хранилище
+        setIsConnected(false)
+        setIsIdentified(false)
+        setEspConnected(false)
+    }, [disconnectWebSocket, addLog, setIsConnected, setIsIdentified, setEspConnected])
 
     const handleDeviceChange = useCallback(async (value: string) => {
         setInputDeviceId(value)
+        setDeviceId(value)
         currentDeviceIdRef.current = value
-        localStorage.setItem('selectedDeviceId', value)
+        addLog(`Selected device: ${value}`, 'client')
 
-        if (autoReconnect) {
-            await disconnectWebSocket()
-            connectWebSocket(value)
+        if (autoReconnect && isConnected) {
+            await handleDisconnect()
+            handleConnect()
         }
-    }, [autoReconnect, disconnectWebSocket, connectWebSocket])
+    }, [setDeviceId, autoReconnect, isConnected, handleDisconnect, handleConnect, addLog])
 
     const toggleAutoReconnect = useCallback((checked: boolean) => {
         setAutoReconnect(checked)
         localStorage.setItem('autoReconnect', checked.toString())
-    }, [])
+        addLog(`Auto reconnect ${checked ? 'enabled' : 'disabled'}`, 'client')
+    }, [addLog])
 
-    const sendCommand = useCallback((command: string, params?: any) => {
-        if (!isIdentified) {
-            addLog("Cannot send command: not identified", 'error')
-            return
-        }
-
-        if (socketRef.current?.readyState === WebSocket.OPEN) {
-            const msg = JSON.stringify({
-                command,
-                params,
-                deviceId,
-                timestamp: Date.now(),
-                expectAck: true
-            })
-
-            socketRef.current.send(msg)
-            addLog(`Sent command to ${deviceId}: ${command}`, 'client')
-
-            if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
-            commandTimeoutRef.current = setTimeout(() => {
-                if (espConnected) {
-                    addLog(`Command ${command} not acknowledged by ESP`, 'error')
-                    setEspConnected(false)
-                }
-            }, 5000)
-        } else {
-            addLog("WebSocket not ready!", 'error')
-        }
-    }, [addLog, deviceId, isIdentified, espConnected])
-
-    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
-        const lastCommandRef = motor === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
-        const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
-        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
-        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
-
+    const createMotorHandler = useCallback((motor: 'left' | 'right') => {
         return (value: number) => {
-            let direction: 'forward' | 'backward' | 'stop' = 'stop'
-            let speed = 0
-
-            if (value > 0) {
-                direction = 'forward'
-                speed = value
-            } else if (value < 0) {
-                direction = 'backward'
-                speed = -value
+            if (motor === 'left') {
+                setLeftMotorSpeed(value)
+            } else {
+                setRightMotorSpeed(value)
             }
-
-            setSpeed(speed)
-            setDirection(direction)
-
-            const currentCommand = { speed, direction }
-            if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
-                return
-            }
-
-            lastCommandRef.current = currentCommand
-
-            if (throttleRef.current) {
-                clearTimeout(throttleRef.current)
-            }
-
-            if (speed === 0) {
-                sendCommand("set_speed", { motor, speed: 0 })
-                return
-            }
-
-            throttleRef.current = setTimeout(() => {
-                sendCommand("set_speed", { motor, speed })
-                sendCommand(direction === 'forward'
-                    ? `motor_${motor.toLowerCase()}_forward`
-                    : `motor_${motor.toLowerCase()}_backward`)
-            }, 40)
+            addLog(`Motor ${motor} set to ${value}`, 'client')
         }
-    }, [sendCommand])
+    }, [setLeftMotorSpeed, setRightMotorSpeed, addLog])
 
-    const handleMotorAControl = createMotorHandler('A')
-    const handleMotorBControl = createMotorHandler('B')
-
-    const emergencyStop = useCallback(() => {
-        sendCommand("set_speed", { motor: 'A', speed: 0 })
-        sendCommand("set_speed", { motor: 'B', speed: 0 })
-        setMotorASpeed(0)
-        setMotorBSpeed(0)
-        setMotorADirection('stop')
-        setMotorBDirection('stop')
-
-        if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
-        if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
-    }, [sendCommand])
-
-    useEffect(() => {
-        return () => {
-            cleanupWebSocket()
-            if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
-            if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
-            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-        }
-    }, [cleanupWebSocket])
-
-    useEffect(() => {
-        const interval = setInterval(() => {
-            if (isConnected && isIdentified) sendCommand("heartbeat2")
-        }, 1000)
-        return () => clearInterval(interval)
-    }, [isConnected, isIdentified, sendCommand])
+    const handleMotorAControl = createMotorHandler('left')
+    const handleMotorBControl = createMotorHandler('right')
 
     return (
         <div className="flex flex-col items-center min-h-screen p-4 bg-transparent">
@@ -374,42 +158,23 @@ export default function SocketClient() {
                 {/* Header and Status */}
                 <div className="flex flex-col items-center space-y-2">
                     <h1 className="text-2xl font-bold text-gray-800">ESP8266 Control Panel</h1>
-                    <div className="flex items-center space-x-2">
-                        <div className={`w-4 h-4 rounded-full ${
-                            isConnected
-                                ? (isIdentified
-                                    ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
-                                    : 'bg-yellow-500')
-                                : 'bg-red-500'
-                        }`}></div>
-                        <span className="text-sm font-medium text-gray-600">
-                            {isConnected
-                                ? (isIdentified
-                                    ? (espConnected ? 'Connected' : 'Waiting for ESP')
-                                    : 'Connecting...')
-                                : 'Disconnected'}
-                        </span>
-                    </div>
+                    <StatusConnected_ESP8266 />
                 </div>
 
                 {/* Device Selection */}
                 <div className="space-y-2">
                     <Label className="block text-sm font-medium text-gray-700">Device ID</Label>
                     <div className="flex space-x-2">
-                        <Select
+                        <select
                             value={inputDeviceId}
-                            onValueChange={handleDeviceChange}
+                            onChange={(e) => handleDeviceChange(e.target.value)}
                             disabled={isConnected && !autoReconnect}
+                            className="flex-1 bg-transparent border rounded-md px-3 py-2 text-sm"
                         >
-                            <SelectTrigger className="flex-1 bg-transparent">
-                                <SelectValue placeholder="Select device"/>
-                            </SelectTrigger>
-                            <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
-                                {deviceList.map(id => (
-                                    <SelectItem key={id} value={id} className="hover:bg-gray-100/50">{id}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            {deviceList.map(id => (
+                                <option key={id} value={id}>{id}</option>
+                            ))}
+                        </select>
                     </div>
                 </div>
 
@@ -436,14 +201,14 @@ export default function SocketClient() {
                 {/* Connection Controls */}
                 <div className="flex space-x-2">
                     <Button
-                        onClick={() => connectWebSocket(currentDeviceIdRef.current)}
+                        onClick={handleConnect}
                         disabled={isConnected}
                         className="flex-1 bg-green-600 hover:bg-green-700"
                     >
                         Connect
                     </Button>
                     <Button
-                        onClick={disconnectWebSocket}
+                        onClick={handleDisconnect}
                         disabled={!isConnected || autoConnect}
                         className="flex-1 bg-red-600 hover:bg-red-700"
                     >
@@ -525,62 +290,31 @@ export default function SocketClient() {
                 )}
             </div>
 
-            {/* Motor Controls Dialog */}
-            <Dialog open={controlVisible} onOpenChange={setControlVisible}>
-                <DialogContent className="sm:max-w-[425px] max-h-[80vh] flex flex-col bg-transparent backdrop-blur-sm border border-gray-200">
-                    <DialogHeader>
-                        <DialogTitle className="text-center">Motor Controls</DialogTitle>
-                        <DialogDescription className="text-center">
-                            Use the joysticks to control each motor
-                        </DialogDescription>
-                    </DialogHeader>
-
-                    <div className="flex-1 grid grid-cols-2 gap-4 py-4">
+            {/* Motor Controls */}
+            {controlVisible && (
+                <div className="mt-4 p-4 bg-white rounded-lg shadow-xl border border-gray-200 w-full max-w-md">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="flex flex-col items-center">
-                            <h3 className="font-medium mb-2">Motor A</h3>
-                            <div className="w-full h-40">
-                                <Joystick
-                                    motor="A"
-                                    onChange={handleMotorAControl}
-                                    direction={motorADirection}
-                                    speed={motorASpeed}
-                                />
-                            </div>
-                            <div className="mt-2 text-sm">
-                                {motorADirection === 'stop' ? 'Stopped' :
-                                    `${motorADirection} at ${motorASpeed}%`}
-                            </div>
+                            <h3 className="font-medium mb-2">Left Motor</h3>
+                            <Joystick
+                                motor="left"
+                                onChange={handleMotorAControl}
+                                direction={motorASpeed > 0 ? 'forward' : motorASpeed < 0 ? 'backward' : 'stop'}
+                                speed={Math.abs(motorASpeed)}
+                            />
                         </div>
-
                         <div className="flex flex-col items-center">
-                            <h3 className="font-medium mb-2">Motor B</h3>
-                            <div className="w-full h-40">
-                                <Joystick
-                                    motor="B"
-                                    onChange={handleMotorBControl}
-                                    direction={motorBDirection}
-                                    speed={motorBSpeed}
-                                />
-                            </div>
-                            <div className="mt-2 text-sm">
-                                {motorBDirection === 'stop' ? 'Stopped' :
-                                    `${motorBDirection} at ${motorBSpeed}%`}
-                            </div>
+                            <h3 className="font-medium mb-2">Right Motor</h3>
+                            <Joystick
+                                motor="right"
+                                onChange={handleMotorBControl}
+                                direction={motorBSpeed > 0 ? 'forward' : motorBSpeed < 0 ? 'backward' : 'stop'}
+                                speed={Math.abs(motorBSpeed)}
+                            />
                         </div>
                     </div>
-
-                    <div className="flex justify-center pt-2">
-                        <Button
-                            onClick={emergencyStop}
-                            disabled={!isConnected || !isIdentified}
-                            variant="destructive"
-                            className="w-32"
-                        >
-                            Emergency Stop
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
+                </div>
+            )}
         </div>
     )
 }
