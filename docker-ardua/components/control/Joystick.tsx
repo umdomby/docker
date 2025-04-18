@@ -1,4 +1,3 @@
-// file: docker-ardua/components/control/Joystick.tsx
 "use client"
 import { useCallback, useRef, useEffect } from 'react'
 
@@ -9,21 +8,15 @@ type JoystickProps = {
     speed: number
 }
 
-/**
- * Компонент джойстика для управления моторами
- */
 const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
-
-    // Стили для разных моторов
     const motorStyles = {
         A: { bg: 'rgba(255, 87, 34, 0.2)', border: '2px solid #ff5722' },
         B: { bg: 'rgba(76, 175, 80, 0.2)', border: '2px solid #4caf50' }
     }
 
-    // Обновление значения джойстика
     const updateValue = useCallback((clientY: number) => {
         const container = containerRef.current
         if (!container) return
@@ -34,7 +27,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         let value = ((height - y) / height) * 510 - 255
         value = Math.max(-255, Math.min(255, value))
 
-        // Изменение цвета в зависимости от положения
         const intensity = Math.abs(value) / 255 * 0.3 + 0.2
         container.style.backgroundColor = `rgba(${
             motor === 'A' ? '255, 87, 34' : '76, 175, 80'
@@ -43,7 +35,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         onChange(value)
     }, [motor, onChange])
 
-    // Обработчики событий
     const handleStart = useCallback((clientY: number) => {
         isDragging.current = true
         const container = containerRef.current
@@ -73,7 +64,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         onChange(0)
     }, [motor, motorStyles, onChange])
 
-    // Подписка на события
     useEffect(() => {
         const container = containerRef.current
         if (!container) return
@@ -122,7 +112,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
             handleEnd()
         }
 
-        // Добавление обработчиков
         container.addEventListener('touchstart', onTouchStart, { passive: false })
         container.addEventListener('touchmove', onTouchMove, { passive: false })
         container.addEventListener('touchend', onTouchEnd, { passive: false })
@@ -133,7 +122,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
-        // Глобальные обработчики для случаев, когда события завершения происходят вне элемента
         const handleGlobalMouseUp = () => {
             if (isDragging.current) {
                 handleEnd()
@@ -154,7 +142,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         document.addEventListener('mouseup', handleGlobalMouseUp)
         document.addEventListener('touchend', handleGlobalTouchEnd)
 
-        // Очистка
         return () => {
             container.removeEventListener('touchstart', onTouchStart)
             container.removeEventListener('touchmove', onTouchMove)
