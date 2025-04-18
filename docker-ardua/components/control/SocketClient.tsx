@@ -63,10 +63,6 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
     const [logVisible, setLogVisible] = useState(false)
-    const [motorASpeed, setMotorASpeed] = useState(0)
-    const [motorBSpeed, setMotorBSpeed] = useState(0)
-    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
-    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
 
@@ -162,10 +158,16 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
 
         const ws = new WebSocket('wss://ardu.site/ws')
 
+        // Внутри функции connectWebSocket
+// Внутри функции connectWebSocket
         ws.onopen = () => {
             setIsConnected(true)
             reconnectAttemptRef.current = 0
             addLog("Connected to WebSocket server", 'server')
+
+            // Регистрируем сокет в хранилище
+            const unregister = useMotorControl.getState().registerSocket(ws)
+            useMotorControl.getState().initialize()
 
             ws.send(JSON.stringify({
                 type: 'client_type',
@@ -176,6 +178,14 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                 type: 'identify',
                 deviceId: deviceIdToConnect
             }))
+
+            // Возвращаем функцию очистки
+            return () => {
+                unregister()
+                if (ws.readyState === WebSocket.OPEN) {
+                    ws.close()
+                }
+            }
         }
 
         ws.onmessage = (event) => {
@@ -219,10 +229,15 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
             }
         }
 
+        // В обработчике onclose
         ws.onclose = (event) => {
             setIsConnected(false)
             setIsIdentified(false)
             setEspConnected(false)
+
+            // Функция registerSocket уже автоматически очистит сокет через возвращаемую функцию unregister
+            // Поэтому нам не нужно явно вызывать setSocket(null)
+
             addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server')
 
             if (reconnectAttemptRef.current < 5) {
@@ -537,14 +552,10 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                                             sendCommand(`motor_a_${direction}`);
                                         }
                                     }}
-                                    direction={motorADirection}
-                                    speed={motorASpeed}
+
                                 />
                             </div>
-                            <div className="mt-2 text-sm">
-                                {motorADirection === 'stop' ? 'Stopped' :
-                                    `${motorADirection} at ${motorASpeed}%`}
-                            </div>
+
                         </div>
 
                         <div className="flex flex-col items-center">
@@ -569,13 +580,8 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                                             sendCommand(`motor_b_${direction}`);
                                         }
                                     }}
-                                    direction={motorBDirection}
-                                    speed={motorBSpeed}
+
                                 />
-                            </div>
-                            <div className="mt-2 text-sm">
-                                {motorBDirection === 'stop' ? 'Stopped' :
-                                    `${motorBDirection} at ${motorBSpeed}%`}
                             </div>
                         </div>
                     </div>

@@ -509,16 +509,16 @@ export const VideoCallApp = () => {
             )}
 
             {/* Motor Controls Overlay */}
-            {showMotorControls && (
+            // In VideoCallApp.tsx, update the motor controls section
+            // В компоненте VideoCallApp
+            {showMotorControls && useMotorControl.getState().isReady && (
                 <div className={styles.motorControlsOverlay}>
                     <div className={styles.joystickContainer}>
                         <div className={styles.motorControl}>
                             <h3>Motor A</h3>
                             <Joystick
                                 motor="A"
-                                onChange={(value) => {
-                                    useMotorControl.getState().setMotorA(value);
-                                }}
+                                onChange={(value) => useMotorControl.getState().setMotorA(value)}
                                 direction={useMotorControl.getState().motorA.direction}
                                 speed={useMotorControl.getState().motorA.speed}
                             />
@@ -533,10 +533,7 @@ export const VideoCallApp = () => {
                             <h3>Motor B</h3>
                             <Joystick
                                 motor="B"
-                                onChange={(value) => {
-                                    // Обновляем состояние мотора B в хранилище
-                                    useMotorControl.getState().setMotorB(value);
-                                }}
+                                onChange={(value) => useMotorControl.getState().setMotorB(value)}
                                 direction={useMotorControl.getState().motorB.direction}
                                 speed={useMotorControl.getState().motorB.speed}
                             />
@@ -549,14 +546,7 @@ export const VideoCallApp = () => {
                     </div>
 
                     <button
-                        onClick={() => {
-                            // Аварийная остановка
-                            useMotorControl.getState().emergencyStop();
-
-                            // Отправка команды остановки на сервер
-                            // Например:
-                            // sendCommand("emergency_stop");
-                        }}
+                        onClick={() => useMotorControl.getState().emergencyStop()}
                         className={styles.emergencyButton}
                     >
                         Emergency Stop
