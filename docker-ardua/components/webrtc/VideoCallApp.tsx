@@ -12,7 +12,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
-import { StatusConnected_ESP8266 } from "@/components/dataStores/statusConnected_ESP8266"
 
 type VideoSettings = {
     rotation: number
@@ -230,6 +229,7 @@ export const VideoCallApp = () => {
                 className={styles.remoteVideoContainer}
             >
                 <VideoPlayer
+                    ref={remoteVideoRef}
                     stream={remoteStream}
                     className={styles.remoteVideo}
                     transform={videoTransform}
@@ -270,9 +270,6 @@ export const VideoCallApp = () => {
                     >
                         {activeTab === 'controls' ? '▲' : '▼'} Video
                     </button>
-                    <div className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}>
-                        <StatusConnected_ESP8266/>
-                    </div>
 
                 </div>
             </div>
