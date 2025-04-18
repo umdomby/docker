@@ -17,13 +17,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import Joystick from './Joystick'
 import styles from './styles.module.css'
-import {useMotorControl} from "@/stores/motorControlStore";
-
-interface SocketClientProps {
-    compactMode?: boolean;
-    onStatusChange?: (status: { /* ... */ }) => void;
-    onMotorControl?: (motor: 'A' | 'B', value: number) => void;
-}
 
 type MessageType = {
     type?: string
@@ -63,6 +56,10 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
     const [logVisible, setLogVisible] = useState(false)
+    const [motorASpeed, setMotorASpeed] = useState(0)
+    const [motorBSpeed, setMotorBSpeed] = useState(0)
+    const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
+    const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
 
@@ -158,16 +155,10 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
 
         const ws = new WebSocket('wss://ardu.site/ws')
 
-        // Внутри функции connectWebSocket
-// Внутри функции connectWebSocket
         ws.onopen = () => {
             setIsConnected(true)
             reconnectAttemptRef.current = 0
             addLog("Connected to WebSocket server", 'server')
-
-            // Регистрируем сокет в хранилище
-            const unregister = useMotorControl.getState().registerSocket(ws)
-            useMotorControl.getState().initialize()
 
             ws.send(JSON.stringify({
                 type: 'client_type',
@@ -178,14 +169,6 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                 type: 'identify',
                 deviceId: deviceIdToConnect
             }))
-
-            // Возвращаем функцию очистки
-            return () => {
-                unregister()
-                if (ws.readyState === WebSocket.OPEN) {
-                    ws.close()
-                }
-            }
         }
 
         ws.onmessage = (event) => {
@@ -229,15 +212,10 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
             }
         }
 
-        // В обработчике onclose
         ws.onclose = (event) => {
             setIsConnected(false)
             setIsIdentified(false)
             setEspConnected(false)
-
-            // Функция registerSocket уже автоматически очистит сокет через возвращаемую функцию unregister
-            // Поэтому нам не нужно явно вызывать setSocket(null)
-
             addLog(`Disconnected from server${event.reason ? `: ${event.reason}` : ''}`, 'server')
 
             if (reconnectAttemptRef.current < 5) {
@@ -333,6 +311,55 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
             addLog("WebSocket not ready!", 'error')
         }
     }, [addLog, deviceId, isIdentified, espConnected])
+
+    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
+        const lastCommandRef = motor === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
+        const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
+        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
+        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
+
+        return (value: number) => {
+            let direction: 'forward' | 'backward' | 'stop' = 'stop'
+            let speed = 0
+
+            if (value > 0) {
+                direction = 'forward'
+                speed = value
+            } else if (value < 0) {
+                direction = 'backward'
+                speed = -value
+            }
+
+            setSpeed(speed)
+            setDirection(direction)
+
+            const currentCommand = { speed, direction }
+            if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
+                return
+            }
+
+            lastCommandRef.current = currentCommand
+
+            if (throttleRef.current) {
+                clearTimeout(throttleRef.current)
+            }
+
+            if (speed === 0) {
+                sendCommand("set_speed", { motor, speed: 0 })
+                return
+            }
+
+            throttleRef.current = setTimeout(() => {
+                sendCommand("set_speed", { motor, speed })
+                sendCommand(direction === 'forward'
+                    ? `motor_${motor.toLowerCase()}_forward`
+                    : `motor_${motor.toLowerCase()}_backward`)
+            }, 40)
+        }
+    }, [sendCommand])
+
+    const handleMotorAControl = createMotorHandler('A')
+    const handleMotorBControl = createMotorHandler('B')
 
     const emergencyStop = useCallback(() => {
         sendCommand("set_speed", { motor: 'A', speed: 0 })
@@ -535,27 +562,15 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                             <div className="w-full h-40">
                                 <Joystick
                                     motor="A"
-                                    onChange={(value) => {
-                                        // Обновляем состояние
-                                        useMotorControl.getState().setMotorA(value);
-
-                                        // Отправляем команду на сервер
-                                        const speed = Math.abs(value);
-                                        const direction = value > 0 ? 'forward' : 'backward';
-
-                                        if (value === 0) {
-                                            // Остановка мотора
-                                            sendCommand("set_speed", { motor: 'A', speed: 0 });
-                                        } else {
-                                            // Установка скорости и направления
-                                            sendCommand("set_speed", { motor: 'A', speed });
-                                            sendCommand(`motor_a_${direction}`);
-                                        }
-                                    }}
-
+                                    onChange={handleMotorAControl}
+                                    direction={motorADirection}
+                                    speed={motorASpeed}
                                 />
                             </div>
-
+                            <div className="mt-2 text-sm">
+                                {motorADirection === 'stop' ? 'Stopped' :
+                                    `${motorADirection} at ${motorASpeed}%`}
+                            </div>
                         </div>
 
                         <div className="flex flex-col items-center">
@@ -563,25 +578,14 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                             <div className="w-full h-40">
                                 <Joystick
                                     motor="B"
-                                    onChange={(value) => {
-                                        // Обновляем состояние
-                                        useMotorControl.getState().setMotorB(value);
-
-                                        // Отправляем команду на сервер
-                                        const speed = Math.abs(value);
-                                        const direction = value > 0 ? 'forward' : 'backward';
-
-                                        if (value === 0) {
-                                            // Остановка мотора
-                                            sendCommand("set_speed", { motor: 'B', speed: 0 });
-                                        } else {
-                                            // Установка скорости и направления
-                                            sendCommand("set_speed", { motor: 'B', speed });
-                                            sendCommand(`motor_b_${direction}`);
-                                        }
-                                    }}
-
+                                    onChange={handleMotorBControl}
+                                    direction={motorBDirection}
+                                    speed={motorBSpeed}
                                 />
+                            </div>
+                            <div className="mt-2 text-sm">
+                                {motorBDirection === 'stop' ? 'Stopped' :
+                                    `${motorBDirection} at ${motorBSpeed}%`}
                             </div>
                         </div>
                     </div>

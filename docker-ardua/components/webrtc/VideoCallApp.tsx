@@ -1,6 +1,5 @@
 // file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
-import { useMotorControl } from '@/stores/motorControlStore'
 
 import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
@@ -13,7 +12,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
-import Joystick from "@/components/control/Joystick";
 
 type VideoSettings = {
     rotation: number
@@ -34,7 +32,7 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>(null) // По умолчанию открыта вкладка ESP
     const [logVisible, setLogVisible] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
@@ -49,8 +47,6 @@ export const VideoCallApp = () => {
         isIdentified: false,
         espConnected: false
     })
-    const [showCompactControls, setShowCompactControls] = useState(false)
-    const [showMotorControls, setShowMotorControls] = useState(false)
 
     const {
         localStream,
@@ -75,13 +71,6 @@ export const VideoCallApp = () => {
                 prev.isIdentified !== status.isIdentified ||
                 prev.espConnected !== status.espConnected
             ) {
-                // Сворачиваем панель управления ESP при успешном подключении
-                if (status.espConnected) {
-                    setActiveTab(null)
-                    setShowCompactControls(true)
-                } else {
-                    setShowCompactControls(false)
-                }
                 return status;
             }
             return prev;
@@ -254,12 +243,6 @@ export const VideoCallApp = () => {
         setActiveTab(activeTab === tab ? null : tab)
     }
 
-    const toggleMotorControls = () => {
-        setShowMotorControls(!showMotorControls)
-    }
-
-
-
     return (
         <div className={styles.container}>
             {/* Основное видео (удаленный участник) */}
@@ -309,21 +292,6 @@ export const VideoCallApp = () => {
                     >
                         {activeTab === 'controls' ? '▲' : '▼'} Video
                     </button>
-
-                    {/* Компактные элементы управления моторами */}
-                    {showCompactControls && (
-                        <button
-                            onClick={toggleMotorControls}
-                            className={styles.tabButton}
-                            style={{
-                                backgroundColor: 'rgba(76, 175, 80, 0.2)',
-                                border: '1px solid #4caf50',
-                                marginLeft: '10px'
-                            }}
-                        >
-                            {showMotorControls ? 'Hide Motor Controls' : 'Show Motor Controls'}
-                        </button>
-                    )}
 
                     {/* Статус подключения ESP */}
                     <div className={styles.statusIndicator}>
@@ -505,52 +473,6 @@ export const VideoCallApp = () => {
                             </button>
                         </div>
                     </div>
-                </div>
-            )}
-
-            {/* Motor Controls Overlay */}
-            // In VideoCallApp.tsx, update the motor controls section
-            // В компоненте VideoCallApp
-            {showMotorControls && useMotorControl.getState().isReady && (
-                <div className={styles.motorControlsOverlay}>
-                    <div className={styles.joystickContainer}>
-                        <div className={styles.motorControl}>
-                            <h3>Motor A</h3>
-                            <Joystick
-                                motor="A"
-                                onChange={(value) => useMotorControl.getState().setMotorA(value)}
-                                direction={useMotorControl.getState().motorA.direction}
-                                speed={useMotorControl.getState().motorA.speed}
-                            />
-                            <div className={styles.motorStatus}>
-                                {useMotorControl.getState().motorA.direction === 'stop'
-                                    ? 'Stopped'
-                                    : `${useMotorControl.getState().motorA.direction} at ${useMotorControl.getState().motorA.speed}%`}
-                            </div>
-                        </div>
-
-                        <div className={styles.motorControl}>
-                            <h3>Motor B</h3>
-                            <Joystick
-                                motor="B"
-                                onChange={(value) => useMotorControl.getState().setMotorB(value)}
-                                direction={useMotorControl.getState().motorB.direction}
-                                speed={useMotorControl.getState().motorB.speed}
-                            />
-                            <div className={styles.motorStatus}>
-                                {useMotorControl.getState().motorB.direction === 'stop'
-                                    ? 'Stopped'
-                                    : `${useMotorControl.getState().motorB.direction} at ${useMotorControl.getState().motorB.speed}%`}
-                            </div>
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={() => useMotorControl.getState().emergencyStop()}
-                        className={styles.emergencyButton}
-                    >
-                        Emergency Stop
-                    </button>
                 </div>
             )}
 
