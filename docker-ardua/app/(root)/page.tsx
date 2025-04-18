@@ -1,6 +1,5 @@
 "use server"
 import { Container } from '@/components/container';
-import { HEROES_CLIENT } from '@/components/HEROES_CLIENT';
 import { getUserSession } from '@/components/lib/get-user-session';
 import { redirect } from 'next/navigation';
 import React, { Suspense } from 'react';

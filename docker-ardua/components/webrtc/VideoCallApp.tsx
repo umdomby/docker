@@ -42,11 +42,6 @@ export const VideoCallApp = () => {
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
-    const [socketStatus, setSocketStatus] = useState({
-        isConnected: false,
-        isIdentified: false,
-        espConnected: false
-    })
 
     const {
         localStream,
@@ -59,23 +54,6 @@ export const VideoCallApp = () => {
         isInRoom,
         error
     } = useWebRTC(selectedDevices, username, roomId)
-
-    const handleSocketStatusChange = useCallback((status: {
-        isConnected: boolean
-        isIdentified: boolean
-        espConnected: boolean
-    }) => {
-        setSocketStatus(prev => {
-            if (
-                prev.isConnected !== status.isConnected ||
-                prev.isIdentified !== status.isIdentified ||
-                prev.espConnected !== status.espConnected
-            ) {
-                return status;
-            }
-            return prev;
-        });
-    }, []);
 
     const loadSettings = () => {
         try {
@@ -293,23 +271,6 @@ export const VideoCallApp = () => {
                         {activeTab === 'controls' ? '▲' : '▼'} Video
                     </button>
 
-                    {/* Статус подключения ESP */}
-                    <div className={styles.statusIndicator}>
-                        <div className={`${styles.statusDot} ${
-                            socketStatus.isConnected
-                                ? (socketStatus.isIdentified
-                                    ? (socketStatus.espConnected ? styles.connected : styles.pending)
-                                    : styles.pending)
-                                : styles.disconnected
-                        }`}></div>
-                        <span className={styles.statusText}>
-                            {socketStatus.isConnected
-                                ? (socketStatus.isIdentified
-                                    ? (socketStatus.espConnected ? 'ESP Connected' : 'Waiting for ESP')
-                                    : 'Connecting...')
-                                : 'Disconnected'}
-                        </span>
-                    </div>
                 </div>
             </div>
 
@@ -404,10 +365,7 @@ export const VideoCallApp = () => {
 
             {activeTab === 'esp' && (
                 <div className={styles.tabContent}>
-                    <SocketClient
-                        compactMode
-                        onStatusChange={handleSocketStatusChange}
-                    />
+                    <SocketClient/>
                 </div>
             )}
 

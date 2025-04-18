@@ -35,16 +35,7 @@ type LogEntry = {
     type: 'client' | 'esp' | 'server' | 'error'
 }
 
-interface SocketClientProps {
-    compactMode?: boolean
-    onStatusChange?: (status: {
-        isConnected: boolean
-        isIdentified: boolean
-        espConnected: boolean
-    }) => void
-}
-
-export default function SocketClient({ compactMode, onStatusChange }: SocketClientProps) {
+export default function SocketClient() {
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
@@ -102,17 +93,6 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
             setAutoConnect(savedAutoConnect === 'true')
         }
     }, [])
-
-    // Изменим useEffect для передачи статуса
-    useEffect(() => {
-        if (onStatusChange) {
-            onStatusChange({
-                isConnected,
-                isIdentified,
-                espConnected
-            });
-        }
-    }, [isConnected, isIdentified, espConnected, onStatusChange]);
 
 
     const saveNewDeviceId = useCallback(() => {
