@@ -1,5 +1,6 @@
 // file: docker-ardua/components/webrtc/VideoCallApp.tsx
 'use client'
+import { useMotorControl } from '@/stores/motorControlStore'
 
 import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
@@ -12,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
+import Joystick from "@/components/control/Joystick";
 
 type VideoSettings = {
     rotation: number
@@ -255,6 +257,8 @@ export const VideoCallApp = () => {
     const toggleMotorControls = () => {
         setShowMotorControls(!showMotorControls)
     }
+
+
 
     return (
         <div className={styles.container}>
@@ -504,17 +508,72 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            <SocketClient
-                compactMode
-                onStatusChange={handleSocketStatusChange}
-                onMotorControl={(motor, value) => {
-                    if (motor === 'A') {
-                        useMotorControl.getState().setMotorA(value);
-                    } else {
-                        useMotorControl.getState().setMotorB(value);
-                    }
-                }}
-            />
+            {/* Motor Controls Overlay */}
+            {showMotorControls && (
+                <div className={styles.motorControlsOverlay}>
+                    <div className={styles.joystickContainer}>
+                        <div className={styles.motorControl}>
+                            <h3>Motor A</h3>
+                            <Joystick
+                                motor="A"
+                                onChange={(value) => {
+                                    // Обновляем состояние мотора A в хранилище
+                                    useMotorControl.getState().setMotorA(value);
+
+                                    // Здесь должна быть логика отправки на сервер
+                                    // Например:
+                                    // sendCommand("set_speed", { motor: 'A', speed: Math.abs(value) });
+                                    // sendCommand(value > 0 ? "motor_a_forward" : "motor_a_backward");
+                                }}
+                                direction={useMotorControl.getState().motorA.direction}
+                                speed={useMotorControl.getState().motorA.speed}
+                            />
+                            <div className={styles.motorStatus}>
+                                {useMotorControl.getState().motorA.direction === 'stop'
+                                    ? 'Stopped'
+                                    : `${useMotorControl.getState().motorA.direction} at ${useMotorControl.getState().motorA.speed}%`}
+                            </div>
+                        </div>
+
+                        <div className={styles.motorControl}>
+                            <h3>Motor B</h3>
+                            <Joystick
+                                motor="B"
+                                onChange={(value) => {
+                                    // Обновляем состояние мотора B в хранилище
+                                    useMotorControl.getState().setMotorB(value);
+
+                                    // Здесь должна быть логика отправки на сервер
+                                    // Например:
+                                    // sendCommand("set_speed", { motor: 'B', speed: Math.abs(value) });
+                                    // sendCommand(value > 0 ? "motor_b_forward" : "motor_b_backward");
+                                }}
+                                direction={useMotorControl.getState().motorB.direction}
+                                speed={useMotorControl.getState().motorB.speed}
+                            />
+                            <div className={styles.motorStatus}>
+                                {useMotorControl.getState().motorB.direction === 'stop'
+                                    ? 'Stopped'
+                                    : `${useMotorControl.getState().motorB.direction} at ${useMotorControl.getState().motorB.speed}%`}
+                            </div>
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={() => {
+                            // Аварийная остановка
+                            useMotorControl.getState().emergencyStop();
+
+                            // Отправка команды остановки на сервер
+                            // Например:
+                            // sendCommand("emergency_stop");
+                        }}
+                        className={styles.emergencyButton}
+                    >
+                        Emergency Stop
+                    </button>
+                </div>
+            )}
 
             {logVisible && (
                 <div className={styles.logsPanel}>
