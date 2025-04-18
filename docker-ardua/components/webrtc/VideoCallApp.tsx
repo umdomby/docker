@@ -517,13 +517,7 @@ export const VideoCallApp = () => {
                             <Joystick
                                 motor="A"
                                 onChange={(value) => {
-                                    // Обновляем состояние мотора A в хранилище
                                     useMotorControl.getState().setMotorA(value);
-
-                                    // Здесь должна быть логика отправки на сервер
-                                    // Например:
-                                    // sendCommand("set_speed", { motor: 'A', speed: Math.abs(value) });
-                                    // sendCommand(value > 0 ? "motor_a_forward" : "motor_a_backward");
                                 }}
                                 direction={useMotorControl.getState().motorA.direction}
                                 speed={useMotorControl.getState().motorA.speed}
@@ -542,11 +536,6 @@ export const VideoCallApp = () => {
                                 onChange={(value) => {
                                     // Обновляем состояние мотора B в хранилище
                                     useMotorControl.getState().setMotorB(value);
-
-                                    // Здесь должна быть логика отправки на сервер
-                                    // Например:
-                                    // sendCommand("set_speed", { motor: 'B', speed: Math.abs(value) });
-                                    // sendCommand(value > 0 ? "motor_b_forward" : "motor_b_backward");
                                 }}
                                 direction={useMotorControl.getState().motorB.direction}
                                 speed={useMotorControl.getState().motorB.speed}
