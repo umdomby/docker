@@ -304,7 +304,6 @@ export const VideoCallApp = () => {
                     {/* Компактные элементы управления моторами */}
                     {showCompactControls && (
                         <button
-                            onClick={() => toggleTab('esp')}
                             className={styles.tabButton}
                             style={{
                                 backgroundColor: 'rgba(76, 175, 80, 0.2)',
@@ -312,7 +311,7 @@ export const VideoCallApp = () => {
                                 marginLeft: '10px'
                             }}
                         >
-                            {activeTab === 'esp' ? '▲' : '▼'} Motor Controls
+                           Motor Controls
                         </button>
                     )}
 
