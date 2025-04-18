@@ -186,6 +186,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
                 color: '#333',
                 zIndex: '1'
             }}>
+                {motor} - {direction === 'stop' ? 'Stopped' : `${direction} ${Math.round(speed / 2.55)}%`}
             </div>
         </div>
     )

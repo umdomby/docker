@@ -1,4 +1,3 @@
-// file: docker-ardua/components/control/SocketClient.tsx
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
@@ -43,9 +42,18 @@ interface SocketClientProps {
         isIdentified: boolean
         espConnected: boolean
     }) => void
+    onMotorAControl?: (value: number) => void
+    onMotorBControl?: (value: number) => void
+    onEmergencyStop?: () => void
 }
 
-export default function SocketClient({ compactMode, onStatusChange }: SocketClientProps) {
+export default function SocketClient({
+                                         compactMode,
+                                         onStatusChange,
+                                         onMotorAControl = () => {},
+                                         onMotorBControl = () => {},
+                                         onEmergencyStop = () => {}
+                                     }: SocketClientProps) {
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
@@ -104,7 +112,6 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
         }
     }, [])
 
-    // Изменим useEffect для передачи статуса
     useEffect(() => {
         if (onStatusChange) {
             onStatusChange({
@@ -113,8 +120,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                 espConnected
             });
         }
-    }, [isConnected, isIdentified, espConnected, onStatusChange]);
-
+    }, [isConnected, isIdentified, espConnected, onStatusChange])
 
     const saveNewDeviceId = useCallback(() => {
         if (newDeviceId && !deviceList.includes(newDeviceId)) {
@@ -317,6 +323,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
         const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
         const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
         const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
+        const motorHandler = motor === 'A' ? onMotorAControl : onMotorBControl
 
         return (value: number) => {
             let direction: 'forward' | 'backward' | 'stop' = 'stop'
@@ -332,6 +339,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
 
             setSpeed(speed)
             setDirection(direction)
+            motorHandler(value) // Call the external handler
 
             const currentCommand = { speed, direction }
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
@@ -356,7 +364,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                     : `motor_${motor.toLowerCase()}_backward`)
             }, 40)
         }
-    }, [sendCommand])
+    }, [sendCommand, onMotorAControl, onMotorBControl])
 
     const handleMotorAControl = createMotorHandler('A')
     const handleMotorBControl = createMotorHandler('B')
@@ -368,10 +376,11 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
         setMotorBSpeed(0)
         setMotorADirection('stop')
         setMotorBDirection('stop')
+        onEmergencyStop() // Call the external emergency stop handler
 
         if (motorAThrottleRef.current) clearTimeout(motorAThrottleRef.current)
         if (motorBThrottleRef.current) clearTimeout(motorBThrottleRef.current)
-    }, [sendCommand])
+    }, [sendCommand, onEmergencyStop])
 
     useEffect(() => {
         return () => {
@@ -569,7 +578,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                             </div>
                             <div className="mt-2 text-sm">
                                 {motorADirection === 'stop' ? 'Stopped' :
-                                    `${motorADirection} at ${motorASpeed}%`}
+                                    `${motorADirection} at ${Math.round(motorASpeed / 2.55)}%`}
                             </div>
                         </div>
 
@@ -585,7 +594,7 @@ export default function SocketClient({ compactMode, onStatusChange }: SocketClie
                             </div>
                             <div className="mt-2 text-sm">
                                 {motorBDirection === 'stop' ? 'Stopped' :
-                                    `${motorBDirection} at ${motorBSpeed}%`}
+                                    `${motorBDirection} at ${Math.round(motorBSpeed / 2.55)}%`}
                             </div>
                         </div>
                     </div>

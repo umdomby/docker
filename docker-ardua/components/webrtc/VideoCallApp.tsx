@@ -20,6 +20,141 @@ type VideoSettings = {
     flipV: boolean
 }
 
+// В начало файла добавим:
+const MotorControlsOverlay = ({
+                                  isConnected,
+                                  isIdentified,
+                                  espConnected,
+                                  onMotorAControl,
+                                  onMotorBControl,
+                                  motorADirection,
+                                  motorBDirection,
+                                  motorASpeed,
+                                  motorBSpeed,
+                                  onEmergencyStop
+                              }: {
+    isConnected: boolean
+    isIdentified: boolean
+    espConnected: boolean
+    onMotorAControl: (value: number) => void
+    onMotorBControl: (value: number) => void
+    motorADirection: 'forward' | 'backward' | 'stop'
+    motorBDirection: 'forward' | 'backward' | 'stop'
+    motorASpeed: number
+    motorBSpeed: number
+    onEmergencyStop: () => void
+}) => {
+    return (
+        <div style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            display: 'flex',
+            gap: '20px',
+            zIndex: 100,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            padding: '15px',
+            borderRadius: '10px',
+            backdropFilter: 'blur(5px)'
+        }}>
+            <div style={{ width: '150px', height: '200px' }}>
+                <Joystick
+                    motor="A"
+                    onChange={onMotorAControl}
+                    direction={motorADirection}
+                    speed={motorASpeed}
+                />
+            </div>
+            <div style={{ width: '150px', height: '200px' }}>
+                <Joystick
+                    motor="B"
+                    onChange={onMotorBControl}
+                    direction={motorBDirection}
+                    speed={motorBSpeed}
+                />
+            </div>
+            <button
+                onClick={onEmergencyStop}
+                disabled={!isConnected || !isIdentified}
+                style={{
+                    position: 'absolute',
+                    top: '-40px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '8px 16px',
+                    backgroundColor: '#ef4444',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    opacity: (!isConnected || !isIdentified) ? 0.5 : 1
+                }}
+            >
+                Emergency Stop
+            </button>
+        </div>
+    )
+}
+
+// В компоненте VideoCallApp добавим состояния для моторов:
+const [motorASpeed, setMotorASpeed] = useState(0)
+const [motorBSpeed, setMotorBSpeed] = useState(0)
+const [motorADirection, setMotorADirection] = useState<'forward' | 'backward' | 'stop'>('stop')
+const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
+
+// Добавим обработчики для моторов
+const handleMotorAControl = useCallback((value: number) => {
+    let direction: 'forward' | 'backward' | 'stop' = 'stop'
+    let speed = 0
+
+    if (value > 0) {
+        direction = 'forward'
+        speed = value
+    } else if (value < 0) {
+        direction = 'backward'
+        speed = -value
+    }
+
+    setMotorASpeed(speed)
+    setMotorADirection(direction)
+
+    // Здесь можно добавить отправку команды на сервер
+    // sendCommand("set_speed", { motor: 'A', speed })
+    // sendCommand(direction === 'forward' ? 'motor_a_forward' : 'motor_a_backward')
+}, [])
+
+const handleMotorBControl = useCallback((value: number) => {
+    let direction: 'forward' | 'backward' | 'stop' = 'stop'
+    let speed = 0
+
+    if (value > 0) {
+        direction = 'forward'
+        speed = value
+    } else if (value < 0) {
+        direction = 'backward'
+        speed = -value
+    }
+
+    setMotorBSpeed(speed)
+    setMotorBDirection(direction)
+
+    // Здесь можно добавить отправку команды на сервер
+    // sendCommand("set_speed", { motor: 'B', speed })
+    // sendCommand(direction === 'forward' ? 'motor_b_forward' : 'motor_b_backward')
+}, [])
+
+const emergencyStop = useCallback(() => {
+    setMotorASpeed(0)
+    setMotorBSpeed(0)
+    setMotorADirection('stop')
+    setMotorBDirection('stop')
+    // sendCommand("set_speed", { motor: 'A', speed: 0 })
+    // sendCommand("set_speed", { motor: 'B', speed: 0 })
+}, [])
+
+
+
 export const VideoCallApp = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([])
     const [selectedDevices, setSelectedDevices] = useState({
@@ -505,23 +640,28 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
+            <SocketClient
+                compactMode
+                onStatusChange={handleSocketStatusChange}
+                onMotorAControl={handleMotorAControl}
+                onMotorBControl={handleMotorBControl}
+                onEmergencyStop={emergencyStop}
+            />
+
             {/* Motor Controls Overlay */}
             {showMotorControls && (
-                <div>
-                    <Joystick
-                        motor="A"
-                        onChange={() => {}}
-                        direction="stop"
-                        speed={0}
-                    />
-
-                    <Joystick
-                        motor="B"
-                        onChange={() => {}}
-                        direction="stop"
-                        speed={0}
-                    />
-                </div>
+                <MotorControlsOverlay
+                    isConnected={socketStatus.isConnected}
+                    isIdentified={socketStatus.isIdentified}
+                    espConnected={socketStatus.espConnected}
+                    onMotorAControl={handleMotorAControl}
+                    onMotorBControl={handleMotorBControl}
+                    motorADirection={motorADirection}
+                    motorBDirection={motorBDirection}
+                    motorASpeed={motorASpeed}
+                    motorBSpeed={motorBSpeed}
+                    onEmergencyStop={emergencyStop}
+                />
             )}
 
             {logVisible && (
