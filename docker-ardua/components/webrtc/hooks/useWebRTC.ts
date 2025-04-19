@@ -644,10 +644,10 @@ export const useWebRTC = (
                     }
                 };
 
-                // connectionTimeout.current = setTimeout(() => {
-                //     cleanupEvents();
-                //     reject(new Error('Таймаут ожидания ответа от сервера'));
-                // }, 10000);
+                connectionTimeout.current = setTimeout(() => {
+                    cleanupEvents();
+                    console.log('Таймаут ожидания ответа от сервера');
+                }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
                 ws.current.send(JSON.stringify({
