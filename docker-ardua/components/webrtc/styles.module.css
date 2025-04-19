@@ -293,7 +293,7 @@
     color: white;
     padding: 25px;
     z-index: 15;
-    max-height: calc(100vh - 100px);
+    max-height: max-content;
     overflow-y: auto;
     backdrop-filter: none;
     border-radius: 0 0 12px 12px;
