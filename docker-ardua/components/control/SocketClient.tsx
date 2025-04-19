@@ -386,7 +386,6 @@ export default function SocketClient() {
                 <div className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-6 border border-gray-200 backdrop-blur-sm">
                     {/* Заголовок и статус */}
                     <div className="flex flex-col items-center space-y-2">
-                        <h1 className="text-2xl font-bold text-gray-800">ESP8266 Control Panel</h1>
                         <div className="flex items-center space-x-2">
                             <div className={`w-4 h-4 rounded-full ${
                                 isConnected
@@ -495,7 +494,7 @@ export default function SocketClient() {
                         onClick={handleOpenControls}
                         className="w-full bg-indigo-600 hover:bg-indigo-700"
                     >
-                        Show Motor Controls
+                        Controls
                     </Button>
 
                     {/* Логи */}
