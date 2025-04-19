@@ -1,14 +1,6 @@
 "use client"
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
-import {
-    Dialog, DialogClose,
-    DialogContent, DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from "@/components/ui/dialog"
-import {VisuallyHidden} from "@radix-ui/react-visually-hidden";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
@@ -396,14 +388,22 @@ export default function SocketClient() {
                                     : 'bg-red-500'
                             }`}></div>
                             <span className="text-xs sm:text-sm font-medium text-gray-600">
-                {isConnected
-                    ? (isIdentified
-                        ? (espConnected ? 'Connected' : 'Waiting for ESP')
-                        : 'Connecting...')
-                    : 'Disconnected'}
-              </span>
+                                {isConnected
+                                    ? (isIdentified
+                                        ? (espConnected ? 'Connected' : 'Waiting for ESP')
+                                        : 'Connecting...')
+                                    : 'Disconnected'}
+                              </span>
                         </div>
                     </div>
+
+                    {/* Кнопка открытия контролов */}
+                    <Button
+                        onClick={handleOpenControls}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 h-8 sm:h-10 text-xs sm:text-sm"
+                    >
+                        Controls
+                    </Button>
 
                     {/* Выбор устройства */}
                     <div className="space-y-1 sm:space-y-2">
@@ -489,14 +489,6 @@ export default function SocketClient() {
                             </Label>
                         </div>
                     </div>
-
-                    {/* Кнопка открытия контролов */}
-                    <Button
-                        onClick={handleOpenControls}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 h-8 sm:h-10 text-xs sm:text-sm"
-                    >
-                        Controls
-                    </Button>
 
                     {/* Логи */}
                     <Button
