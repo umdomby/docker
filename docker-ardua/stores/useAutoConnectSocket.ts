@@ -2,7 +2,6 @@
 'use client'
 
 import { useEffect } from 'react'
-import { useMotorControlStore } from '@/stores/motorControlStore'
 
 export const useAutoConnectSocket = () => {
     useEffect(() => {
