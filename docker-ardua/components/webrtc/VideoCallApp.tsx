@@ -229,12 +229,11 @@ export const VideoCallApp = () => {
                 className={styles.remoteVideoContainer}
             >
                 <VideoPlayer
-                    ref={remoteVideoRef}
                     stream={remoteStream}
                     className={styles.remoteVideo}
                     transform={videoTransform}
                 />
-                <div className={styles.remoteVideoLabel}>Удаленный участник</div>
+                {/*<div className={styles.remoteVideoLabel}>Удаленный участник</div>*/}
             </div>
 
             {/* Локальное видео (маленькое в углу) */}
