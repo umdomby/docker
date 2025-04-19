@@ -52,11 +52,6 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         let value = ((height - y) / height) * 510 - 255
         value = Math.max(-255, Math.min(255, value))
 
-        const intensity = Math.abs(value) / 255 * 0.3 + 0.2
-        container.style.backgroundColor = `rgba(${
-            motor === 'A' ? '255, 87, 34' : '76, 175, 80'
-        }, ${intensity})`
-
         onChange(value)
     }, [motor, onChange])
 
@@ -83,7 +78,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         const container = containerRef.current
         if (container) {
             container.style.transition = 'background-color 0.3s'
-            container.style.backgroundColor = 'transparent'
+            // container.style.backgroundColor = 'transparent' // эту строку можно оставить или удалить
         }
 
         onChange(0)
