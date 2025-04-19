@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
 
+
 type VideoSettings = {
     rotation: number
     flipH: boolean
@@ -269,21 +270,21 @@ export const VideoCallApp = () => {
                         onClick={() => toggleTab('webrtc')}
                         className={`${styles.tabButton} ${activeTab === 'webrtc' ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'webrtc' ? '▲' : '▼'} Управление
+                        {activeTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera" />
                     </button>
 
                     <button
                         onClick={() => toggleTab('esp')}
                         className={`${styles.tabButton} ${activeTab === 'esp' ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'esp' ? '▲' : '▼'} ESP8266 Control
+                        {activeTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick" />
                     </button>
 
                     <button
                         onClick={() => toggleTab('controls')}
                         className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'controls' ? '▲' : '▼'} Video
+                        {activeTab === 'controls' ? '▲' : '▼'} <img src="/img.svg" alt="Image" />
                     </button>
 
                 </div>
