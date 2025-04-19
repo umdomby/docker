@@ -383,18 +383,19 @@ export default function SocketClient() {
         <div className="flex flex-col items-center min-h-screen p-4 bg-transparent">
             {/* Основной контейнер с управлением */}
             {activeTab === 'esp' && (
-                <div className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-6 border border-gray-200 backdrop-blur-sm">
+                <div className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-4 sm:p-6 border border-gray-200 backdrop-blur-sm"
+                     style={{ maxHeight: '90vh', overflowY: 'auto' }}>
                     {/* Заголовок и статус */}
                     <div className="flex flex-col items-center space-y-2">
                         <div className="flex items-center space-x-2">
-                            <div className={`w-4 h-4 rounded-full ${
+                            <div className={`w-3 h-3 sm:w-4 sm:h-4 rounded-full ${
                                 isConnected
                                     ? (isIdentified
                                         ? (espConnected ? 'bg-green-500' : 'bg-yellow-500')
                                         : 'bg-yellow-500')
                                     : 'bg-red-500'
                             }`}></div>
-                            <span className="text-sm font-medium text-gray-600">
+                            <span className="text-xs sm:text-sm font-medium text-gray-600">
                 {isConnected
                     ? (isIdentified
                         ? (espConnected ? 'Connected' : 'Waiting for ESP')
@@ -405,20 +406,20 @@ export default function SocketClient() {
                     </div>
 
                     {/* Выбор устройства */}
-                    <div className="space-y-2">
-                        <Label className="block text-sm font-medium text-gray-700">Device ID</Label>
+                    <div className="space-y-1 sm:space-y-2">
+                        <Label className="block text-xs sm:text-sm font-medium text-gray-700">Device ID</Label>
                         <div className="flex space-x-2">
                             <Select
                                 value={inputDeviceId}
                                 onValueChange={handleDeviceChange}
                                 disabled={isConnected && !autoReconnect}
                             >
-                                <SelectTrigger className="flex-1 bg-transparent">
+                                <SelectTrigger className="flex-1 bg-transparent h-8 sm:h-10">
                                     <SelectValue placeholder="Select device"/>
                                 </SelectTrigger>
                                 <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
                                     {deviceList.map(id => (
-                                        <SelectItem key={id} value={id} className="hover:bg-gray-100/50">{id}</SelectItem>
+                                        <SelectItem key={id} value={id} className="hover:bg-gray-100/50 text-xs sm:text-sm">{id}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -426,19 +427,19 @@ export default function SocketClient() {
                     </div>
 
                     {/* Добавление нового устройства */}
-                    <div className="space-y-2">
-                        <Label className="block text-sm font-medium text-gray-700">Add New Device</Label>
+                    <div className="space-y-1 sm:space-y-2">
+                        <Label className="block text-xs sm:text-sm font-medium text-gray-700">Add New Device</Label>
                         <div className="flex space-x-2">
                             <Input
                                 value={newDeviceId}
                                 onChange={(e) => setNewDeviceId(e.target.value)}
                                 placeholder="Enter new device ID"
-                                className="flex-1 bg-transparent"
+                                className="flex-1 bg-transparent h-8 sm:h-10 text-xs sm:text-sm"
                             />
                             <Button
                                 onClick={saveNewDeviceId}
                                 disabled={!newDeviceId}
-                                className="bg-blue-600 hover:bg-blue-700"
+                                className="bg-blue-600 hover:bg-blue-700 h-8 sm:h-10 px-2 sm:px-4 text-xs sm:text-sm"
                             >
                                 Add
                             </Button>
@@ -450,29 +451,29 @@ export default function SocketClient() {
                         <Button
                             onClick={() => connectWebSocket(currentDeviceIdRef.current)}
                             disabled={isConnected}
-                            className="flex-1 bg-green-600 hover:bg-green-700"
+                            className="flex-1 bg-green-600 hover:bg-green-700 h-8 sm:h-10 text-xs sm:text-sm"
                         >
                             Connect
                         </Button>
                         <Button
                             onClick={disconnectWebSocket}
                             disabled={!isConnected || autoConnect}
-                            className="flex-1 bg-red-600 hover:bg-red-700"
+                            className="flex-1 bg-red-600 hover:bg-red-700 h-8 sm:h-10 text-xs sm:text-sm"
                         >
                             Disconnect
                         </Button>
                     </div>
 
                     {/* Настройки */}
-                    <div className="space-y-3">
+                    <div className="space-y-2 sm:space-y-3">
                         <div className="flex items-center space-x-2">
                             <Checkbox
                                 id="auto-reconnect"
                                 checked={autoReconnect}
                                 onCheckedChange={toggleAutoReconnect}
-                                className="border-gray-300 bg-transparent"
+                                className="border-gray-300 bg-transparent w-4 h-4 sm:w-5 sm:h-5"
                             />
-                            <Label htmlFor="auto-reconnect" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="auto-reconnect" className="text-xs sm:text-sm font-medium text-gray-700">
                                 Auto reconnect when changing device
                             </Label>
                         </div>
@@ -481,9 +482,9 @@ export default function SocketClient() {
                                 id="auto-connect"
                                 checked={autoConnect}
                                 onCheckedChange={handleAutoConnectChange}
-                                className="border-gray-300 bg-transparent"
+                                className="border-gray-300 bg-transparent w-4 h-4 sm:w-5 sm:h-5"
                             />
-                            <Label htmlFor="auto-connect" className="text-sm font-medium text-gray-700">
+                            <Label htmlFor="auto-connect" className="text-xs sm:text-sm font-medium text-gray-700">
                                 Auto connect on page load
                             </Label>
                         </div>
@@ -492,7 +493,7 @@ export default function SocketClient() {
                     {/* Кнопка открытия контролов */}
                     <Button
                         onClick={handleOpenControls}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700"
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 h-8 sm:h-10 text-xs sm:text-sm"
                     >
                         Controls
                     </Button>
@@ -501,12 +502,12 @@ export default function SocketClient() {
                     <Button
                         onClick={() => setLogVisible(!logVisible)}
                         variant="outline"
-                        className="w-full border-gray-300 bg-transparent hover:bg-gray-100/50"
+                        className="w-full border-gray-300 bg-transparent hover:bg-gray-100/50 h-8 sm:h-10 text-xs sm:text-sm"
                     >
                         {logVisible ? (
-                            <ChevronUp className="h-4 w-4 mr-2"/>
+                            <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-2"/>
                         ) : (
-                            <ChevronDown className="h-4 w-4 mr-2"/>
+                            <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 mr-2"/>
                         )}
                         {logVisible ? "Hide Logs" : "Show Logs"}
                     </Button>
@@ -514,7 +515,7 @@ export default function SocketClient() {
                     {/* Отображение логов */}
                     {logVisible && (
                         <div className="border border-gray-200 rounded-md overflow-hidden bg-transparent backdrop-blur-sm">
-                            <div className="h-48 overflow-y-auto p-2 bg-transparent text-xs font-mono">
+                            <div className="h-32 sm:h-48 overflow-y-auto p-2 bg-transparent text-xs font-mono">
                                 {log.length === 0 ? (
                                     <div className="text-gray-500 italic">No logs yet</div>
                                 ) : (
@@ -540,13 +541,13 @@ export default function SocketClient() {
 
             {/* Диалог моторных контролов */}
             {controlVisible && (
-                <div className="fixed inset-0 flex items-center justify-center z-50">
-                    <div className="w-full max-w-md bg-transparent rounded-lg p-6">
-                        <div className="flex flex-col items-center space-y-4">
-                            <div className="grid grid-cols-2 gap-8 w-full">
+                <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+                    <div className="w-full h-full sm:w-[90vw] sm:h-[90vh] max-w-2xl max-h-[90vh] bg-transparent rounded-lg p-2 sm:p-4">
+                        <div className="flex flex-col items-center justify-center h-full">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full h-full">
                                 {/* Мотор A */}
-                                <div className="flex flex-col items-center">
-                                    <div className="w-full h-64">
+                                <div className="flex flex-col items-center justify-center h-full">
+                                    <div className="w-full h-48 sm:h-64">
                                         <Joystick
                                             motor="A"
                                             onChange={handleMotorAControl}
@@ -554,15 +555,11 @@ export default function SocketClient() {
                                             speed={motorASpeed}
                                         />
                                     </div>
-                                    {/*<div className="mt-2 text-sm">*/}
-                                    {/*    {motorADirection === 'stop' ? 'Stopped' :*/}
-                                    {/*        `${motorADirection} at ${motorASpeed}%`}*/}
-                                    {/*</div>*/}
                                 </div>
 
                                 {/* Мотор B */}
-                                <div className="flex flex-col items-center">
-                                    <div className="w-full h-64">
+                                <div className="flex flex-col items-center justify-center h-full">
+                                    <div className="w-full h-48 sm:h-64">
                                         <Joystick
                                             motor="B"
                                             onChange={handleMotorBControl}
@@ -570,29 +567,15 @@ export default function SocketClient() {
                                             speed={motorBSpeed}
                                         />
                                     </div>
-                                    {/*<div className="mt-2 text-sm">*/}
-                                    {/*    {motorBDirection === 'stop' ? 'Stopped' :*/}
-                                    {/*        `${motorBDirection} at ${motorBSpeed}%`}*/}
-                                    {/*</div>*/}
                                 </div>
                             </div>
-
-                            {/* Кнопка аварийной остановки */}
-                            {/*<Button*/}
-                            {/*    onClick={emergencyStop}*/}
-                            {/*    disabled={!isConnected || !isIdentified}*/}
-                            {/*    variant="destructive"*/}
-                            {/*    className="w-32 mt-4"*/}
-                            {/*>*/}
-                            {/*    Emergency Stop*/}
-                            {/*</Button>*/}
 
                             {/* Кнопка закрытия */}
                             <Button
                                 onClick={handleCloseControls}
-                                className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-6 py-2 rounded-full transition-all"
+                                className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
                                 style={{
-                                    minWidth: '8rem',
+                                    minWidth: '6rem',
                                 }}
                             >
                                 Close
