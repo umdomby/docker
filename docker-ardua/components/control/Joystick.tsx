@@ -1,6 +1,6 @@
 // file: docker-ardua/components/control/Joystick.tsx
 "use client"
-import { useCallback, useRef, useEffect } from 'react'
+import { useCallback, useRef, useEffect, useState } from 'react'
 
 type JoystickProps = {
     motor: 'A' | 'B'
@@ -16,11 +16,39 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
+    const [windowHeight, setWindowHeight] = useState(0)
+
+    // Обновляем высоту окна при изменении размера
+    useEffect(() => {
+        const handleResize = () => {
+            setWindowHeight(window.innerHeight)
+        }
+
+        // Устанавливаем начальное значение
+        handleResize()
+
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
 
     // Стили для разных моторов
     const motorStyles = {
-        A: { bg: 'rgba(255, 87, 34, 0.2)', border: '2px solid #ff5722' },
-        B: { bg: 'rgba(76, 175, 80, 0.2)', border: '2px solid #4caf50' }
+        A: { border: '1px solid #ffffff' },
+        B: { border: '1px solid #ffffff' }
+    }
+
+    // Позиционирование в зависимости от мотора
+    const positionStyles = {
+        A: {
+            left: '0',
+            right: 'auto',
+            marginLeft: '10px'
+        },
+        B: {
+            right: '0',
+            left: 'auto',
+            marginRight: '10px'
+        }
     }
 
     // Обновление значения джойстика
@@ -67,11 +95,11 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         const container = containerRef.current
         if (container) {
             container.style.transition = 'background-color 0.3s'
-            container.style.backgroundColor = motorStyles[motor].bg
+            container.style.backgroundColor = 'transparent'
         }
 
         onChange(0)
-    }, [motor, motorStyles, onChange])
+    }, [onChange])
 
     // Подписка на события
     useEffect(() => {
@@ -133,7 +161,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
-        // Глобальные обработчики для случаев, когда события завершения происходят вне элемента
+        // Глобальные обработчики
         const handleGlobalMouseUp = () => {
             if (isDragging.current) {
                 handleEnd()
@@ -175,17 +203,20 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         <div
             ref={containerRef}
             style={{
-                position: 'relative',
-                width: '100%',
-                height: '100%',
-                minHeight: '150px',
+                position: 'absolute',
+                width: '80px',
+                height: `${windowHeight * 0.5}px`, // 50% высоты окна
+                top: '50%',
+                transform: 'translateY(-50%)',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
                 touchAction: 'none',
                 userSelect: 'none',
-                ...motorStyles[motor]
+                backgroundColor: 'transparent',
+                ...motorStyles[motor],
+                ...positionStyles[motor]
             }}
         >
             <div style={{
