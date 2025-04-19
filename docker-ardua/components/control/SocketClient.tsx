@@ -591,7 +591,10 @@ export default function SocketClient() {
                             {/* Кнопка закрытия */}
                             <Button
                                 onClick={handleCloseControls}
-                                className="w-32 mt-2 bg-gray-600 hover:bg-gray-700"
+                                className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-6 py-2 rounded-full transition-all"
+                                style={{
+                                    minWidth: '8rem',
+                                }}
                             >
                                 Close
                             </Button>
