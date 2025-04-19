@@ -46,10 +46,10 @@ export const Header: React.FC<Props> = ({ className }) => {
                         </Button>
                     </SheetTrigger>
                     <SheetContent
-                        side="left"
+                        side="right"
                         className="w-[280px] sm:w-[300px] bg-background"
                     >
-                        <SheetHeader className="text-left">
+                        <SheetHeader className="text-right">
                             <SheetTitle className="text-foreground">
                                 <Link href="/" className="flex items-center gap-3 p-4">
                                     <h1 className="text-2xl font-black">
