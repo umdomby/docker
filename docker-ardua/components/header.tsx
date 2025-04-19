@@ -23,18 +23,17 @@ export const Header: React.FC<Props> = ({  className }) => {
                 {/* Левая часть */}
                 <Link href="/">
                     <div className="flex items-center gap-4">
-                            <Image
-                                src="/logo.png"
-                                alt="Logo"
-                                width={65}
-                                height={65}
-                                priority
-                            />
+                            {/*<Image*/}
+                            {/*    src="/logo1.png"*/}
+                            {/*    alt="Logo"*/}
+                            {/*    width={65}*/}
+                            {/*    height={65}*/}
+                            {/*    priority*/}
+                            {/*/>*/}
                         <div>
-                            <h1 className="text-2xl uppercase font-black">
-                                HEROES<span className="text-red-500">3</span>
+                            <h1 className="text-2xl font-black">
+                                Ardu<span className="text-red-600">A</span>
                             </h1>
-                            <p className="text-sm text-gray-400 leading-3">SITE</p>
                         </div>
                     </div>
                 </Link>

@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input"
 import { ChevronDown, ChevronUp } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import Joystick from './Joystick'
+import Joystick from '@/components/control/Joystick'
 
 type MessageType = {
     type?: string
