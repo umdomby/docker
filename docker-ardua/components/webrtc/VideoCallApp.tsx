@@ -5,14 +5,12 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import {useEffect, useState, useRef, useCallback} from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { ChevronDown, ChevronUp } from "lucide-react"
 import SocketClient from '../control/SocketClient'
-
 
 type VideoSettings = {
     rotation: number
@@ -26,7 +24,7 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     })
-    const [showLocalVideo, setShowLocalVideo] = useState(true);
+    const [showLocalVideo, setShowLocalVideo] = useState(true)
     const [videoTransform, setVideoTransform] = useState('')
     const [roomId, setRoomId] = useState('room1')
     const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
@@ -34,8 +32,7 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp') // По умолчанию открыта вкладка ESP
-    const [logVisible, setLogVisible] = useState(false)
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
         flipH: false,
@@ -46,6 +43,7 @@ export const VideoCallApp = () => {
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
+    const localAudioTracks = useRef<MediaStreamTrack[]>([])
 
     const {
         localStream,
@@ -59,7 +57,7 @@ export const VideoCallApp = () => {
         error
     } = useWebRTC(selectedDevices, username, roomId)
 
-    // Загрузка настроек звука из localStorage
+    // Загрузка настроек из localStorage
     useEffect(() => {
         const savedMuteLocal = localStorage.getItem('muteLocalAudio')
         if (savedMuteLocal !== null) {
@@ -70,17 +68,29 @@ export const VideoCallApp = () => {
         if (savedMuteRemote !== null) {
             setMuteRemoteAudio(savedMuteRemote === 'true')
         }
+
+        const savedShowLocalVideo = localStorage.getItem('showLocalVideo')
+        if (savedShowLocalVideo !== null) {
+            setShowLocalVideo(savedShowLocalVideo === 'true')
+        }
+
+        const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
+        setAutoJoin(savedAutoJoin)
+        loadSettings()
+        loadDevices()
     }, [])
 
-    // Применение настроек звука к потокам
+    // Управление локальным звуком
     useEffect(() => {
         if (localStream) {
-            localStream.getAudioTracks().forEach(track => {
+            localAudioTracks.current = localStream.getAudioTracks()
+            localAudioTracks.current.forEach(track => {
                 track.enabled = !muteLocalAudio
             })
         }
     }, [localStream, muteLocalAudio])
 
+    // Управление удаленным звуком
     useEffect(() => {
         if (remoteStream) {
             remoteStream.getAudioTracks().forEach(track => {
@@ -116,9 +126,6 @@ export const VideoCallApp = () => {
         if (remoteVideoRef.current) {
             remoteVideoRef.current.style.transform = transform
             remoteVideoRef.current.style.transformOrigin = 'center center'
-            remoteVideoRef.current.style.width = '100%'
-            remoteVideoRef.current.style.height = '100%'
-            remoteVideoRef.current.style.objectFit = 'contain'
         }
     }
 
@@ -139,18 +146,9 @@ export const VideoCallApp = () => {
             const savedVideoDevice = localStorage.getItem('videoDevice')
             const savedAudioDevice = localStorage.getItem('audioDevice')
 
-            const videoDevice = devices.find(d =>
-                d.kind === 'videoinput' &&
-                (savedVideoDevice ? d.deviceId === savedVideoDevice : true)
-            )
-            const audioDevice = devices.find(d =>
-                d.kind === 'audioinput' &&
-                (savedAudioDevice ? d.deviceId === savedAudioDevice : true)
-            )
-
             setSelectedDevices({
-                video: videoDevice?.deviceId || '',
-                audio: audioDevice?.deviceId || ''
+                video: savedVideoDevice || '',
+                audio: savedAudioDevice || ''
             })
         } catch (error) {
             console.error('Device access error:', error)
@@ -159,52 +157,11 @@ export const VideoCallApp = () => {
         }
     }
 
-    useEffect(() => {
-        const savedShowLocalVideo = localStorage.getItem('showLocalVideo');
-        if (savedShowLocalVideo !== null) {
-            setShowLocalVideo(savedShowLocalVideo === 'true');
-        }
-    }, []);
-
     const toggleLocalVideo = () => {
-        const newState = !showLocalVideo;
-        setShowLocalVideo(newState);
-        localStorage.setItem('showLocalVideo', String(newState));
-    };
-
-    useEffect(() => {
-        const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
-        setAutoJoin(savedAutoJoin)
-        loadSettings()
-        loadDevices()
-
-        const handleFullscreenChange = () => {
-            const isNowFullscreen = !!document.fullscreenElement
-            setIsFullscreen(isNowFullscreen)
-
-            if (remoteVideoRef.current) {
-                setTimeout(() => {
-                    applyVideoTransform(videoSettings)
-                }, 50)
-            }
-        }
-
-        document.addEventListener('fullscreenchange', handleFullscreenChange)
-        return () => {
-            document.removeEventListener('fullscreenchange', handleFullscreenChange)
-        }
-    }, [])
-
-    useEffect(() => {
-        if (autoJoin && hasPermission && devicesLoaded && selectedDevices.video && selectedDevices.audio) {
-            joinRoom(username)
-        }
-    }, [autoJoin, hasPermission, devicesLoaded, selectedDevices])
-
-    useEffect(() => {
-        if (selectedDevices.video) localStorage.setItem('videoDevice', selectedDevices.video)
-        if (selectedDevices.audio) localStorage.setItem('audioDevice', selectedDevices.audio)
-    }, [selectedDevices])
+        const newState = !showLocalVideo
+        setShowLocalVideo(newState)
+        localStorage.setItem('showLocalVideo', String(newState))
+    }
 
     const updateVideoSettings = (newSettings: Partial<VideoSettings>) => {
         const updated = { ...videoSettings, ...newSettings }
@@ -218,6 +175,7 @@ export const VideoCallApp = () => {
             ...prev,
             [type]: deviceId
         }))
+        localStorage.setItem(`${type}Device`, deviceId)
     }
 
     const handleJoinRoom = async () => {
@@ -237,14 +195,33 @@ export const VideoCallApp = () => {
         try {
             if (!document.fullscreenElement) {
                 await videoContainerRef.current.requestFullscreen()
-                setTimeout(() => {
-                    applyVideoTransform(videoSettings)
-                }, 50)
             } else {
                 await document.exitFullscreen()
             }
         } catch (err) {
             console.error('Fullscreen error:', err)
+        }
+    }
+
+    const toggleMuteLocalAudio = () => {
+        const newState = !muteLocalAudio
+        setMuteLocalAudio(newState)
+        localStorage.setItem('muteLocalAudio', String(newState))
+
+        localAudioTracks.current.forEach(track => {
+            track.enabled = !newState
+        })
+    }
+
+    const toggleMuteRemoteAudio = () => {
+        const newState = !muteRemoteAudio
+        setMuteRemoteAudio(newState)
+        localStorage.setItem('muteRemoteAudio', String(newState))
+
+        if (remoteStream) {
+            remoteStream.getAudioTracks().forEach(track => {
+                track.enabled = !newState
+            })
         }
     }
 
@@ -268,47 +245,16 @@ export const VideoCallApp = () => {
         setActiveTab(activeTab === tab ? null : tab)
     }
 
-    // Функции для управления звуком
-    const toggleMuteLocalAudio = () => {
-        const newState = !muteLocalAudio
-        setMuteLocalAudio(newState)
-        localStorage.setItem('muteLocalAudio', String(newState))
-
-        if (localStream) {
-            localStream.getAudioTracks().forEach(track => {
-                track.enabled = !newState
-            })
-        }
-    }
-
-    const toggleMuteRemoteAudio = () => {
-        const newState = !muteRemoteAudio
-        setMuteRemoteAudio(newState)
-        localStorage.setItem('muteRemoteAudio', String(newState))
-
-        if (remoteStream) {
-            remoteStream.getAudioTracks().forEach(track => {
-                track.enabled = !newState
-            })
-        }
-    }
-
     return (
         <div className={styles.container}>
-            {/* Основное видео (удаленный участник) */}
-            <div
-                ref={videoContainerRef}
-                className={styles.remoteVideoContainer}
-            >
+            <div ref={videoContainerRef} className={styles.remoteVideoContainer}>
                 <VideoPlayer
                     stream={remoteStream}
                     className={styles.remoteVideo}
                     transform={videoTransform}
                 />
-                {/*<div className={styles.remoteVideoLabel}>Удаленный участник</div>*/}
             </div>
 
-            {/* Локальное видео (маленькое в углу) */}
             {showLocalVideo && (
                 <div className={styles.localVideoContainer}>
                     <VideoPlayer
@@ -320,7 +266,6 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            {/* Панель управления сверху */}
             <div className={styles.topControls}>
                 <div className={styles.tabsContainer}>
                     <button
@@ -329,25 +274,21 @@ export const VideoCallApp = () => {
                     >
                         {activeTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera" />
                     </button>
-
                     <button
                         onClick={() => toggleTab('esp')}
                         className={`${styles.tabButton} ${activeTab === 'esp' ? styles.activeTab : ''}`}
                     >
                         {activeTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick" />
                     </button>
-
                     <button
                         onClick={() => toggleTab('controls')}
                         className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
                     >
                         {activeTab === 'controls' ? '▲' : '▼'} <img src="/img.svg" alt="Image" />
                     </button>
-
                 </div>
             </div>
 
-            {/* Контент вкладок */}
             {activeTab === 'webrtc' && (
                 <div className={styles.tabContent}>
                     {error && <div className={styles.error}>{error}</div>}
@@ -367,9 +308,7 @@ export const VideoCallApp = () => {
                                         localStorage.setItem('autoJoin', checked ? 'true' : 'false')
                                     }}
                                 />
-                                <Label htmlFor="autoJoin">
-                                    Автоматическое подключение
-                                </Label>
+                                <Label htmlFor="autoJoin">Автоматическое подключение</Label>
                             </div>
                         </div>
 
@@ -402,10 +341,7 @@ export const VideoCallApp = () => {
                                 {isJoining ? 'Подключение...' : 'Войти в комнату'}
                             </Button>
                         ) : (
-                            <Button
-                                onClick={leaveRoom}
-                                className={styles.button}
-                            >
+                            <Button onClick={leaveRoom} className={styles.button}>
                                 Покинуть комнату
                             </Button>
                         )}
@@ -441,6 +377,7 @@ export const VideoCallApp = () => {
                     <SocketClient/>
                 </div>
             )}
+
             {activeTab === 'controls' && (
                 <div className={styles.tabContent}>
                     <div className={styles.videoControlsTab}>
@@ -508,35 +445,21 @@ export const VideoCallApp = () => {
                             >
                                 {showLocalVideo ? '👁' : '👁‍🗨'}
                             </button>
-                            {/* Кнопка для отключения отправки локального звука */}
                             <button
                                 onClick={toggleMuteLocalAudio}
                                 className={`${styles.controlButton} ${muteLocalAudio ? styles.active : ''}`}
-                                title={muteLocalAudio ? 'Включить отправку звука' : 'Отключить отправку звука'}
+                                title={muteLocalAudio ? 'Включить микрофон' : 'Отключить микрофон'}
                             >
-                                {muteLocalAudio ? '🔇' : '🎤'}
+                                {muteLocalAudio ? '🎤🔇' : '🎤'}
                             </button>
-                            {/* Кнопка для отключения получения удаленного звука */}
                             <button
                                 onClick={toggleMuteRemoteAudio}
                                 className={`${styles.controlButton} ${muteRemoteAudio ? styles.active : ''}`}
-                                title={muteRemoteAudio ? 'Включить получение звука' : 'Отключить получение звука'}
+                                title={muteRemoteAudio ? 'Включить звук' : 'Отключить звук'}
                             >
-                                {muteRemoteAudio ? '🔇' : '🔊'}
+                                {muteRemoteAudio ? '🔈🔇' : '🔈'}
                             </button>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {logVisible && (
-                <div className={styles.logsPanel}>
-                    <div className={styles.logsContent}>
-                        {[...Array(50)].map((_, i) => (
-                            <div key={i} className={styles.logEntry}>
-                                Sample log entry {i + 1}
-                            </div>
-                        ))}
                     </div>
                 </div>
             )}
