@@ -25,6 +25,7 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     })
+    const [showLocalVideo, setShowLocalVideo] = useState(true);
     const [videoTransform, setVideoTransform] = useState('')
     const [roomId, setRoomId] = useState('room1')
     const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
@@ -124,6 +125,19 @@ export const VideoCallApp = () => {
             setDevicesLoaded(true)
         }
     }
+
+    useEffect(() => {
+        const savedShowLocalVideo = localStorage.getItem('showLocalVideo');
+        if (savedShowLocalVideo !== null) {
+            setShowLocalVideo(savedShowLocalVideo === 'true');
+        }
+    }, []);
+
+    const toggleLocalVideo = () => {
+        const newState = !showLocalVideo;
+        setShowLocalVideo(newState);
+        localStorage.setItem('showLocalVideo', String(newState));
+    };
 
     useEffect(() => {
         const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
@@ -237,14 +251,16 @@ export const VideoCallApp = () => {
             </div>
 
             {/* Локальное видео (маленькое в углу) */}
-            <div className={styles.localVideoContainer}>
-                <VideoPlayer
-                    stream={localStream}
-                    muted
-                    className={styles.localVideo}
-                />
-                <div className={styles.localVideoLabel}>Вы ({username})</div>
-            </div>
+            {showLocalVideo && (
+                <div className={styles.localVideoContainer}>
+                    <VideoPlayer
+                        stream={localStream}
+                        muted
+                        className={styles.localVideo}
+                    />
+                    <div className={styles.localVideoLabel}>Вы ({username})</div>
+                </div>
+            )}
 
             {/* Панель управления сверху */}
             <div className={styles.topControls}>
@@ -427,6 +443,13 @@ export const VideoCallApp = () => {
                                 title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}
                             >
                                 {isFullscreen ? '✕' : '⛶'}
+                            </button>
+                            <button
+                                onClick={toggleLocalVideo}
+                                className={`${styles.controlButton} ${!showLocalVideo ? styles.active : ''}`}
+                                title={showLocalVideo ? 'Скрыть локальное видео' : 'Показать локальное видео'}
+                            >
+                                {showLocalVideo ? '👁' : '👁‍🗨'}
                             </button>
                         </div>
                     </div>
