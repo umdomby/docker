@@ -541,7 +541,7 @@ export default function SocketClient() {
 
             {/* Диалог моторных контролов */}
             {controlVisible && (
-                <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50">
+                <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 noSelect">
                     <div className="w-full h-full sm:w-[90vw] sm:h-[90vh] max-w-2xl max-h-[90vh] bg-transparent rounded-lg p-2 sm:p-4">
                         <div className="flex flex-col items-center justify-center h-full">
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full h-full">

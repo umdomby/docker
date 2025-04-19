@@ -107,23 +107,25 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         if (!container) return
 
         const onTouchStart = (e: TouchEvent) => {
+            e.preventDefault(); // Добавьте эту строку
             if (touchId.current === null) {
-                const touch = e.changedTouches[0]
-                touchId.current = touch.identifier
-                handleStart(touch.clientY)
+                const touch = e.changedTouches[0];
+                touchId.current = touch.identifier;
+                handleStart(touch.clientY);
             }
-        }
+        };
 
         const onTouchMove = (e: TouchEvent) => {
+            e.preventDefault(); // Добавьте эту строку
             if (touchId.current !== null) {
                 const touch = Array.from(e.changedTouches).find(
                     t => t.identifier === touchId.current
-                )
+                );
                 if (touch) {
-                    handleMove(touch.clientY)
+                    handleMove(touch.clientY);
                 }
             }
-        }
+        };
 
         const onTouchEnd = (e: TouchEvent) => {
             if (touchId.current !== null) {
@@ -136,15 +138,16 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
             }
         }
 
+        // И в обработчиках мыши
         const onMouseDown = (e: MouseEvent) => {
-            e.preventDefault()
-            handleStart(e.clientY)
-        }
+            e.preventDefault();
+            handleStart(e.clientY);
+        };
 
         const onMouseMove = (e: MouseEvent) => {
-            e.preventDefault()
-            handleMove(e.clientY)
-        }
+            e.preventDefault();
+            handleMove(e.clientY);
+        };
 
         const onMouseUp = () => {
             handleEnd()
@@ -202,10 +205,11 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
     return (
         <div
             ref={containerRef}
+            className="noSelect" // Добавьте этот класс
             style={{
                 position: 'absolute',
                 width: '80px',
-                height: `${windowHeight * 0.5}px`, // 50% высоты окна
+                height: `${windowHeight * 0.5}px`,
                 top: '50%',
                 transform: 'translateY(-50%)',
                 borderRadius: '8px',
