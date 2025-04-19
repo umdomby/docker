@@ -120,7 +120,7 @@ export const useWebRTC = (
             }
 
             try {
-                ws.current = new WebSocket('wss://anybet.site/ws');
+                ws.current = new WebSocket('wss://ardua.site/ws');
 
                 const onOpen = () => {
                     cleanupEvents();

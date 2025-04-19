@@ -41,6 +41,8 @@ export const VideoCallApp = () => {
         flipH: false,
         flipV: false
     })
+    const [muteLocalAudio, setMuteLocalAudio] = useState(false)
+    const [muteRemoteAudio, setMuteRemoteAudio] = useState(false)
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
@@ -56,6 +58,36 @@ export const VideoCallApp = () => {
         isInRoom,
         error
     } = useWebRTC(selectedDevices, username, roomId)
+
+    // Загрузка настроек звука из localStorage
+    useEffect(() => {
+        const savedMuteLocal = localStorage.getItem('muteLocalAudio')
+        if (savedMuteLocal !== null) {
+            setMuteLocalAudio(savedMuteLocal === 'true')
+        }
+
+        const savedMuteRemote = localStorage.getItem('muteRemoteAudio')
+        if (savedMuteRemote !== null) {
+            setMuteRemoteAudio(savedMuteRemote === 'true')
+        }
+    }, [])
+
+    // Применение настроек звука к потокам
+    useEffect(() => {
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !muteLocalAudio
+            })
+        }
+    }, [localStream, muteLocalAudio])
+
+    useEffect(() => {
+        if (remoteStream) {
+            remoteStream.getAudioTracks().forEach(track => {
+                track.enabled = !muteRemoteAudio
+            })
+        }
+    }, [remoteStream, muteRemoteAudio])
 
     const loadSettings = () => {
         try {
@@ -234,6 +266,31 @@ export const VideoCallApp = () => {
 
     const toggleTab = (tab: 'webrtc' | 'esp' | 'controls') => {
         setActiveTab(activeTab === tab ? null : tab)
+    }
+
+    // Функции для управления звуком
+    const toggleMuteLocalAudio = () => {
+        const newState = !muteLocalAudio
+        setMuteLocalAudio(newState)
+        localStorage.setItem('muteLocalAudio', String(newState))
+
+        if (localStream) {
+            localStream.getAudioTracks().forEach(track => {
+                track.enabled = !newState
+            })
+        }
+    }
+
+    const toggleMuteRemoteAudio = () => {
+        const newState = !muteRemoteAudio
+        setMuteRemoteAudio(newState)
+        localStorage.setItem('muteRemoteAudio', String(newState))
+
+        if (remoteStream) {
+            remoteStream.getAudioTracks().forEach(track => {
+                track.enabled = !newState
+            })
+        }
     }
 
     return (
@@ -450,6 +507,22 @@ export const VideoCallApp = () => {
                                 title={showLocalVideo ? 'Скрыть локальное видео' : 'Показать локальное видео'}
                             >
                                 {showLocalVideo ? '👁' : '👁‍🗨'}
+                            </button>
+                            {/* Кнопка для отключения отправки локального звука */}
+                            <button
+                                onClick={toggleMuteLocalAudio}
+                                className={`${styles.controlButton} ${muteLocalAudio ? styles.active : ''}`}
+                                title={muteLocalAudio ? 'Включить отправку звука' : 'Отключить отправку звука'}
+                            >
+                                {muteLocalAudio ? '🔇' : '🎤'}
+                            </button>
+                            {/* Кнопка для отключения получения удаленного звука */}
+                            <button
+                                onClick={toggleMuteRemoteAudio}
+                                className={`${styles.controlButton} ${muteRemoteAudio ? styles.active : ''}`}
+                                title={muteRemoteAudio ? 'Включить получение звука' : 'Отключить получение звука'}
+                            >
+                                {muteRemoteAudio ? '🔇' : '🔊'}
                             </button>
                         </div>
                     </div>
