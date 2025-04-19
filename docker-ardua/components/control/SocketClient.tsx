@@ -502,7 +502,7 @@ export default function SocketClient() {
                     <Button
                         onClick={() => setLogVisible(!logVisible)}
                         variant="outline"
-                        className="w-full border-gray-300 bg-transparent hover:bg-gray-100/50 h-8 sm:h-10 text-xs sm:text-sm"
+                        className="w-full border-gray-300 bg-transparent hover:bg-gray-100/50 h-8 sm:h-10 text-xs sm:text-sm text-gray-700"
                     >
                         {logVisible ? (
                             <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 mr-2"/>

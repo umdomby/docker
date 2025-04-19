@@ -112,7 +112,7 @@
 
 .controlButton {
     background-color: rgba(255, 255, 255, 0.15);
-    color: white;
+    color: #a6a6a6;
     border: none;
     border-radius: 20px;
     min-width: 40px;
@@ -160,6 +160,7 @@
 }
 
 .inputGroup {
+    color: #6a6a6a;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -173,6 +174,7 @@
 }
 
 .userList {
+    color: #6a6a6a;
     margin-top: 20px;
     background-color: rgba(255, 255, 255, 0.1);
     padding: 15px;
@@ -211,15 +213,16 @@
 
 .connectionStatus {
     padding: 12px;
-    background-color: rgba(255, 255, 255, 0.1);
+    /*background-color: rgba(255, 255, 255, 0.1);*/
     border-radius: 6px;
     margin-bottom: 15px;
     font-weight: 500;
 }
 
 .deviceSelection {
+    color: #6a6a6a;
     margin-top: 20px;
-    background-color: rgba(255, 255, 255, 0.1);
+    /*background-color: rgba(255, 255, 255, 0.1);*/
     padding: 15px;
     border-radius: 8px;
 }
@@ -289,8 +292,8 @@
     top: 70px;
     left: 0;
     right: 0;
-    background-color: rgba(0, 0, 0, 0);
-    color: white;
+    /*background-color: rgba(0, 0, 0, 0);*/
+    color: #c3c3c3;
     z-index: 15;
     max-height: calc(100vh - 0px);
     overflow-y: auto;
