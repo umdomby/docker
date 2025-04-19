@@ -1,3 +1,4 @@
+/* file: docker-ardua/components/webrtc/styles.module.css */
 .container {
     position: relative;
     width: 100vw;
@@ -64,12 +65,10 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: rgba(0, 0, 0, 0.7);
     color: white;
     padding: 8px 12px;
     font-size: 14px;
     text-align: center;
-    backdrop-filter: blur(5px);
 }
 
 .topControls {
@@ -81,8 +80,6 @@
     justify-content: space-between;
     padding: 15px;
     z-index: 20;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(8px);
 }
 
 .toggleControlsButton {
@@ -135,22 +132,6 @@
     color: white;
 }
 
-.controlsOverlay {
-    position: absolute;
-    top: 70px;
-    left: 0;
-    right: 0;
-    background-color: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 25px;
-    z-index: 15;
-    max-height: calc(100vh - 100px);
-    overflow-y: auto;
-    backdrop-filter: blur(10px);
-    border-radius: 0 0 12px 12px;
-    animation: fadeIn 0.3s ease-out;
-}
-
 .controls {
     display: flex;
     flex-direction: column;
@@ -174,7 +155,6 @@
 
 .userList {
     margin-top: 20px;
-    background-color: rgba(255, 255, 255, 0.1);
     padding: 15px;
     border-radius: 8px;
 }
@@ -196,13 +176,11 @@
 
 .userList li {
     padding: 8px 12px;
-    background-color: rgba(255, 255, 255, 0.1);
     border-radius: 6px;
 }
 
 .error {
     color: #ff6b6b;
-    background-color: rgba(255, 107, 107, 0.1);
     padding: 12px;
     border-radius: 6px;
     border-left: 4px solid #ff6b6b;
@@ -211,7 +189,6 @@
 
 .connectionStatus {
     padding: 12px;
-    background-color: rgba(255, 255, 255, 0.1);
     border-radius: 6px;
     margin-bottom: 15px;
     font-weight: 500;
@@ -219,7 +196,6 @@
 
 .deviceSelection {
     margin-top: 20px;
-    background-color: rgba(255, 255, 255, 0.1);
     padding: 15px;
     border-radius: 8px;
 }
@@ -238,10 +214,6 @@
     .localVideoContainer {
         width: 25vw;
         height: 20vh;
-    }
-
-    .controlsOverlay {
-        padding: 15px;
     }
 
     .controlButton {
@@ -284,22 +256,6 @@
     background-color: rgba(0, 150, 255, 0.7);
 }
 
-.tabContent {
-    position: absolute;
-    top: 70px;
-    left: 0;
-    right: 0;
-    background-color: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 25px;
-    z-index: 15;
-    max-height: calc(100vh - 100px);
-    overflow-y: auto;
-    backdrop-filter: blur(10px);
-    border-radius: 0 0 12px 12px;
-    animation: fadeIn 0.3s ease-out;
-}
-
 .videoControlsTab {
     display: flex;
     flex-direction: column;
@@ -320,11 +276,9 @@
     right: 0;
     bottom: 0;
     width: 300px;
-    background-color: rgba(0, 0, 0, 0.9);
     z-index: 1000;
     padding: 15px;
     overflow-y: auto;
-    backdrop-filter: blur(5px);
     user-select: none;
     pointer-events: none;
 }
@@ -354,15 +308,10 @@
         font-size: 12px;
     }
 
-    .tabContent {
-        padding: 15px;
-    }
-
     .logsPanel {
         width: 200px;
     }
 }
-
 
 .statusIndicator {
     display: flex;
@@ -371,8 +320,6 @@
     margin-left: 15px;
     padding: 6px 12px;
     border-radius: 20px;
-    background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(5px);
 }
 
 .statusDot {
@@ -409,8 +356,7 @@
 }
 
 .statusIndicator {
-    /* существующие стили */
-    will-change: contents; /* Оптимизация для браузера */
+    will-change: contents;
 }
 
 .statusDot, .statusText {

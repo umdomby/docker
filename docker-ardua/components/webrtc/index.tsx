@@ -27,7 +27,7 @@ export default function WebRTCPage() {
 
     if (isSupported === false) {
         return (
-            <div className={styles.errorContainer}>
+            <div>
                 <h1>WebRTC is not supported in your browser</h1>
                 <p>Please use a modern browser like Chrome, Firefox or Edge.</p>
             </div>

@@ -544,13 +544,9 @@ export default function SocketClient() {
                 <div className="fixed inset-0 flex items-center justify-center z-50">
                     <div className="w-full max-w-md bg-transparent rounded-lg p-6">
                         <div className="flex flex-col items-center space-y-4">
-                            <h2 className="text-2xl font-bold text-gray-800">Motor Controls</h2>
-                            <p className="text-gray-600">Use the joysticks to control each motor</p>
-
                             <div className="grid grid-cols-2 gap-8 w-full">
                                 {/* Мотор A */}
                                 <div className="flex flex-col items-center">
-                                    <h3 className="font-medium mb-2">Motor A</h3>
                                     <div className="w-full h-64">
                                         <Joystick
                                             motor="A"
@@ -559,15 +555,14 @@ export default function SocketClient() {
                                             speed={motorASpeed}
                                         />
                                     </div>
-                                    <div className="mt-2 text-sm">
-                                        {motorADirection === 'stop' ? 'Stopped' :
-                                            `${motorADirection} at ${motorASpeed}%`}
-                                    </div>
+                                    {/*<div className="mt-2 text-sm">*/}
+                                    {/*    {motorADirection === 'stop' ? 'Stopped' :*/}
+                                    {/*        `${motorADirection} at ${motorASpeed}%`}*/}
+                                    {/*</div>*/}
                                 </div>
 
                                 {/* Мотор B */}
                                 <div className="flex flex-col items-center">
-                                    <h3 className="font-medium mb-2">Motor B</h3>
                                     <div className="w-full h-64">
                                         <Joystick
                                             motor="B"
@@ -576,22 +571,22 @@ export default function SocketClient() {
                                             speed={motorBSpeed}
                                         />
                                     </div>
-                                    <div className="mt-2 text-sm">
-                                        {motorBDirection === 'stop' ? 'Stopped' :
-                                            `${motorBDirection} at ${motorBSpeed}%`}
-                                    </div>
+                                    {/*<div className="mt-2 text-sm">*/}
+                                    {/*    {motorBDirection === 'stop' ? 'Stopped' :*/}
+                                    {/*        `${motorBDirection} at ${motorBSpeed}%`}*/}
+                                    {/*</div>*/}
                                 </div>
                             </div>
 
                             {/* Кнопка аварийной остановки */}
-                            <Button
-                                onClick={emergencyStop}
-                                disabled={!isConnected || !isIdentified}
-                                variant="destructive"
-                                className="w-32 mt-4"
-                            >
-                                Emergency Stop
-                            </Button>
+                            {/*<Button*/}
+                            {/*    onClick={emergencyStop}*/}
+                            {/*    disabled={!isConnected || !isIdentified}*/}
+                            {/*    variant="destructive"*/}
+                            {/*    className="w-32 mt-4"*/}
+                            {/*>*/}
+                            {/*    Emergency Stop*/}
+                            {/*</Button>*/}
 
                             {/* Кнопка закрытия */}
                             <Button

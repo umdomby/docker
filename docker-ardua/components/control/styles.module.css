@@ -4,12 +4,10 @@
     top: 20px;
     left: 20px;
     z-index: 1000;
-    background: transparent;
 }
 
 .sheetTrigger {
     padding: 8px 16px;
-    background: transparent;
 }
 
 .sheetContent {
@@ -17,7 +15,6 @@
     display: flex;
     flex-direction: column;
     padding: 20px;
-    background: transparent;
 }
 
 .controlsContainer {
@@ -26,7 +23,6 @@
     gap: 16px;
     margin-top: 20px;
     flex: 1;
-    background: transparent;
 }
 
 .statusIndicator {
@@ -34,7 +30,6 @@
     align-items: center;
     gap: 8px;
     margin-bottom: 10px;
-    background: transparent;
 }
 
 .statusDot {
@@ -59,34 +54,28 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: transparent;
 }
 
 .selectTrigger {
     width: 100%;
-    background: transparent;
 }
 
 .newDevice {
     display: flex;
     gap: 8px;
-    background: transparent;
 }
 
 .newDeviceInput {
     flex: 1;
-    background: transparent;
 }
 
 .addButton {
     min-width: 60px;
-    background: transparent;
 }
 
 .connectionButtons {
     display: flex;
     gap: 8px;
-    background: transparent;
 }
 
 .connectButton {
@@ -100,40 +89,34 @@
 
 .disconnectButton {
     flex: 1;
-    background: transparent;
 }
 
 .checkboxGroup {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    background: transparent;
 }
 
 .checkboxItem {
     display: flex;
     align-items: center;
     gap: 8px;
-    background: transparent;
 }
 
 .checkbox {
     width: 16px;
     height: 16px;
-    background: transparent;
 }
 
 .showControlsButton {
     width: 100%;
     margin-top: 10px;
-    background: transparent;
 }
 
 .logsButton {
     width: 100%;
     justify-content: center;
     margin-top: 10px;
-    background: transparent;
 }
 
 .logContainer {
@@ -141,15 +124,12 @@
     border-radius: 6px;
     overflow: hidden;
     margin-top: 10px;
-    background: transparent;
-    backdrop-filter: blur(10px);
 }
 
 .logContent {
     height: 150px;
     overflow-y: auto;
     padding: 8px;
-    background: rgba(249, 250, 251, 0.5);
     line-height: 1.5;
 }
 
@@ -158,7 +138,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    background: transparent;
 }
 
 .clientLog {
@@ -181,7 +160,6 @@
 .closeButton {
     margin-top: 20px;
     width: 100%;
-    background: transparent;
 }
 
 .joystickDialog {
@@ -189,7 +167,6 @@
     max-width: 500px;
     height: 70vh;
     padding: 0;
-    background: transparent;
 }
 
 .joystickContainer {
@@ -199,20 +176,17 @@
     justify-content: space-between;
     gap: 20px;
     padding: 20px;
-    background: transparent;
 }
 
 .joystickWrapper {
     width: calc(50% - 10px);
     height: 70%;
-    background: transparent;
 }
 
 .emergencyStop {
     display: flex;
     justify-content: center;
     padding: 10px;
-    background: transparent;
 }
 
 .estopButton {
@@ -241,7 +215,6 @@
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 500;
-    background: transparent;
 }
 
 .statusBadgeConnected {
@@ -264,7 +237,6 @@
     width: 100%;
     height: 100%;
     border-radius: 50%;
-    background: rgba(243, 244, 246, 0.5);
     touch-action: none;
 }
 
@@ -286,7 +258,6 @@
     transform: translateX(-50%);
     font-weight: 600;
     color: #374151;
-    background: transparent;
 }
 
 .speedIndicator {
@@ -296,13 +267,11 @@
     transform: translateX(-50%);
     font-size: 0.75rem;
     color: #6b7280;
-    background: transparent;
 }
 
 .logEntryLine {
     padding: 0.25rem 0;
     border-bottom: 1px solid rgba(229, 231, 235, 0.5);
-    background: transparent;
 }
 
 .logEntryLine:last-child {
