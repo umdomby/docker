@@ -32,7 +32,7 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>(null) // По умолчанию открыта вкладка ESP
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp') // По умолчанию открыта вкладка ESP
     const [logVisible, setLogVisible] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
