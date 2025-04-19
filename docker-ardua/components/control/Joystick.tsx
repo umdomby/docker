@@ -138,7 +138,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
             }
         }
 
-        // И в обработчиках мыши
+            // И в обработчиках мыши
         const onMouseDown = (e: MouseEvent) => {
             e.preventDefault();
             handleStart(e.clientY);

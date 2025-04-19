@@ -288,3 +288,8 @@
     touch-action: none;
     -webkit-tap-highlight-color: transparent;
 }
+
+.controls-overlay {
+    background-color: transparent !important;
+    backdrop-filter: none !important;
+}
