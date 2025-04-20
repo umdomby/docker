@@ -1,11 +1,11 @@
 "use client"
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { ChevronDown, ChevronUp } from "lucide-react"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
+import {useState, useEffect, useRef, useCallback} from 'react'
+import {Button} from "@/components/ui/button"
+import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
+import {Input} from "@/components/ui/input"
+import {ChevronDown, ChevronUp} from "lucide-react"
+import {Checkbox} from "@/components/ui/checkbox"
+import {Label} from "@/components/ui/label"
 import Joystick from '@/components/control/Joystick'
 
 type MessageType = {
@@ -49,8 +49,8 @@ export default function SocketClient() {
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const lastMotorACommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
-    const lastMotorBCommandRef = useRef<{speed: number, direction: 'forward' | 'backward' | 'stop'} | null>(null)
+    const lastMotorACommandRef = useRef<{ speed: number, direction: 'forward' | 'backward' | 'stop' } | null>(null)
+    const lastMotorBCommandRef = useRef<{ speed: number, direction: 'forward' | 'backward' | 'stop' } | null>(null)
     const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const currentDeviceIdRef = useRef(inputDeviceId)
@@ -183,28 +183,23 @@ export default function SocketClient() {
                         setDeviceId(deviceIdToConnect)
                     }
                     addLog(`System: ${data.message}`, 'server')
-                }
-                else if (data.type === "error") {
+                } else if (data.type === "error") {
                     addLog(`Error: ${data.message}`, 'error')
                     setIsIdentified(false)
-                }
-                else if (data.type === "log") {
+                } else if (data.type === "log") {
                     addLog(`ESP: ${data.message}`, 'esp')
                     if (data.message && data.message.includes("Heartbeat")) {
                         setEspConnected(true)
                     }
-                }
-                else if (data.type === "esp_status") {
+                } else if (data.type === "esp_status") {
                     console.log(`Received ESP status: ${data.status}`)
                     setEspConnected(data.status === "connected")
                     addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
                         data.status === "connected" ? 'esp' : 'error')
-                }
-                else if (data.type === "command_ack") {
+                } else if (data.type === "command_ack") {
                     if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
                     addLog(`ESP executed command: ${data.command}`, 'esp')
-                }
-                else if (data.type === "command_status") {
+                } else if (data.type === "command_status") {
                     addLog(`Command ${data.command} delivered to ESP`, 'server')
                 }
             } catch (error) {
@@ -222,7 +217,7 @@ export default function SocketClient() {
             if (reconnectAttemptRef.current < 5) {
                 reconnectAttemptRef.current += 1
                 const delay = Math.min(5000, reconnectAttemptRef.current * 1000)
-                addLog(`Attempting to reconnect in ${delay/1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
+                addLog(`Attempting to reconnect in ${delay / 1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
 
                 reconnectTimerRef.current = setTimeout(() => {
                     connectWebSocket(currentDeviceIdRef.current)
@@ -334,7 +329,7 @@ export default function SocketClient() {
             setSpeed(speed)
             setDirection(direction)
 
-            const currentCommand = { speed, direction }
+            const currentCommand = {speed, direction}
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
                 return
             }
@@ -346,12 +341,12 @@ export default function SocketClient() {
             }
 
             if (speed === 0) {
-                sendCommand("set_speed", { motor, speed: 0 })
+                sendCommand("set_speed", {motor, speed: 0})
                 return
             }
 
             throttleRef.current = setTimeout(() => {
-                sendCommand("set_speed", { motor, speed })
+                sendCommand("set_speed", {motor, speed})
                 sendCommand(direction === 'forward'
                     ? `motor_${motor.toLowerCase()}_forward`
                     : `motor_${motor.toLowerCase()}_backward`)
@@ -363,8 +358,8 @@ export default function SocketClient() {
     const handleMotorBControl = createMotorHandler('B')
 
     const emergencyStop = useCallback(() => {
-        sendCommand("set_speed", { motor: 'A', speed: 0 })
-        sendCommand("set_speed", { motor: 'B', speed: 0 })
+        sendCommand("set_speed", {motor: 'A', speed: 0})
+        sendCommand("set_speed", {motor: 'B', speed: 0})
         setMotorASpeed(0)
         setMotorBSpeed(0)
         setMotorADirection('stop')
@@ -406,8 +401,9 @@ export default function SocketClient() {
         <div className="flex flex-col items-center min-h-screen p-4 bg-transparent">
             {/* Основной контейнер с управлением */}
             {activeTab === 'esp' && (
-                <div className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-4 sm:p-6 border border-gray-200 backdrop-blur-sm"
-                     style={{ maxHeight: '90vh', overflowY: 'auto' }}>
+                <div
+                    className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-4 sm:p-6 border border-gray-200 backdrop-blur-sm"
+                    style={{maxHeight: '90vh', overflowY: 'auto'}}>
                     {/* Заголовок и статус */}
                     <div className="flex flex-col items-center space-y-2">
                         <div className="flex items-center space-x-2">
@@ -450,7 +446,8 @@ export default function SocketClient() {
                                 </SelectTrigger>
                                 <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
                                     {deviceList.map(id => (
-                                        <SelectItem key={id} value={id} className="hover:bg-gray-100/50 text-xs sm:text-sm">{id}</SelectItem>
+                                        <SelectItem key={id} value={id}
+                                                    className="hover:bg-gray-100/50 text-xs sm:text-sm">{id}</SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
@@ -537,7 +534,8 @@ export default function SocketClient() {
 
                     {/* Отображение логов */}
                     {logVisible && (
-                        <div className="border border-gray-200 rounded-md overflow-hidden bg-transparent backdrop-blur-sm">
+                        <div
+                            className="border border-gray-200 rounded-md overflow-hidden bg-transparent backdrop-blur-sm">
                             <div className="h-32 sm:h-48 overflow-y-auto p-2 bg-transparent text-xs font-mono">
                                 {log.length === 0 ? (
                                     <div className="text-gray-500 italic">No logs yet</div>
@@ -564,44 +562,30 @@ export default function SocketClient() {
 
             {/* Диалог моторных контролов */}
             {controlVisible && (
-                <div className="fixed inset-0 flex items-center justify-center z-50 noSelect controls-overlay">
-                    <div className="w-full h-full sm:w-[90vw] sm:h-[90vh] max-w-2xl max-h-[90vh] bg-transparent rounded-lg p-2 sm:p-4">
-                        <div className="flex flex-col items-center justify-center h-full">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full h-full">
-                                {/* Мотор A */}
-                                <div className="flex flex-col items-center justify-center h-full">
-                                    <div className="w-full h-[40vh] sm:h-[45vh] landscape:h-[80vh]">
-                                        <Joystick
-                                            motor="A"
-                                            onChange={handleMotorAControl}
-                                            direction={motorADirection}
-                                            speed={motorASpeed}
-                                        />
-                                    </div>
-                                </div>
+                <div>
 
-                                {/* Мотор B */}
-                                <div className="flex flex-col items-center justify-center h-full">
-                                    <div className="w-full h-[40vh] sm:h-[45vh] landscape:h-[80vh]">
-                                        <Joystick
-                                            motor="B"
-                                            onChange={handleMotorBControl}
-                                            direction={motorBDirection}
-                                            speed={motorBSpeed}
-                                        />
-                                    </div>
-                                </div>
-                            </div>
+                    <Joystick
+                        motor="A"
+                        onChange={handleMotorAControl}
+                        direction={motorADirection}
+                        speed={motorASpeed}
+                    />
 
-                            <Button
-                                onClick={handleCloseControls}
-                                className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
-                                style={{ minWidth: '6rem' }}
-                            >
-                                Close
-                            </Button>
-                        </div>
-                    </div>
+                    <Joystick
+                        motor="B"
+                        onChange={handleMotorBControl}
+                        direction={motorBDirection}
+                        speed={motorBSpeed}
+                    />
+
+                    <Button
+                        onClick={handleCloseControls}
+                        className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
+                        style={{minWidth: '6rem'}}
+                    >
+                        Close
+                    </Button>
+
                 </div>
             )}
         </div>

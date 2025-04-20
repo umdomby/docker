@@ -12,17 +12,17 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
-    const [windowHeight, setWindowHeight] = useState(0)
-
-    useEffect(() => {
-        const handleResize = () => {
-            setWindowHeight(window.innerHeight)
-        }
-
-        handleResize()
-        window.addEventListener('resize', handleResize)
-        return () => window.removeEventListener('resize', handleResize)
-    }, [])
+    // const [windowHeight, setWindowHeight] = useState(0)
+    //
+    // useEffect(() => {
+    //     const handleResize = () => {
+    //         setWindowHeight(window.innerHeight)
+    //     }
+    //
+    //     handleResize()
+    //     window.addEventListener('resize', handleResize)
+    //     return () => window.removeEventListener('resize', handleResize)
+    // }, [])
 
     const motorStyles = {
         A: { border: '1px solid #ffffff' },
@@ -171,9 +171,9 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
             style={{
                 position: 'absolute',
                 width: '80px',
-                height: `${windowHeight * 0.5}px`,
-                top: '50%',
-                transform: 'translateY(-50%)',
+                height: '90%',
+                top: '-5%',
+                transform: 'translateY(5%)',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
@@ -182,7 +182,8 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
                 userSelect: 'none',
                 backgroundColor: 'transparent',
                 ...motorStyles[motor],
-                ...positionStyles[motor]
+                ...positionStyles[motor],
+                zIndex: '1001'
             }}
         >
             <div style={{
@@ -194,7 +195,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
                 fontSize: '14px',
                 fontWeight: 'bold',
                 color: '#333',
-                zIndex: '1'
+                zIndex: '1001'
             }}>
             </div>
         </div>
