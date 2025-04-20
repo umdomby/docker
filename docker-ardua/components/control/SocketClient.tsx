@@ -55,6 +55,37 @@ export default function SocketClient() {
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const currentDeviceIdRef = useRef(inputDeviceId)
 
+    const [isLandscape, setIsLandscape] = useState(false);
+
+    useEffect(() => {
+        const checkOrientation = () => {
+            if (window.screen.orientation) {
+                setIsLandscape(window.screen.orientation.type.includes('landscape'));
+            } else {
+                // Fallback для браузеров без screen.orientation API
+                setIsLandscape(window.innerWidth > window.innerHeight);
+            }
+        };
+
+        // Проверяем при монтировании
+        checkOrientation();
+
+        // И добавляем слушатель изменений
+        if (window.screen.orientation) {
+            window.screen.orientation.addEventListener('change', checkOrientation);
+        } else {
+            window.addEventListener('resize', checkOrientation);
+        }
+
+        return () => {
+            if (window.screen.orientation) {
+                window.screen.orientation.removeEventListener('change', checkOrientation);
+            } else {
+                window.removeEventListener('resize', checkOrientation);
+            }
+        };
+    }, []);
+
     useEffect(() => {
         currentDeviceIdRef.current = inputDeviceId
     }, [inputDeviceId])
@@ -539,7 +570,7 @@ export default function SocketClient() {
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full h-full">
                                 {/* Мотор A */}
                                 <div className="flex flex-col items-center justify-center h-full">
-                                    <div className="w-full h-48 sm:h-64">
+                                    <div className="w-full h-[40vh] sm:h-[45vh] landscape:h-[80vh]">
                                         <Joystick
                                             motor="A"
                                             onChange={handleMotorAControl}
@@ -551,7 +582,7 @@ export default function SocketClient() {
 
                                 {/* Мотор B */}
                                 <div className="flex flex-col items-center justify-center h-full">
-                                    <div className="w-full h-48 sm:h-64">
+                                    <div className="w-full h-[40vh] sm:h-[45vh] landscape:h-[80vh]">
                                         <Joystick
                                             motor="B"
                                             onChange={handleMotorBControl}
@@ -562,13 +593,10 @@ export default function SocketClient() {
                                 </div>
                             </div>
 
-                            {/* Кнопка закрытия */}
                             <Button
                                 onClick={handleCloseControls}
                                 className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
-                                style={{
-                                    minWidth: '6rem',
-                                }}
+                                style={{ minWidth: '6rem' }}
                             >
                                 Close
                             </Button>

@@ -3,6 +3,8 @@ import { Nunito } from 'next/font/google';
 import './globals.css';
 import {Providers} from "@/components/providers";
 
+import Head from 'next/head'
+
 
 const nunito = Nunito({
     subsets: ['cyrillic'],
@@ -18,9 +20,10 @@ export default async function RootLayout({
 
     return (
         <html lang="en">
-        <head>
+        <Head>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
             {/*<link data-rh="true" rel="icon" href="/logo.webp" />*/}
-        </head>
+        </Head>
         <body className={nunito.className} suppressHydrationWarning={true}>
         <Providers>
             <main>{children}</main>

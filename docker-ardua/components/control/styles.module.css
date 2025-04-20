@@ -293,3 +293,30 @@
     background-color: transparent !important;
     backdrop-filter: none !important;
 }
+
+/* Добавьте это в ваш CSS */
+@media (max-aspect-ratio: 1/1) {
+    .joystick-portrait {
+        height: 45vh !important;
+    }
+}
+
+@media (min-aspect-ratio: 1/1) {
+    .joystick-landscape {
+        height: 95% !important;
+    }
+}
+
+/* Добавьте это в ваш globals.css */
+@media (orientation: landscape) {
+    .landscape\:h-\[80vh\] {
+        height: 80vh !important;
+    }
+}
+
+/* Альтернативный вариант для устройств, которые не поддерживают медиа-запросы orientation */
+@media (min-aspect-ratio: 1/1) {
+    .landscape\:h-\[80vh\] {
+        height: 80vh !important;
+    }
+}

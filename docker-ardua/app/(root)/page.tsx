@@ -8,6 +8,7 @@ import {prisma} from "@/prisma/prisma-client";
 import SocketClient from "@/components/control/SocketClient";
 import WebRTC from  "@/components/webrtc";
 
+
 export default async function Home() {
     const session = await getUserSession();
 
