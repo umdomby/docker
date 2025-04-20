@@ -6,40 +6,36 @@ type JoystickProps = {
     onChange: (value: number) => void
     direction: 'forward' | 'backward' | 'stop'
     speed: number
+    className?: string
 }
 
-const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
+const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProps) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
-    // const [windowHeight, setWindowHeight] = useState(0)
-    //
-    // useEffect(() => {
-    //     const handleResize = () => {
-    //         setWindowHeight(window.innerHeight)
-    //     }
-    //
-    //     handleResize()
-    //     window.addEventListener('resize', handleResize)
-    //     return () => window.removeEventListener('resize', handleResize)
-    // }, [])
+    const [isLandscape, setIsLandscape] = useState(false)
+
+    // Определяем ориентацию устройства
+    useEffect(() => {
+        const handleOrientationChange = () => {
+            setIsLandscape(window.matchMedia("(orientation: landscape)").matches)
+        }
+
+        // Проверяем сразу при монтировании
+        handleOrientationChange()
+
+        // Добавляем слушатель изменений
+        const mediaQuery = window.matchMedia("(orientation: landscape)")
+        mediaQuery.addEventListener('change', handleOrientationChange)
+
+        return () => {
+            mediaQuery.removeEventListener('change', handleOrientationChange)
+        }
+    }, [])
 
     const motorStyles = {
-        A: { border: '1px solid #ffffff' },
-        B: { border: '1px solid #ffffff' }
-    }
-
-    const positionStyles = {
-        A: {
-            left: '0',
-            right: 'auto',
-            marginLeft: '10px'
-        },
-        B: {
-            right: '0',
-            left: 'auto',
-            marginRight: '10px'
-        }
+        A: { border: '1px solid #ffffff', left: '10px' },
+        B: { border: '1px solid #ffffff', right: '10px' }
     }
 
     const updateValue = useCallback((clientY: number) => {
@@ -53,7 +49,7 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         value = Math.max(-255, Math.min(255, value))
 
         onChange(value)
-    }, [motor, onChange])
+    }, [onChange])
 
     const handleStart = useCallback((clientY: number) => {
         isDragging.current = true
@@ -78,13 +74,11 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
         const container = containerRef.current
         if (container) {
             container.style.transition = 'background-color 0.3s'
-            // container.style.backgroundColor = 'transparent' // эту строку можно оставить или удалить
         }
 
         onChange(0)
     }, [onChange])
 
-    // Обработчики touch-событий вынесены в отдельные функции
     const onTouchStart = useCallback((e: TouchEvent) => {
         if (touchId.current === null && containerRef.current?.contains(e.target as Node)) {
             const touch = e.changedTouches[0]
@@ -167,37 +161,40 @@ const Joystick = ({ motor, onChange, direction, speed }: JoystickProps) => {
     return (
         <div
             ref={containerRef}
-            className="noSelect"
+            className={`noSelect ${className}`}
             style={{
                 position: 'absolute',
                 width: '80px',
-                height: '90%',
-                top: '-5%',
-                transform: 'translateY(5%)',
+                height: isLandscape ? '95vh' : '45vh',
+                top: isLandscape ? '-15%' : '20%',
+                transform: isLandscape ? 'translateY(15%)' : '-20%',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'center',
                 touchAction: 'none',
                 userSelect: 'none',
-                backgroundColor: 'transparent',
+                backgroundColor: 'rgba(0, 0, 0, 0.1)',
                 ...motorStyles[motor],
-                ...positionStyles[motor],
-                zIndex: '1001'
+                zIndex: 1001
             }}
         >
             <div style={{
                 position: 'absolute',
-                bottom: '10px',
-                left: '0',
-                right: '0',
-                textAlign: 'center',
-                fontSize: '14px',
-                fontWeight: 'bold',
-                color: '#333',
-                zIndex: '1001'
-            }}>
-            </div>
+                width: '60px',
+                height: '60px',
+                borderRadius: '50%',
+                backgroundColor: 'rgba(255, 255, 255, 0.3)',
+                pointerEvents: 'none',
+                transform: `translateY(${
+                    direction === 'forward'
+                        ? `-${speed * 0.3}px`
+                        : direction === 'backward'
+                            ? `${speed * 0.3}px`
+                            : '0'
+                })`,
+                transition: 'transform 0.1s ease-out'
+            }} />
         </div>
     )
 }
