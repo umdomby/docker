@@ -11,9 +11,11 @@ type JoystickProps = {
 
 const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProps) => {
     const containerRef = useRef<HTMLDivElement>(null)
+    const knobRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
     const [isLandscape, setIsLandscape] = useState(false)
+    const [knobPosition, setKnobPosition] = useState(50) // Начальная позиция по центру (50%)
 
     // Определяем ориентацию устройства
     useEffect(() => {
@@ -21,10 +23,7 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
             setIsLandscape(window.matchMedia("(orientation: landscape)").matches)
         }
 
-        // Проверяем сразу при монтировании
         handleOrientationChange()
-
-        // Добавляем слушатель изменений
         const mediaQuery = window.matchMedia("(orientation: landscape)")
         mediaQuery.addEventListener('change', handleOrientationChange)
 
@@ -43,9 +42,16 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
         if (!container) return
 
         const rect = container.getBoundingClientRect()
+        const containerHeight = rect.height
         const y = clientY - rect.top
-        const height = rect.height
-        let value = ((height - y) / height) * 510 - 255
+        const normalizedY = Math.max(0, Math.min(containerHeight, y))
+
+        // Обновляем позицию ползунка (0-100%)
+        const positionPercentage = (1 - (normalizedY / containerHeight)) * 100
+        setKnobPosition(positionPercentage)
+
+        // Вычисляем значение для отправки (-255 до 255)
+        let value = ((containerHeight - normalizedY) / containerHeight) * 510 - 255
         value = Math.max(-255, Math.min(255, value))
 
         onChange(value)
@@ -53,10 +59,6 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
 
     const handleStart = useCallback((clientY: number) => {
         isDragging.current = true
-        const container = containerRef.current
-        if (container) {
-            container.style.transition = 'none'
-        }
         updateValue(clientY)
     }, [updateValue])
 
@@ -70,15 +72,11 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
         if (!isDragging.current) return
         isDragging.current = false
         touchId.current = null
-
-        const container = containerRef.current
-        if (container) {
-            container.style.transition = 'background-color 0.3s'
-        }
-
+        setKnobPosition(50) // Возвращаем ползунок в центр
         onChange(0)
     }, [onChange])
 
+    // Обработчики событий touch
     const onTouchStart = useCallback((e: TouchEvent) => {
         if (touchId.current === null && containerRef.current?.contains(e.target as Node)) {
             const touch = e.changedTouches[0]
@@ -135,22 +133,26 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
             }
         }
 
+        // Добавляем обработчики touch
         container.addEventListener('touchstart', onTouchStart, { passive: false })
         container.addEventListener('touchmove', onTouchMove, { passive: false })
         container.addEventListener('touchend', onTouchEnd, { passive: false })
         container.addEventListener('touchcancel', onTouchEnd, { passive: false })
 
+        // Добавляем обработчики mouse
         container.addEventListener('mousedown', onMouseDown)
         document.addEventListener('mousemove', onMouseMove)
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
         return () => {
+            // Удаляем обработчики touch
             container.removeEventListener('touchstart', onTouchStart)
             container.removeEventListener('touchmove', onTouchMove)
             container.removeEventListener('touchend', onTouchEnd)
             container.removeEventListener('touchcancel', onTouchEnd)
 
+            // Удаляем обработчики mouse
             container.removeEventListener('mousedown', onMouseDown)
             document.removeEventListener('mousemove', onMouseMove)
             document.removeEventListener('mouseup', onMouseUp)
@@ -165,9 +167,10 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
             style={{
                 position: 'absolute',
                 width: '80px',
-                height: isLandscape ? '95vh' : '45vh',
-                top: isLandscape ? '-15%' : '20%',
-                transform: isLandscape ? 'translateY(15%)' : '-20%',
+                height: isLandscape ? '77vh' : '45vh',
+                top: isLandscape ? '5%' : '55%',
+                transform: isLandscape ? 'translateY(-5%)' : 'translateY(-55%)',
+                bottom: '0',
                 borderRadius: '8px',
                 display: 'flex',
                 justifyContent: 'center',
@@ -179,21 +182,43 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
                 zIndex: 1001
             }}
         >
+            {/* Вертикальный трек */}
             <div style={{
                 position: 'absolute',
-                width: '60px',
-                height: '60px',
-                borderRadius: '50%',
-                backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                pointerEvents: 'none',
-                transform: `translateY(${
-                    direction === 'forward'
-                        ? `-${speed * 0.3}px`
-                        : direction === 'backward'
-                            ? `${speed * 0.3}px`
-                            : '0'
-                })`,
-                transition: 'transform 0.1s ease-out'
+                width: '20px',
+                height: '80%',
+                backgroundColor: 'rgba(255, 255, 255, 0.2)',
+                borderRadius: '10px'
+            }} />
+
+            {/* Ползунок (knob) */}
+            <div
+                ref={knobRef}
+                style={{
+                    position: 'absolute',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+                    boxShadow: '0 2px 5px rgba(0, 0, 0, 0.2)',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    top: `${knobPosition}%`,
+                    marginTop: '-20px', // Компенсация половины высоты ползунка
+                    transition: isDragging.current ? 'none' : 'top 0.2s ease-out',
+                    pointerEvents: 'none'
+                }}
+            />
+
+            {/* Центральная отметка */}
+            <div style={{
+                position: 'absolute',
+                width: '20px',
+                height: '2px',
+                backgroundColor: 'rgba(255, 255, 255, 0.5)',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)'
             }} />
         </div>
     )
