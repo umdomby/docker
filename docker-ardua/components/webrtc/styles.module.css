@@ -58,8 +58,7 @@
     transform: scaleX(-1);
 }
 
-.remoteVideoLabel,
-.localVideoLabel {
+.remoteVideoLabel{
     position: absolute;
     left: 0;
     right: 0;

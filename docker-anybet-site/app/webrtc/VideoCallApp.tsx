@@ -160,7 +160,6 @@ export const VideoCallApp = () => {
                         muted
                         className={styles.localVideo}
                     />
-                    <div className={styles.videoLabel}>Вы ({username})</div>
                 </div>
 
                 <div className={styles.videoWrapper}>
@@ -168,7 +167,6 @@ export const VideoCallApp = () => {
                         stream={remoteStream}
                         className={styles.remoteVideo}
                     />
-                    <div className={styles.videoLabel}>Удаленный участник</div>
                 </div>
             </div>
 
