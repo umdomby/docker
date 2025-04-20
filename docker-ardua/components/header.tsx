@@ -36,9 +36,10 @@ export const Header: React.FC<Props> = ({ className }) => {
                         size="icon"
                         style={{
                             position: 'absolute',
-                            right: '16px',
+                            right: '14%',
                             top: '16px',
                             zIndex: 50,
+                            transform: 'translateX(-50%)',
                             backgroundColor: 'hsl(0, 0%, 100%)',
                             color: 'hsl(20, 14.3%, 4.1%)',
                             border: '1px solid hsl(20, 5.9%, 90%)',
