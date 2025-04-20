@@ -74,14 +74,11 @@
 .topControls {
     position: absolute;
     top: 15px;
-    left: 15px;
-
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     justify-content: space-between;
-
     z-index: 20;
-
-
 }
 
 .toggleControlsButton {
