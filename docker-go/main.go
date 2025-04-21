@@ -18,8 +18,8 @@ var upgrader = websocket.Upgrader{
 }
 
 type Room struct {
-    Peers       map[string]*Peer
-    LeaderOffer *webrtc.SessionDescription
+	Peers       map[string]*Peer
+	LeaderOffer *webrtc.SessionDescription
 }
 
 type Peer struct {
@@ -28,6 +28,7 @@ type Peer struct {
 	username string
 	room     string
 	isLeader bool
+	mu       sync.Mutex
 }
 
 type RoomInfo struct {
@@ -97,10 +98,12 @@ func sendRoomInfo(roomName string) {
 		}
 
 		for _, peer := range room.Peers {
+			peer.mu.Lock()
 			err := peer.conn.WriteJSON(map[string]interface{}{
 				"type": "room_info",
 				"data": roomInfo,
 			})
+			peer.mu.Unlock()
 			if err != nil {
 				log.Printf("Error sending room info to %s: %v", peer.username, err)
 			}
@@ -114,9 +117,15 @@ func cleanupRoom(roomName string) {
 
 	if room, exists := rooms[roomName]; exists {
 		for _, peer := range room.Peers {
-			peer.pc.Close()
-			peer.conn.Close()
+			peer.mu.Lock()
+			if peer.pc != nil {
+				peer.pc.Close()
+			}
+			if peer.conn != nil {
+				peer.conn.Close()
+			}
 			delete(peers, peer.conn.RemoteAddr().String())
+			peer.mu.Unlock()
 		}
 		delete(rooms, roomName)
 		log.Printf("Room %s cleaned up", roomName)
@@ -143,6 +152,17 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	// Настройка ping-pong обработчиков
+	conn.SetPingHandler(func(message string) error {
+		log.Printf("Ping from %s", conn.RemoteAddr())
+		return conn.WriteControl(websocket.PongMessage, []byte(message), time.Now().Add(5*time.Second))
+	})
+
+	conn.SetPongHandler(func(message string) error {
+		log.Printf("Pong from %s", conn.RemoteAddr())
+		return nil
+	})
+
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New connection from: %s", remoteAddr)
 
@@ -159,69 +179,62 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User '%s' joining room '%s' as %s", initData.Username, initData.Room, map[bool]string{true: "leader", false: "slave"}[initData.IsLeader])
 
 	mu.Lock()
-    if room, exists := rooms[initData.Room]; exists {
-        // Проверяем роли участников
-        var leaderExists, slaveExists bool
-        for _, peer := range room.Peers {
-            if peer.isLeader {
-                leaderExists = true
-            } else {
-                slaveExists = true
-            }
-        }
+	if room, exists := rooms[initData.Room]; exists {
+		var leaderExists, slaveExists bool
+		for _, peer := range room.Peers {
+			if peer.isLeader {
+				leaderExists = true
+			} else {
+				slaveExists = true
+			}
+		}
 
-        // При подключении ведомого:
-        if !initData.IsLeader {
-            if room.LeaderOffer != nil {
-                // Отправляем ведомому сохранённый offer
-                conn.WriteJSON(map[string]interface{}{
-                    "type": "offer",
-                    "sdp": map[string]interface{}{
-                        "type": room.LeaderOffer.Type.String(),
-                        "sdp":  room.LeaderOffer.SDP,
-                    },
-                })
-            }
-        }
+		if !initData.IsLeader {
+			if room.LeaderOffer != nil {
+				conn.WriteJSON(map[string]interface{}{
+					"type": "offer",
+					"sdp": map[string]interface{}{
+						"type": room.LeaderOffer.Type.String(),
+						"sdp":  room.LeaderOffer.SDP,
+					},
+				})
+			}
+		}
 
-        // Если подключается второй ведущий - закрываем комнату
-        if initData.IsLeader && leaderExists {
-            mu.Unlock()
-            conn.WriteJSON(map[string]interface{}{
-                "type": "error",
-                "data": "Room already has leader",
-            })
-            conn.Close()
-            return
-        }
+		if initData.IsLeader && leaderExists {
+			mu.Unlock()
+			conn.WriteJSON(map[string]interface{}{
+				"type": "error",
+				"data": "Room already has leader",
+			})
+			conn.Close()
+			return
+		}
 
-        // Если подключается второй ведомый - закрываем комнату
-        if !initData.IsLeader && slaveExists {
-            mu.Unlock()
-            conn.WriteJSON(map[string]interface{}{
-                "type": "notification",
-                "data": "Room already has slave",
-            })
-            conn.Close()
-            return
-        }
-    } else {
-        // Если комнаты нет и подключается ведомый - отказываем
-        if !initData.IsLeader {
-            mu.Unlock()
-            conn.WriteJSON(map[string]interface{}{
-                "type": "notification",
-                "data": "Room does not exist",
-            })
-            conn.Close()
-            return
-        }
-        // Создаем новую комнату для ведущего
-        rooms[initData.Room] = &Room{
-            Peers: make(map[string]*Peer),
-        }
-    }
-    mu.Unlock()
+		if !initData.IsLeader && slaveExists {
+			mu.Unlock()
+			conn.WriteJSON(map[string]interface{}{
+				"type": "notification",
+				"data": "Room already has slave",
+			})
+			conn.Close()
+			return
+		}
+	} else {
+		if !initData.IsLeader {
+			mu.Unlock()
+			conn.WriteJSON(map[string]interface{}{
+				"type": "notification",
+				"data": "Room does not exist",
+			})
+			conn.Close()
+			return
+		}
+		rooms[initData.Room] = &Room{
+			Peers: make(map[string]*Peer),
+		}
+	}
+	mu.Unlock()
 
 	config := webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
@@ -260,25 +273,45 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	logStatus()
 	sendRoomInfo(initData.Room)
 
-	// Обработка входящих сообщений
+	// Отправка ping каждые 15 секунд
+	go func() {
+		ticker := time.NewTicker(15 * time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				peer.mu.Lock()
+				if peer.conn != nil {
+					if err := peer.conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+						log.Printf("Ping error to %s: %v", peer.username, err)
+						peer.mu.Unlock()
+						return
+					}
+				}
+				peer.mu.Unlock()
+			}
+		}
+	}()
+
 	for {
-        _, msg, err := conn.ReadMessage()
-        if err != nil {
-            log.Printf("Connection closed by %s: %v", initData.Username, err)
+		_, msg, err := conn.ReadMessage()
+		if err != nil {
+			log.Printf("Connection closed by %s: %v", initData.Username, err)
 
-            mu.Lock()
-            delete(peers, remoteAddr)
-            delete(rooms[peer.room].Peers, peer.username)
-
-            // Если это был ведущий или ведомый - закрываем всю комнату
-            if peer.isLeader || len(rooms[peer.room].Peers) == 0 {
-                cleanupRoom(peer.room)
-            } else {
-                sendRoomInfo(peer.room)
-            }
-            mu.Unlock()
-            break
-        }
+			mu.Lock()
+			delete(peers, remoteAddr)
+			if room, exists := rooms[peer.room]; exists {
+				delete(room.Peers, peer.username)
+				if peer.isLeader || len(room.Peers) == 0 {
+					cleanupRoom(peer.room)
+				} else {
+					sendRoomInfo(peer.room)
+				}
+			}
+			mu.Unlock()
+			break
+		}
 
 		var data map[string]interface{}
 		if err := json.Unmarshal(msg, &data); err != nil {
@@ -293,7 +326,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			log.Printf("SDP %s from %s (%s)\n%s",
 				sdpType, initData.Username, initData.Room, sdpStr)
 
-			// Анализ видео в SDP
 			hasVideo := strings.Contains(sdpStr, "m=video")
 			log.Printf("Video in SDP: %v", hasVideo)
 
@@ -301,15 +333,14 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				log.Printf("WARNING: Offer from %s contains no video!", initData.Username)
 			}
 
-            // Сохраняем offer от ведущего
-            if sdpType == "offer" && initData.IsLeader {
-                mu.Lock()
-                rooms[initData.Room].LeaderOffer = &webrtc.SessionDescription{
-                    Type: webrtc.SDPTypeOffer,
-                    SDP:  sdpStr,
-                }
-                mu.Unlock()
-            }
+			if sdpType == "offer" && initData.IsLeader {
+				mu.Lock()
+				rooms[initData.Room].LeaderOffer = &webrtc.SessionDescription{
+					Type: webrtc.SDPTypeOffer,
+					SDP:  sdpStr,
+				}
+				mu.Unlock()
+			}
 		} else if ice, ok := data["ice"].(map[string]interface{}); ok {
 			log.Printf("ICE from %s: %s:%v %s",
 				initData.Username,
@@ -318,29 +349,30 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				ice["candidate"].(string))
 		}
 
-		// Пересылка сообщения другим участникам комнаты
 		mu.Lock()
-		for username, p := range rooms[peer.room].Peers {
-			if username != peer.username {
-				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					log.Printf("Error sending to %s: %v", username, err)
+		if room, exists := rooms[peer.room]; exists {
+			for username, p := range room.Peers {
+				if username != peer.username {
+					p.mu.Lock()
+					if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+						log.Printf("Error sending to %s: %v", username, err)
+					}
+					p.mu.Unlock()
 				}
 			}
 		}
 		mu.Unlock()
 	}
 
-	// Очистка при отключении
 	mu.Lock()
 	delete(peers, remoteAddr)
-	delete(rooms[peer.room].Peers, peer.username)
-
-	// Если это был ведущий или ведомый - закрываем всю комнату
-	if peer.isLeader || len(rooms[peer.room].Peers) == 0 {
-		cleanupRoom(peer.room)
-	} else {
-		// Отправляем информацию о том, что пользователь покинул комнату
-		sendRoomInfo(peer.room)
+	if room, exists := rooms[peer.room]; exists {
+		delete(room.Peers, peer.username)
+		if peer.isLeader || len(room.Peers) == 0 {
+			cleanupRoom(peer.room)
+		} else {
+			sendRoomInfo(peer.room)
+		}
 	}
 	mu.Unlock()
 
