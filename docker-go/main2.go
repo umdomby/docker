@@ -134,16 +134,19 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	mu.Unlock()
 
-	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-        {URLs: []string{
-            "stun:stun.l.google.com:19302",
-            "stun:stun1.l.google.com:19302",
-            "stun:stun2.l.google.com:19302",
-        }},
-
-		},
-	}
+    config := webrtc.Configuration{
+        ICEServers: []webrtc.ICEServer{
+            {URLs: []string{"stun:stun.l.google.com:19302"}},
+            {URLs: []string{"stun:stun1.l.google.com:19302"}},
+            {URLs: []string{"stun:stun2.l.google.com:19302"}},
+            {URLs: []string{"stun:stun.voipbuster.com:3478"}},
+            {URLs: []string{"stun:stun.ideasip.com"}},
+        },
+        ICETransportPolicy: webrtc.ICETransportPolicyAll,
+        BundlePolicy:       webrtc.BundlePolicyMaxBundle,
+        RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
+        SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
+    }
 
 	peerConnection, err := webrtc.NewPeerConnection(config)
 	if err != nil {

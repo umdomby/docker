@@ -624,18 +624,12 @@ export const useWebRTC = (
                 const onMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
-                        if (data.type === 'room_joined' || data.type === 'room_created') {
+                        if (data.type === 'room_info') {
                             cleanupEvents();
                             resolve();
                         } else if (data.type === 'error') {
                             cleanupEvents();
                             reject(new Error(data.data || 'Ошибка входа в комнату'));
-                        } else if (data.type === 'room_info') {
-                            // Обновляем информацию о комнате
-                            if (data.data.viewer === uniqueUsername || data.data.leader === uniqueUsername) {
-                                cleanupEvents();
-                                resolve();
-                            }
                         }
                     } catch (err) {
                         cleanupEvents();
@@ -652,25 +646,25 @@ export const useWebRTC = (
 
                 connectionTimeout.current = setTimeout(() => {
                     cleanupEvents();
-                    reject(new Error('Таймаут ожидания ответа от сервера'));
+                    console.log('Таймаут ожидания ответа от сервера');
                 }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
-
-                // Отправляем запрос на присоединение
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
-                    username: uniqueUsername,
-                    isLeader: false // Ведомый
+                    username: uniqueUsername
                 }));
             });
 
             // 4. Успешное подключение
             setIsInRoom(true);
+            shouldCreateOffer.current = true;
 
-            // 5. Если мы первые в комнате (не должно быть для ведомого), создаем оффер
-            // Для ведомого это не нужно, оффер создаст ведущий
+            // 5. Создаем оффер, если мы первые в комнате
+            if (users.length === 0) {
+                await createAndSendOffer();
+            }
 
         } catch (err) {
             console.error('Ошибка входа в комнату:', err);
