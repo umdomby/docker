@@ -2,6 +2,7 @@
 export function checkWebRTCSupport(): boolean {
     if (typeof window === 'undefined') return false;
 
+    // Основные API WebRTC
     const requiredAPIs = [
         'RTCPeerConnection',
         'RTCSessionDescription',
@@ -10,7 +11,8 @@ export function checkWebRTCSupport(): boolean {
         'navigator.mediaDevices.getUserMedia'
     ];
 
-    return requiredAPIs.every(api => {
+    // Проверка каждого API
+    const hasAPIs = requiredAPIs.every(api => {
         try {
             if (api.includes('.')) {
                 const [obj, prop] = api.split('.');
@@ -21,6 +23,21 @@ export function checkWebRTCSupport(): boolean {
             return false;
         }
     });
+
+    if (!hasAPIs) return false;
+
+    // Дополнительная проверка функциональности
+    try {
+        const pc = new RTCPeerConnection();
+        const canCreateOffer = typeof pc.createOffer === 'function';
+        const canCreateDataChannel = typeof pc.createDataChannel === 'function';
+        pc.close();
+
+        return canCreateOffer && canCreateDataChannel;
+    } catch (e) {
+        console.error('WebRTC support check failed:', e);
+        return false;
+    }
 }
 
 

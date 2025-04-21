@@ -60,7 +60,12 @@ export const VideoCallApp = () => {
         retryCount,
         resetConnection,
         restartMediaDevices
-    } = useWebRTC(selectedDevices, username, roomId)
+    } = useWebRTC(
+        selectedDevices,
+        username,
+        roomId,
+        false // Явно указываем, что это ведомый
+    );
 
     // Загрузка настроек звука из localStorage
     useEffect(() => {
