@@ -653,7 +653,8 @@ export const useWebRTC = (
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
-                    username: uniqueUsername
+                    username: uniqueUsername,
+                    isLeader: false // Явно указываем, что это ведомый
                 }));
             });
 
@@ -668,7 +669,7 @@ export const useWebRTC = (
 
         } catch (err) {
             console.error('Ошибка входа в комнату:', err);
-            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+            console.log(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
 
             // Полная очистка при ошибке
             cleanup();
