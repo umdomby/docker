@@ -180,7 +180,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			{URLs: []string{"stun:stun4.l.google.com:19302"}},
 		},
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
-		BundlePolicy:       webrtc.BundlePolicyMaxBundle,
+        BundlePolicy:       webrtc.BundlePolicyBalanced,
 		RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
 		SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
 	}

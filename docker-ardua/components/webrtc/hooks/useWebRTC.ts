@@ -341,7 +341,7 @@ export const useWebRTC = (
                     }
                 ],
                 iceTransportPolicy: 'all',
-                bundlePolicy: 'max-bundle',
+                bundlePolicy: 'balanced',
                 rtcpMuxPolicy: 'require'
             };
 
