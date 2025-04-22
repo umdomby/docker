@@ -15,8 +15,7 @@ interface WebSocketMessage {
 export const useWebRTC = (
     deviceIds: { video: string; audio: string },
     username: string,
-    roomId: string,
-    isLeader: boolean = false
+    roomId: string
 ) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -157,11 +156,11 @@ export const useWebRTC = (
                     }
                 };
 
-                connectionTimeout.current = setTimeout(() => {
-                    cleanupEvents();
-                    setError('Таймаут подключения WebSocket');
-                    resolve(false);
-                }, 5000);
+                // connectionTimeout.current = setTimeout(() => {
+                //     cleanupEvents();
+                //     setError('Таймаут подключения WebSocket');
+                //     resolve(false);
+                // }, 5000);
 
                 ws.current.addEventListener('open', onOpen);
                 ws.current.addEventListener('error', onError);
@@ -342,6 +341,7 @@ export const useWebRTC = (
                     }
                 ],
                 iceTransportPolicy: 'all',
+                // Изменяем bundlePolicy на balanced вместо max-bundle
                 bundlePolicy: 'balanced',
                 rtcpMuxPolicy: 'require'
             };
@@ -615,7 +615,7 @@ export const useWebRTC = (
                 throw new Error('Не удалось инициализировать WebRTC');
             }
 
-            // 3. Отправляем запрос на присоединение к комнате с указанием роли
+            // 3. Отправляем запрос на присоединение к комнате
             await new Promise<void>((resolve, reject) => {
                 if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
                     reject(new Error('WebSocket не подключен'));
@@ -628,7 +628,7 @@ export const useWebRTC = (
                         if (data.type === 'room_info') {
                             cleanupEvents();
                             resolve();
-                        } else if (data.type === 'error' || data.type === 'notification') {
+                        } else if (data.type === 'error') {
                             cleanupEvents();
                             reject(new Error(data.data || 'Ошибка входа в комнату'));
                         }
@@ -645,39 +645,41 @@ export const useWebRTC = (
                     }
                 };
 
-                // connectionTimeout.current = setTimeout(() => {
-                //     cleanupEvents();
-                //     console.log('Таймаут ожидания ответа от сервера');
-                //     reject(new Error('Connection timeout'));
-                // }, 10000);
+                connectionTimeout.current = setTimeout(() => {
+                    cleanupEvents();
+                    console.log('Таймаут ожидания ответа от сервера');
+                }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
-
-                // Отправляем сообщение с указанием роли
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
-                    isLeader: isLeader  // Добавляем параметр роли
+                    isLeader: false // Явно указываем, что это ведомый
                 }));
             });
 
+            // 4. Успешное подключение
             setIsInRoom(true);
+            shouldCreateOffer.current = true;
 
-            // Если мы ведущий - сразу создаем оффер
-            if (isLeader) {
+            // 5. Создаем оффер, если мы первые в комнате
+            if (users.length === 0) {
                 await createAndSendOffer();
             }
 
         } catch (err) {
             console.error('Ошибка входа в комнату:', err);
-            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+            console.log(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+
+            // Полная очистка при ошибке
             cleanup();
             if (ws.current) {
                 ws.current.close();
                 ws.current = null;
             }
 
+            // Автоматическая повторная попытка
             if (retryCount < MAX_RETRIES) {
                 setTimeout(() => {
                     joinRoom(uniqueUsername).catch(console.error);

@@ -41,43 +41,30 @@ export const VideoPlayer = ({ stream, muted = false, className, transform }: Vid
     }, [transform])
 
     useEffect(() => {
-        const video = videoRef.current;
-        if (!video) return;
+        const video = videoRef.current
+        if (!video) return
 
         const handleCanPlay = () => {
             video.play().catch(e => {
-                console.error('Playback failed:', e);
-                // Пытаемся снова с отключенным звуком
-                video.muted = true;
-                video.play().catch(e => console.error('Muted playback also failed:', e));
-            });
-        };
+                console.error('Playback failed:', e)
+                video.muted = true
+                video.play().catch(e => console.error('Muted playback also failed:', e))
+            })
+        }
 
-        const handleLoadedMetadata = () => {
-            console.log('Video metadata loaded, dimensions:',
-                video.videoWidth, 'x', video.videoHeight);
-            if (video.videoWidth === 0 || video.videoHeight === 0) {
-                console.warn('Video stream has zero dimensions');
-            }
-        };
-
-        video.addEventListener('canplay', handleCanPlay);
-        video.addEventListener('loadedmetadata', handleLoadedMetadata);
+        video.addEventListener('canplay', handleCanPlay)
 
         if (stream) {
-            console.log('Setting video srcObject with stream:', stream.id);
-            video.srcObject = stream;
+            video.srcObject = stream
         } else {
-            console.log('Clearing video srcObject');
-            video.srcObject = null;
+            video.srcObject = null
         }
 
         return () => {
-            video.removeEventListener('canplay', handleCanPlay);
-            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-            video.srcObject = null;
-        };
-    }, [stream]);
+            video.removeEventListener('canplay', handleCanPlay)
+            video.srcObject = null
+        }
+    }, [stream])
 
     return (
         <video
