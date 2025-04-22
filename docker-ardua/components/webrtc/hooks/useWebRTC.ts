@@ -712,7 +712,8 @@ export const useWebRTC = (
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
-                    username: uniqueUsername
+                    username: uniqueUsername,
+                    isLeader: false // Браузер всегда ведомый
                 }));
             });
 

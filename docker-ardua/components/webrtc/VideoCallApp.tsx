@@ -301,6 +301,11 @@ export const VideoCallApp = () => {
                         <div className={styles.connectionStatus}>
                             Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
                             {isCallActive && ' (Звонок активен)'}
+                            {users.length > 0 && (
+                                <div>
+                                    Роль: {users[0] === username ? "Ведущий" : "Ведомый"}
+                                </div>
+                            )}
                         </div>
 
                         <div className={styles.inputGroup}>
