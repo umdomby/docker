@@ -136,6 +136,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
     config := webrtc.Configuration{
         ICEServers: []webrtc.ICEServer{
+            {
+                URLs:       []string{"turn:ardua.site:3478", "turns:ardua.site:5349"},
+                Username:   "user1",
+                Credential: "pass1",
+            },
             {URLs: []string{"stun:stun.l.google.com:19301"}},
             {URLs: []string{"stun:stun.l.google.com:19302"}},
             {URLs: []string{"stun:stun.l.google.com:19303"}},
