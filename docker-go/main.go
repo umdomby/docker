@@ -112,90 +112,86 @@ func sendRoomInfo(room string) {
 }
 
 func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
-	mu.Lock()
-	defer mu.Unlock()
+    mu.Lock()
+    defer mu.Unlock()
 
-	// Создаем новую комнату, если ее нет
-	if _, exists := rooms[room]; !exists {
-		rooms[room] = make(map[string]*Peer)
-	}
+    // Создаем новую комнату, если ее нет
+    if _, exists := rooms[room]; !exists {
+        rooms[room] = make(map[string]*Peer)
+    }
 
-	roomPeers := rooms[room]
+    roomPeers := rooms[room]
 
-	// Проверяем, есть ли уже ведущий или ведомый
-	var existingLeader, existingFollower *Peer
-	for _, p := range roomPeers {
-		if p.isLeader {
-			existingLeader = p
-		} else {
-			existingFollower = p
-		}
-	}
+    // Проверяем, есть ли уже ведущий или ведомый
+    var peerToDisconnect *Peer
+    for _, p := range roomPeers {
+        if isLeader && p.isLeader {
+            // Если это ведущий и уже есть ведущий - заменяем его
+            peerToDisconnect = p
+            break
+        } else if !isLeader && !p.isLeader {
+            // Если это ведомый и уже есть ведомый - заменяем его
+            peerToDisconnect = p
+            break
+        }
+    }
 
-	// Логика замены
-	if isLeader {
-		// Если это ведущий и уже есть ведущий - заменяем его
-		if existingLeader != nil {
-			log.Printf("Replacing existing leader %s with new leader %s", existingLeader.username, username)
-			existingLeader.conn.Close()
-			delete(roomPeers, existingLeader.username)
-		}
-	} else {
-		// Если это ведомый и уже есть ведомый - заменяем его
-		if existingFollower != nil {
-			log.Printf("Replacing existing follower %s with new follower %s", existingFollower.username, username)
-			existingFollower.conn.Close()
-			delete(roomPeers, existingFollower.username)
-		}
-	}
+    // Отключаем пользователя, которого заменяем
+    if peerToDisconnect != nil {
+        log.Printf("Replacing %s (Leader: %v) with new peer %s (Leader: %v)",
+            peerToDisconnect.username, peerToDisconnect.isLeader, username, isLeader)
+        peerToDisconnect.conn.Close()
+        delete(roomPeers, peerToDisconnect.username)
+        delete(peers, peerToDisconnect.conn.RemoteAddr().String())
+    }
 
-	// Проверяем, не превышает ли количество участников лимит (2)
-	if len(roomPeers) >= 2 {
-		return nil, nil // Не должно происходить из-за логики замены выше
-	}
+    // Проверяем, не превышает ли количество участников лимит (2)
+    if len(roomPeers) >= 2 {
+        return nil, nil // Не должно происходить из-за логики замены выше
+    }
 
-	config := webrtc.Configuration{
-		ICEServers: []webrtc.ICEServer{
-			{
-				URLs:       []string{"turn:ardua.site:3478", "turns:ardua.site:5349"},
-				Username:   "user1",
-				Credential: "pass1",
-			},
-			{URLs: []string{"stun:stun.l.google.com:19301"}},
-			{URLs: []string{"stun:stun.l.google.com:19302"}},
-			{URLs: []string{"stun:stun.l.google.com:19303"}},
-			{URLs: []string{"stun:stun.l.google.com:19304"}},
-			{URLs: []string{"stun:stun.l.google.com:19305"}},
-			{URLs: []string{"stun:stun1.l.google.com:19301"}},
-			{URLs: []string{"stun:stun1.l.google.com:19302"}},
-			{URLs: []string{"stun:stun1.l.google.com:19303"}},
-			{URLs: []string{"stun:stun1.l.google.com:19304"}},
-			{URLs: []string{"stun:stun1.l.google.com:19305"}},
-		},
-		ICETransportPolicy: webrtc.ICETransportPolicyAll,
-		BundlePolicy:       webrtc.BundlePolicyMaxBundle,
-		RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
-		SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
-	}
+    config := webrtc.Configuration{
+        ICEServers: []webrtc.ICEServer{
+            {
+                URLs:       []string{"turn:ardua.site:3478", "turns:ardua.site:5349"},
+                Username:   "user1",
+                Credential: "pass1",
+            },
+            {URLs: []string{"stun:stun.l.google.com:19301"}},
+            {URLs: []string{"stun:stun.l.google.com:19302"}},
+            {URLs: []string{"stun:stun.l.google.com:19303"}},
+            {URLs: []string{"stun:stun.l.google.com:19304"}},
+            {URLs: []string{"stun:stun.l.google.com:19305"}},
+            {URLs: []string{"stun:stun1.l.google.com:19301"}},
+            {URLs: []string{"stun:stun1.l.google.com:19302"}},
+            {URLs: []string{"stun:stun1.l.google.com:19303"}},
+            {URLs: []string{"stun:stun1.l.google.com:19304"}},
+            {URLs: []string{"stun:stun1.l.google.com:19305"}},
+        },
+        ICETransportPolicy: webrtc.ICETransportPolicyAll,
+        BundlePolicy:       webrtc.BundlePolicyMaxBundle,
+        RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
+        SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
+    }
 
-	peerConnection, err := webrtc.NewPeerConnection(config)
-	if err != nil {
-		log.Printf("PeerConnection error for %s: %v", username, err)
-		return nil, err
-	}
+    peerConnection, err := webrtc.NewPeerConnection(config)
+    if err != nil {
+        log.Printf("PeerConnection error for %s: %v", username, err)
+        return nil, err
+    }
 
-	peer := &Peer{
-		conn:     conn,
-		pc:       peerConnection,
-		username: username,
-		room:     room,
-		isLeader: isLeader,
-	}
+    peer := &Peer{
+        conn:     conn,
+        pc:       peerConnection,
+        username: username,
+        room:     room,
+        isLeader: isLeader,
+    }
 
-	rooms[room][username] = peer
-	peers[conn.RemoteAddr().String()] = peer
+    rooms[room][username] = peer
+    peers[conn.RemoteAddr().String()] = peer
 
-	return peer, nil
+    return peer, nil
 }
 
 func main() {
