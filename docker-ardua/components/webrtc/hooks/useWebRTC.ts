@@ -134,8 +134,8 @@ export const useWebRTC = (
         // Устанавливаем новый таймер
         videoCheckTimeout.current = setTimeout(() => {
             if (!remoteStream || remoteStream.getVideoTracks().length === 0 ||
-                !remoteStream.getVideoTracks()[0].readyState === 'live') {
-                console.log('Удаленное видео не получено в течение 10 секунд, перезапускаем соединение...');
+                !remoteStream.getVideoTracks()[0].readyState) {
+                console.log('Удаленное видео не получено в течение .. секунд, перезапускаем соединение...');
                 resetConnection();
             }
         }, VIDEO_CHECK_TIMEOUT);
@@ -336,7 +336,6 @@ export const useWebRTC = (
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
                 iceRestart: false,
-                voiceActivityDetection: false,
             });
 
             const standardizedOffer = {
