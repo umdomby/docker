@@ -58,7 +58,8 @@
     transform: scaleX(-1);
 }
 
-.remoteVideoLabel{
+.remoteVideoLabel,
+.localVideoLabel {
     position: absolute;
     left: 0;
     right: 0;
@@ -74,11 +75,14 @@
 .topControls {
     position: absolute;
     top: 15px;
-    left: 50%;
-    transform: translateX(-50%);
+    left: 15px;
+
     display: flex;
     justify-content: space-between;
+
     z-index: 20;
+
+
 }
 
 .toggleControlsButton {
@@ -344,12 +348,12 @@
 /* Адаптивные стили */
 @media (max-width: 768px) {
     .tabsContainer {
-        gap: 5px;
+        gap: 6px;
     }
 
     .tabButton {
-        padding: 1px 3px;
-        font-size: 8px;
+        padding: 6px 12px;
+        font-size: 12px;
     }
 
     .tabContent {

@@ -156,11 +156,11 @@ export const useWebRTC = (
                     }
                 };
 
-                // connectionTimeout.current = setTimeout(() => {
-                //     cleanupEvents();
-                //     setError('Таймаут подключения WebSocket');
-                //     resolve(false);
-                // }, 5000);
+                connectionTimeout.current = setTimeout(() => {
+                    cleanupEvents();
+                    setError('Таймаут подключения WebSocket');
+                    resolve(false);
+                }, 5000);
 
                 ws.current.addEventListener('open', onOpen);
                 ws.current.addEventListener('error', onError);
@@ -292,7 +292,9 @@ export const useWebRTC = (
     };
 
     const createAndSendOffer = async () => {
-        if (!pc.current || !ws.current) return;
+        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+            return;
+        }
 
         try {
             const offer = await pc.current.createOffer({
@@ -300,44 +302,25 @@ export const useWebRTC = (
                 offerToReceiveVideo: true
             });
 
-            // Добавьте эту проверку
-            if (!offer.sdp) {
-                throw new Error("Empty SDP in offer");
-            }
+            const standardizedOffer = {
+                ...offer,
+                sdp: normalizeSdp(offer.sdp)
+            };
 
-            await pc.current.setLocalDescription(offer);
+            console.log('Устанавливаем локальное описание с оффером');
+            await pc.current.setLocalDescription(standardizedOffer);
 
             ws.current.send(JSON.stringify({
                 type: "offer",
-                sdp: {
-                    type: offer.type,
-                    sdp: offer.sdp
-                },
+                sdp: standardizedOffer,
                 room: roomId,
                 username
             }));
 
-            // Увеличьте таймаут ожидания ответа
-            const waitForAnswer = new Promise((resolve, reject) => {
-                const timer = setTimeout(() => {
-                    reject(new Error("Answer timeout"));
-                }, 15000); // 15 секунд вместо 10
-
-                const onMessage = (event: MessageEvent) => {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'answer') {
-                        clearTimeout(timer);
-                        resolve(data);
-                    }
-                };
-
-                ws.current?.addEventListener('message', onMessage);
-            });
-
-            await waitForAnswer;
+            setIsCallActive(true);
         } catch (err) {
-            console.error('Offer error:', err);
-            setError('Failed to create offer');
+            console.error('Ошибка создания оффера:', err);
+            setError('Ошибка создания предложения соединения');
         }
     };
 
@@ -349,17 +332,21 @@ export const useWebRTC = (
                 iceServers: [
                     {
                         urls: [
+                            'stun:stun.l.google.com:19301',
                             'stun:stun.l.google.com:19302',
+                            'stun:stun.l.google.com:19303',
+                            'stun:stun.l.google.com:19304',
+                            'stun:stun.l.google.com:19305',
+                            'stun:stun1.l.google.com:19301',
                             'stun:stun1.l.google.com:19302',
-                            'stun:stun2.l.google.com:19302',
-                            'stun:stun3.l.google.com:19302',
-                            'stun:stun4.l.google.com:19302'
+                            'stun:stun1.l.google.com:19303',
+                            'stun:stun1.l.google.com:19304',
+                            'stun:stun1.l.google.com:19305'
                         ]
                     }
                 ],
                 iceTransportPolicy: 'all',
-                // Изменяем bundlePolicy на balanced вместо max-bundle
-                bundlePolicy: 'balanced',
+                bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require'
             };
 
@@ -671,8 +658,7 @@ export const useWebRTC = (
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
-                    username: uniqueUsername,
-                    isLeader: false // Явно указываем, что это ведомый
+                    username: uniqueUsername
                 }));
             });
 
@@ -687,7 +673,7 @@ export const useWebRTC = (
 
         } catch (err) {
             console.error('Ошибка входа в комнату:', err);
-            console.log(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
 
             // Полная очистка при ошибке
             cleanup();
