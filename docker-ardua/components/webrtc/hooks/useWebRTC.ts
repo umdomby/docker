@@ -33,9 +33,12 @@ export const useWebRTC = (
     const shouldCreateOffer = useRef(false);
     const connectionTimeout = useRef<NodeJS.Timeout | null>(null);
     const statsInterval = useRef<NodeJS.Timeout | null>(null);
+    const videoCheckTimeout = useRef<NodeJS.Timeout | null>(null);
+    const retryAttempts = useRef(0);
 
     // Максимальное количество попыток переподключения
     const MAX_RETRIES = 3;
+    const VIDEO_CHECK_TIMEOUT = 4000; // 10 секунд для проверки видео
 
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
@@ -73,6 +76,11 @@ export const useWebRTC = (
             statsInterval.current = null;
         }
 
+        if (videoCheckTimeout.current) {
+            clearTimeout(videoCheckTimeout.current);
+            videoCheckTimeout.current = null;
+        }
+
         // Очистка WebRTC соединения
         if (pc.current) {
             pc.current.onicecandidate = null;
@@ -98,6 +106,7 @@ export const useWebRTC = (
         pendingIceCandidates.current = [];
         isNegotiating.current = false;
         shouldCreateOffer.current = false;
+        retryAttempts.current = 0;
     };
 
     const leaveRoom = () => {
@@ -114,6 +123,22 @@ export const useWebRTC = (
         ws.current?.close();
         ws.current = null;
         setRetryCount(0);
+    };
+
+    const startVideoCheckTimer = () => {
+        // Очищаем предыдущий таймер, если он есть
+        if (videoCheckTimeout.current) {
+            clearTimeout(videoCheckTimeout.current);
+        }
+
+        // Устанавливаем новый таймер
+        videoCheckTimeout.current = setTimeout(() => {
+            if (!remoteStream || remoteStream.getVideoTracks().length === 0 ||
+                !remoteStream.getVideoTracks()[0].readyState === 'live') {
+                console.log('Удаленное видео не получено в течение 10 секунд, перезапускаем соединение...');
+                resetConnection();
+            }
+        }, VIDEO_CHECK_TIMEOUT);
     };
 
     const connectWebSocket = async (): Promise<boolean> => {
@@ -226,6 +251,9 @@ export const useWebRTC = (
 
                             setIsCallActive(true);
                             isNegotiating.current = false;
+
+                            // Запускаем проверку получения видео
+                            startVideoCheckTimer();
                         } catch (err) {
                             console.error('Ошибка обработки оффера:', err);
                             setError('Ошибка обработки предложения соединения');
@@ -252,6 +280,9 @@ export const useWebRTC = (
                             );
 
                             setIsCallActive(true);
+
+                            // Запускаем проверку получения видео
+                            startVideoCheckTimer();
 
                             // Обрабатываем ожидающие кандидаты
                             while (pendingIceCandidates.current.length > 0) {
@@ -301,12 +332,11 @@ export const useWebRTC = (
         }
 
         try {
-
             const offer = await pc.current.createOffer({
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
                 iceRestart: false,
-                voiceActivityDetection: false
+                voiceActivityDetection: false,
             });
 
             const standardizedOffer = {
@@ -325,6 +355,9 @@ export const useWebRTC = (
             }));
 
             setIsCallActive(true);
+
+            // Запускаем проверку получения видео
+            startVideoCheckTimer();
         } catch (err) {
             console.error('Ошибка создания оффера:', err);
             setError('Ошибка создания предложения соединения');
@@ -457,6 +490,12 @@ export const useWebRTC = (
                             if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
                                 setRemoteStream(event.streams[0]);
                                 setIsCallActive(true);
+
+                                // Видео получено, очищаем таймер проверки
+                                if (videoCheckTimeout.current) {
+                                    clearTimeout(videoCheckTimeout.current);
+                                    videoCheckTimeout.current = null;
+                                }
                             } else {
                                 console.warn('Получен пустой видеопоток');
                             }
@@ -551,18 +590,19 @@ export const useWebRTC = (
     };
 
     const resetConnection = async () => {
-        if (retryCount >= MAX_RETRIES) {
+        if (retryAttempts.current >= MAX_RETRIES) {
             setError('Не удалось восстановить соединение после нескольких попыток');
             leaveRoom();
             return;
         }
 
-        setRetryCount(prev => prev + 1);
-        console.log(`Попытка восстановления #${retryCount + 1}`);
+        retryAttempts.current += 1;
+        setRetryCount(retryAttempts.current);
+        console.log(`Попытка восстановления #${retryAttempts.current}`);
 
         try {
             await leaveRoom();
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryAttempts.current));
             await joinRoom(username);
         } catch (err) {
             console.error('Ошибка при восстановлении соединения:', err);
@@ -686,6 +726,9 @@ export const useWebRTC = (
                 await createAndSendOffer();
             }
 
+            // 6. Запускаем таймер проверки видео
+            startVideoCheckTimer();
+
         } catch (err) {
             console.error('Ошибка входа в комнату:', err);
             setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
@@ -698,10 +741,10 @@ export const useWebRTC = (
             }
 
             // Автоматическая повторная попытка
-            if (retryCount < MAX_RETRIES) {
+            if (retryAttempts.current < MAX_RETRIES) {
                 setTimeout(() => {
                     joinRoom(uniqueUsername).catch(console.error);
-                }, 2000 * (retryCount + 1));
+                }, 2000 * (retryAttempts.current + 1));
             }
         }
     };
