@@ -99,6 +99,12 @@ export const VideoCallApp = () => {
         }
     }, [remoteStream, muteRemoteAudio])
 
+    useEffect(() => {
+        if (autoJoin && hasPermission && !isInRoom) {
+            handleJoinRoom();
+        }
+    }, [autoJoin, hasPermission]); // Зависимости
+
     const loadSettings = () => {
         try {
             const saved = localStorage.getItem('videoSettings')
@@ -334,7 +340,7 @@ export const VideoCallApp = () => {
                         {!isInRoom ? (
                             <Button
                                 onClick={handleJoinRoom}
-                                disabled={!hasPermission || isJoining || (autoJoin && isInRoom)}
+                                disabled={!hasPermission || isJoining}
                                 className={styles.button}
                             >
                                 {isJoining ? 'Подключение...' : 'Войти в комнату'}
