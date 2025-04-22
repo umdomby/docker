@@ -292,9 +292,7 @@ export const useWebRTC = (
     };
 
     const createAndSendOffer = async () => {
-        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
-            return;
-        }
+        if (!pc.current || !ws.current) return;
 
         try {
             const offer = await pc.current.createOffer({
@@ -302,25 +300,44 @@ export const useWebRTC = (
                 offerToReceiveVideo: true
             });
 
-            const standardizedOffer = {
-                ...offer,
-                sdp: normalizeSdp(offer.sdp)
-            };
+            // Добавьте эту проверку
+            if (!offer.sdp) {
+                throw new Error("Empty SDP in offer");
+            }
 
-            console.log('Устанавливаем локальное описание с оффером');
-            await pc.current.setLocalDescription(standardizedOffer);
+            await pc.current.setLocalDescription(offer);
 
             ws.current.send(JSON.stringify({
                 type: "offer",
-                sdp: standardizedOffer,
+                sdp: {
+                    type: offer.type,
+                    sdp: offer.sdp
+                },
                 room: roomId,
                 username
             }));
 
-            setIsCallActive(true);
+            // Увеличьте таймаут ожидания ответа
+            const waitForAnswer = new Promise((resolve, reject) => {
+                const timer = setTimeout(() => {
+                    reject(new Error("Answer timeout"));
+                }, 15000); // 15 секунд вместо 10
+
+                const onMessage = (event: MessageEvent) => {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'answer') {
+                        clearTimeout(timer);
+                        resolve(data);
+                    }
+                };
+
+                ws.current?.addEventListener('message', onMessage);
+            });
+
+            await waitForAnswer;
         } catch (err) {
-            console.error('Ошибка создания оффера:', err);
-            setError('Ошибка создания предложения соединения');
+            console.error('Offer error:', err);
+            setError('Failed to create offer');
         }
     };
 

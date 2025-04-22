@@ -22,18 +22,18 @@ type Peer struct {
 	pc       *webrtc.PeerConnection
 	username string
 	room     string
-	isLeader bool // Новое поле для определения ведущего
+	isLeader bool
 }
 
 type RoomInfo struct {
 	Users    []string `json:"users"`
-	Leader   string   `json:"leader"`   // Добавлено поле ведущего
-	HasSlots bool     `json:"hasSlots"` // Есть ли свободные слоты
+	Leader   string   `json:"leader"`
+	HasSlots bool     `json:"hasSlots"`
 }
 
 var (
 	peers   = make(map[string]*Peer)
-	rooms   = make(map[string]*RoomInfo) // Изменили структуру хранения комнат
+	rooms   = make(map[string]*RoomInfo)
 	mu      sync.Mutex
 	letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 )
@@ -93,8 +93,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	var initData struct {
 		Room     string `json:"room"`
 		Username string `json:"username"`
-		IsLeader bool   `json:"isLeader"` // Новое поле для определения ведущего
+		IsLeader bool   `json:"isLeader"`
 	}
+
 	if err := conn.ReadJSON(&initData); err != nil {
 		log.Printf("Read init data error from %s: %v", remoteAddr, err)
 		return
@@ -168,24 +169,21 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		roomInfo.Users = []string{roomInfo.Leader, initData.Username}
 		roomInfo.HasSlots = false
 	}
-
 	mu.Unlock()
 
-    config := webrtc.Configuration{
-        ICEServers: []webrtc.ICEServer{
-            {URLs: []string{"stun:stun.l.google.com:19302"}},
-            {URLs: []string{"stun:stun1.l.google.com:19302"}},
-            {URLs: []string{"stun:stun2.l.google.com:19302"}},
-            {URLs: []string{"stun:stun3.l.google.com:19302"}},
-            {URLs: []string{"stun:stun4.l.google.com:19302"}},
-
-        },
-        ICETransportPolicy: webrtc.ICETransportPolicyAll,
-        // Изменяем bundlePolicy на balanced вместо max-bundle
-        BundlePolicy:       webrtc.BundlePolicyBalanced,
-        RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
-        SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
-    }
+	config := webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{URLs: []string{"stun:stun.l.google.com:19302"}},
+			{URLs: []string{"stun:stun1.l.google.com:19302"}},
+			{URLs: []string{"stun:stun2.l.google.com:19302"}},
+			{URLs: []string{"stun:stun3.l.google.com:19302"}},
+			{URLs: []string{"stun:stun4.l.google.com:19302"}},
+		},
+		ICETransportPolicy: webrtc.ICETransportPolicyAll,
+		BundlePolicy:       webrtc.BundlePolicyBalanced,
+		RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
+		SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
+	}
 
 	peerConnection, err := webrtc.NewPeerConnection(config)
 	if err != nil {
@@ -200,6 +198,29 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		room:     initData.Room,
 		isLeader: initData.IsLeader,
 	}
+
+	// Добавляем обработчик ICE кандидатов
+	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
+		if candidate != nil {
+			cand := candidate.ToJSON()
+			conn.WriteJSON(map[string]interface{}{
+				"type": "ice_candidate",
+				"ice": map[string]interface{}{
+					"candidate":        cand.Candidate,
+					"sdpMid":           cand.SDPMid,
+					"sdpMLineIndex":    cand.SDPMLineIndex,
+					"usernameFragment": cand.UsernameFragment,
+				},
+				"room":     peer.room,
+				"username": peer.username,
+			})
+		}
+	})
+
+	// Добавляем обработчик треков
+	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		log.Printf("Track received: %s, SSRC: %d", track.Kind().String(), track.SSRC())
+	})
 
 	mu.Lock()
 	peers[initData.Username] = peer
@@ -237,12 +258,61 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			if !hasVideo && sdpType == "offer" {
 				log.Printf("WARNING: Offer from %s contains no video!", initData.Username)
 			}
+
+			// Обработка SDP
+			sd := webrtc.SessionDescription{
+				Type: webrtc.NewSDPType(sdpType),
+				SDP:  sdpStr,
+			}
+
+			if sd.Type == webrtc.SDPTypeOffer {
+				if err := peerConnection.SetRemoteDescription(sd); err != nil {
+					log.Printf("SetRemoteDescription error: %v", err)
+					continue
+				}
+
+				answer, err := peerConnection.CreateAnswer(nil)
+				if err != nil {
+					log.Printf("CreateAnswer error: %v", err)
+					continue
+				}
+
+				if err = peerConnection.SetLocalDescription(answer); err != nil {
+					log.Printf("SetLocalDescription error: %v", err)
+					continue
+				}
+
+				conn.WriteJSON(map[string]interface{}{
+					"type": "answer",
+					"sdp": map[string]interface{}{
+						"type": answer.Type.String(),
+						"sdp":  answer.SDP,
+					},
+					"room":     peer.room,
+					"username": peer.username,
+				})
+			} else if sd.Type == webrtc.SDPTypeAnswer {
+				if err := peerConnection.SetRemoteDescription(sd); err != nil {
+					log.Printf("SetRemoteDescription error: %v", err)
+				}
+			}
 		} else if ice, ok := data["ice"].(map[string]interface{}); ok {
 			log.Printf("ICE from %s: %s:%v %s",
 				initData.Username,
 				ice["sdpMid"].(string),
 				ice["sdpMLineIndex"].(float64),
 				ice["candidate"].(string))
+
+			iceCandidate := webrtc.ICECandidateInit{
+				Candidate:        ice["candidate"].(string),
+				SDPMid:          ice["sdpMid"].(string),
+				SDPMLineIndex:    uint16(ice["sdpMLineIndex"].(float64)),
+				UsernameFragment: ice["usernameFragment"].(string),
+			}
+
+			if err := peerConnection.AddICECandidate(iceCandidate); err != nil {
+				log.Printf("AddICECandidate error: %v", err)
+			}
 		}
 
 		// Пересылка сообщения другим участникам комнаты
