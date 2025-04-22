@@ -40,7 +40,11 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        let normalized = sdp.trim();
+        // Сначала очищаем от network-cost
+        let normalized = sdp.replace(/a=network-cost:.+\r\n/g, '');
+
+        normalized = normalized.trim();
+
         if (!normalized.startsWith('v=')) {
             normalized = 'v=0\r\n' + normalized;
         }
@@ -297,9 +301,12 @@ export const useWebRTC = (
         }
 
         try {
+
             const offer = await pc.current.createOffer({
                 offerToReceiveAudio: true,
-                offerToReceiveVideo: true
+                offerToReceiveVideo: true,
+                iceRestart: false,
+                voiceActivityDetection: false
             });
 
             const standardizedOffer = {
