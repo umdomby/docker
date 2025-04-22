@@ -112,24 +112,27 @@ func sendRoomInfo(roomName string) {
 }
 
 func cleanupRoom(roomName string) {
-	mu.Lock()
-	defer mu.Unlock()
+    mu.Lock()
+    defer mu.Unlock()
 
-	if room, exists := rooms[roomName]; exists {
-		for _, peer := range room.Peers {
-			peer.mu.Lock()
-			if peer.pc != nil {
-				peer.pc.Close()
-			}
-			if peer.conn != nil {
-				peer.conn.Close()
-			}
-			delete(peers, peer.conn.RemoteAddr().String())
-			peer.mu.Unlock()
-		}
-		delete(rooms, roomName)
-		log.Printf("Room %s cleaned up", roomName)
-	}
+    if room, exists := rooms[roomName]; exists {
+        // Сначала закрываем все соединения
+        for _, peer := range room.Peers {
+            if peer.pc != nil {
+                peer.pc.Close()
+            }
+            if peer.conn != nil {
+                peer.conn.WriteControl(websocket.CloseMessage,
+                    websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
+                    time.Now().Add(5*time.Second))
+                peer.conn.Close()
+            }
+            delete(peers, peer.conn.RemoteAddr().String())
+        }
+        // Затем удаляем комнату
+        delete(rooms, roomName)
+        log.Printf("Room %s cleaned up", roomName)
+    }
 }
 
 func main() {
@@ -178,15 +181,49 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	log.Printf("User '%s' joining room '%s' as %s", initData.Username, initData.Room, map[bool]string{true: "leader", false: "slave"}[initData.IsLeader])
 
 	mu.Lock()
-	if room, exists := rooms[initData.Room]; exists {
-		var leaderExists, slaveExists bool
-		for _, peer := range room.Peers {
-			if peer.isLeader {
-				leaderExists = true
-			} else {
-				slaveExists = true
-			}
-		}
+    if room, exists := rooms[initData.Room]; exists {
+        var leaderExists, slaveExists bool
+        var existingLeader *Peer
+
+        // Находим существующего лидера
+        for _, peer := range room.Peers {
+            if peer.isLeader {
+                leaderExists = true
+                existingLeader = peer
+            } else {
+                slaveExists = true
+            }
+        }
+
+        // Если это переподключение ведущего
+        if initData.IsLeader && leaderExists && existingLeader.username == initData.Username {
+            // Закрываем старое соединение
+            if existingLeader.conn != nil {
+                existingLeader.conn.Close()
+            }
+            if existingLeader.pc != nil {
+                existingLeader.pc.Close()
+            }
+            delete(room.Peers, existingLeader.username)
+            log.Printf("Старое соединение ведущего %s закрыто", initData.Username)
+        } else if initData.IsLeader && leaderExists {
+            mu.Unlock()
+            conn.WriteJSON(map[string]interface{}{
+                "type": "error",
+                "data": "Room already has leader",
+            })
+            conn.Close()
+            return
+        }
+
+        if initData.IsLeader {
+            // Если ведущий переподключается - очищаем старую комнату
+            cleanupRoom(initData.Room)
+            rooms[initData.Room] = &Room{
+                Peers: make(map[string]*Peer),
+            }
+            log.Printf("Старая комната очищена для переподключения ведущего")
+        }
 
 		if initData.IsLeader && leaderExists {
 			mu.Unlock()

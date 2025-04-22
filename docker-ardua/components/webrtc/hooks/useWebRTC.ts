@@ -645,11 +645,11 @@ export const useWebRTC = (
                     }
                 };
 
-                connectionTimeout.current = setTimeout(() => {
-                    cleanupEvents();
-                    console.log('Таймаут ожидания ответа от сервера');
-                    reject(new Error('Connection timeout'));
-                }, 10000);
+                // connectionTimeout.current = setTimeout(() => {
+                //     cleanupEvents();
+                //     console.log('Таймаут ожидания ответа от сервера');
+                //     reject(new Error('Connection timeout'));
+                // }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
 
