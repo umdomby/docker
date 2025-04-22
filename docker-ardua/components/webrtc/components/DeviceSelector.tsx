@@ -47,8 +47,8 @@ export const DeviceSelector = ({
     };
 
     return (
-        <div className={styles.deviceSelector}>
-            <div className={styles.deviceGroup}>
+        <div>
+            <div>
                 <label>Камера:</label>
                 <select
                     value={selectedDevices.video}
@@ -70,7 +70,7 @@ export const DeviceSelector = ({
                 </select>
             </div>
 
-            <div className={styles.deviceGroup}>
+            <div>
                 <label>Микрофон:</label>
                 <select
                     value={selectedDevices.audio}
@@ -94,7 +94,6 @@ export const DeviceSelector = ({
 
             <button
                 onClick={handleRefresh}
-                className={styles.refreshButton}
                 disabled={isRefreshing}
             >
                 {isRefreshing ? 'Обновление...' : 'Обновить устройства'}

@@ -262,7 +262,6 @@ export const VideoCallApp = () => {
                         muted
                         className={styles.localVideo}
                     />
-                    <div className={styles.localVideoLabel}>Вы ({username})</div>
                 </div>
             )}
 
