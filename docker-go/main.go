@@ -140,7 +140,19 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
     if peerToDisconnect != nil {
         log.Printf("Replacing %s (Leader: %v) with new peer %s (Leader: %v)",
             peerToDisconnect.username, peerToDisconnect.isLeader, username, isLeader)
+
+        // Отправляем сообщение о принудительном отключении
+        peerToDisconnect.conn.WriteJSON(map[string]interface{}{
+            "type": "force_disconnect",
+            "data": "You have been replaced by another peer",
+        })
+
+        // Закрываем соединение и чистим PeerConnection
+        if peerToDisconnect.pc != nil {
+            peerToDisconnect.pc.Close()
+        }
         peerToDisconnect.conn.Close()
+
         delete(roomPeers, peerToDisconnect.username)
         delete(peers, peerToDisconnect.conn.RemoteAddr().String())
     }
