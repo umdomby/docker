@@ -10,6 +10,8 @@ interface WebSocketMessage {
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
+    // Добавляем новый тип сообщения
+    force_disconnect?: boolean;
 }
 
 export const useWebRTC = (
@@ -98,8 +100,10 @@ export const useWebRTC = (
         }
 
         if (remoteStream) {
-            remoteStream.getTracks().forEach(track => track.stop());
-            setRemoteStream(null);
+            remoteStream.getTracks().forEach(track => {
+                track.stop();
+                track.dispatchEvent(new Event('ended')); // Принудительно вызываем событие завершения
+            });
         }
 
         setIsCallActive(false);
@@ -210,6 +214,31 @@ export const useWebRTC = (
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
+
+                if (data.type === 'force_disconnect') {
+                    // Обработка принудительного отключения
+                    console.log('Получена команда принудительного отключения');
+                    setError('Вы были отключены, так как подключился другой зритель');
+
+                    // Останавливаем все медиапотоки
+                    if (remoteStream) {
+                        remoteStream.getTracks().forEach(track => track.stop());
+                    }
+
+                    // Закрываем PeerConnection
+                    if (pc.current) {
+                        pc.current.close();
+                        pc.current = null;
+                    }
+
+                    // Очищаем состояние
+                    setRemoteStream(null);
+                    setIsCallActive(false);
+                    setIsInRoom(false);
+
+                    return;
+                }
+
 
                 if (data.type === 'room_info') {
                     setUsers(data.data.users || []);
@@ -508,6 +537,12 @@ export const useWebRTC = (
             // Обработка состояния ICE соединения
             pc.current.oniceconnectionstatechange = () => {
                 if (!pc.current) return;
+
+                if (pc.current?.iceConnectionState === 'disconnected' ||
+                    pc.current?.iceConnectionState === 'failed') {
+                    console.log('ICE соединение разорвано, возможно нас заменили');
+                    leaveRoom();
+                }
 
                 console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
 

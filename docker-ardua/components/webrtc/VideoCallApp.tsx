@@ -45,6 +45,8 @@ export const VideoCallApp = () => {
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
 
+    const [replacementMessage, setReplacementMessage] = useState('');
+
     const {
         localStream,
         remoteStream,
@@ -385,6 +387,13 @@ export const VideoCallApp = () => {
             {activeTab === 'esp' && (
                 <div className={styles.tabContent}>
                     <SocketClient/>
+                </div>
+            )}
+
+            {error && (
+                <div className={styles.error}>
+                    {error}
+                    {replacementMessage && <div>{replacementMessage}</div>}
                 </div>
             )}
 
