@@ -207,6 +207,8 @@ export const useWebRTC = (
         });
     };
 
+
+
     const setupWebSocketListeners = () => {
         if (!ws.current) return;
 
@@ -214,6 +216,15 @@ export const useWebRTC = (
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
+
+                // Добавляем обработку reconnect_request
+                if (data.type === 'reconnect_request') {
+                    console.log('Server requested reconnect');
+                    setTimeout(() => {
+                        resetConnection();
+                    }, 1000);
+                    return;
+                }
 
                 if (data.type === 'force_disconnect') {
                     // Обработка принудительного отключения
@@ -230,7 +241,7 @@ export const useWebRTC = (
                         pc.current.close();
                         pc.current = null;
                     }
-
+                    leaveRoom();
                     // Очищаем состояние
                     setRemoteStream(null);
                     setIsCallActive(false);

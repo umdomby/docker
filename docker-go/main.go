@@ -216,8 +216,29 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
     })
 
     // Добавляем обработчик изменения состояния ICE соединения
-    peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-        log.Printf("ICE Connection State changed: %s", state.String())
+    //     peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+    //         log.Printf("ICE Connection State changed: %s", state.String())
+    //     })
+
+    peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+        log.Printf("PeerConnection state changed: %s", s.String())
+        if s == webrtc.PeerConnectionStateFailed {
+            // 1. Закрываем проблемное соединение
+            if peerConnection != nil {
+                peerConnection.Close()
+            }
+
+            // 2. Уведомляем клиента о необходимости переподключения
+            if conn != nil {
+                conn.WriteJSON(map[string]interface{}{
+                    "type": "reconnect_request",
+                    "reason": "connection_failed",
+                })
+            }
+
+            // 3. Логируем инцидент
+            log.Printf("Connection failed for user %s in room %s", username, room)
+        }
     })
 
     rooms[room][username] = peer
