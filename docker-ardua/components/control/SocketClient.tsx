@@ -57,7 +57,18 @@ export default function SocketClient() {
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const currentDeviceIdRef = useRef(inputDeviceId)
 
+    // Добавляем новое состояние для чекбокса запрета удаления
+    const [preventDeletion, setPreventDeletion] = useState(false);
+
     const [isLandscape, setIsLandscape] = useState(false);
+
+    // В useEffect при загрузке добавляем чтение сохраненного значения
+    useEffect(() => {
+        const savedPreventDeletion = localStorage.getItem('preventDeletion');
+        if (savedPreventDeletion) {
+            setPreventDeletion(savedPreventDeletion === 'true');
+        }
+    }, []);
 
     useEffect(() => {
         const checkOrientation = () => {
@@ -118,6 +129,12 @@ export default function SocketClient() {
             setAutoConnect(savedAutoConnect === 'true')
         }
     }, [])
+
+    // Функция для изменения состояния чекбокса
+    const togglePreventDeletion = useCallback((checked: boolean) => {
+        setPreventDeletion(checked);
+        localStorage.setItem('preventDeletion', checked.toString());
+    }, []);
 
     const saveNewDeviceId = useCallback(() => {
         if (newDeviceId && !deviceList.includes(newDeviceId)) {
@@ -469,18 +486,17 @@ export default function SocketClient() {
                         {/* Кнопка удаления устройства */}
                         <Button
                             onClick={() => {
-                                if (deviceList.length > 1) { // Не позволяем удалить последнее устройство
-                                    const updatedList = deviceList.filter(id => id !== inputDeviceId);
-                                    setDeviceList(updatedList);
-                                    localStorage.setItem('espDeviceList', JSON.stringify(updatedList));
-                                    setInputDeviceId(updatedList[0]); // Выбираем первое устройство из оставшихся
-                                    currentDeviceIdRef.current = updatedList[0];
+                                if (!preventDeletion && confirm("Delete ?")) {
+                                    const defaultDevice = '123';
+                                    setDeviceList([defaultDevice]);
+                                    setInputDeviceId(defaultDevice);
+                                    localStorage.setItem('espDeviceList', JSON.stringify([defaultDevice]));
                                 }
                             }}
-                            disabled={deviceList.length <= 1}
+                            disabled={preventDeletion} // Блокируем если запрещено удаление
                             className="bg-red-600 hover:bg-red-700 h-8 sm:h-10 px-2 sm:px-4 text-xs sm:text-sm"
                         >
-                            Delete
+                            Del
                         </Button>
                     </div>
 
@@ -544,6 +560,17 @@ export default function SocketClient() {
                             />
                             <Label htmlFor="auto-connect" className="text-xs sm:text-sm font-medium text-gray-700">
                                 Auto connect on page load
+                            </Label>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                            <Checkbox
+                                id="prevent-deletion"
+                                checked={preventDeletion}
+                                onCheckedChange={togglePreventDeletion}
+                                className="border-gray-300 bg-transparent w-4 h-4 sm:w-5 sm:h-5"
+                            />
+                            <Label htmlFor="prevent-deletion" className="text-xs sm:text-sm font-medium text-gray-700">
+                                Запретить удаление устройств
                             </Label>
                         </div>
                     </div>
