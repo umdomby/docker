@@ -449,25 +449,38 @@ export default function SocketClient() {
                     </Button>
 
                     {/* Выбор устройства */}
-                    <div className="space-y-1 sm:space-y-2">
-                        <Label className="block text-xs sm:text-sm font-medium text-gray-700">Device ID</Label>
-                        <div className="flex space-x-2">
-                            <Select
-                                value={inputDeviceId}
-                                onValueChange={handleDeviceChange}
-                                disabled={isConnected && !autoReconnect}
-                            >
-                                <SelectTrigger className="flex-1 bg-transparent h-8 sm:h-10">
-                                    <SelectValue placeholder="Select device"/>
-                                </SelectTrigger>
-                                <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
-                                    {deviceList.map(id => (
-                                        <SelectItem key={id} value={id}
-                                                    className="hover:bg-gray-100/50 text-xs sm:text-sm">{id}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
+                    <div className="flex space-x-2">
+                        <Select
+                            value={inputDeviceId}
+                            onValueChange={handleDeviceChange}
+                            disabled={isConnected && !autoReconnect}
+                        >
+                            <SelectTrigger className="flex-1 bg-transparent h-8 sm:h-10">
+                                <SelectValue placeholder="Select device"/>
+                            </SelectTrigger>
+                            <SelectContent className="bg-transparent backdrop-blur-sm border border-gray-200">
+                                {deviceList.map(id => (
+                                    <SelectItem key={id} value={id}
+                                                className="hover:bg-gray-100/50 text-xs sm:text-sm">{id}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                        {/* Кнопка удаления устройства */}
+                        <Button
+                            onClick={() => {
+                                if (deviceList.length > 1) { // Не позволяем удалить последнее устройство
+                                    const updatedList = deviceList.filter(id => id !== inputDeviceId);
+                                    setDeviceList(updatedList);
+                                    localStorage.setItem('espDeviceList', JSON.stringify(updatedList));
+                                    setInputDeviceId(updatedList[0]); // Выбираем первое устройство из оставшихся
+                                    currentDeviceIdRef.current = updatedList[0];
+                                }
+                            }}
+                            disabled={deviceList.length <= 1}
+                            className="bg-red-600 hover:bg-red-700 h-8 sm:h-10 px-2 sm:px-4 text-xs sm:text-sm"
+                        >
+                            Delete
+                        </Button>
                     </div>
 
                     {/* Добавление нового устройства */}
@@ -594,14 +607,13 @@ export default function SocketClient() {
                     />
 
 
-
                     {/* Кнопки управления сервоприводом */}
                     <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 flex space-x-4 z-50">
                         <Button
                             onClick={() => adjustServoAngle(-180)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
                         >
-                            <ArrowLeft className="h-5 w-5" />
+                            <ArrowLeft className="h-5 w-5"/>
                         </Button>
 
                         {/* Кнопка увеличения угла (+5 градусов) */}
