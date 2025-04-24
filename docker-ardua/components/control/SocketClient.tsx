@@ -183,6 +183,7 @@ export default function SocketClient() {
                     if (data.status === "connected") {
                         setIsIdentified(true)
                         setDeviceId(deviceIdToConnect)
+                        setEspConnected(true)
                     }
                     addLog(`System: ${data.message}`, 'server')
                 } else if (data.type === "error") {
