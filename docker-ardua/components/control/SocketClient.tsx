@@ -4,7 +4,7 @@ import {useState, useEffect, useRef, useCallback} from 'react'
 import {Button} from "@/components/ui/button"
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
 import {Input} from "@/components/ui/input"
-import {ChevronDown, ChevronUp, ArrowUp, ArrowDown} from "lucide-react" // Добавлены иконки стрелок
+import {ChevronDown, ChevronUp, ArrowUp, ArrowDown, ArrowLeft, ArrowRight} from "lucide-react" // Добавлены иконки стрелок
 import {Checkbox} from "@/components/ui/checkbox"
 import {Label} from "@/components/ui/label"
 import Joystick from '@/components/control/Joystick'
@@ -593,11 +593,20 @@ export default function SocketClient() {
                         speed={motorBSpeed}
                     />
 
+
+
                     {/* Кнопки управления сервоприводом */}
                     <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 flex space-x-4 z-50">
+                        <Button
+                            onClick={() => adjustServoAngle(-180)}
+                            className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
+                        >
+                            <ArrowLeft className="h-5 w-5" />
+                        </Button>
+
                         {/* Кнопка увеличения угла (+5 градусов) */}
                         <Button
-                            onClick={() => adjustServoAngle(5)}
+                            onClick={() => adjustServoAngle(15)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
                         >
                             <ArrowUp className="h-5 w-5" />
@@ -605,10 +614,17 @@ export default function SocketClient() {
 
                         {/* Кнопка уменьшения угла (-5 градусов) */}
                         <Button
-                            onClick={() => adjustServoAngle(-5)}
+                            onClick={() => adjustServoAngle(-15)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
                         >
-                            <ArrowDown className="h-5 w-5" />
+                            <ArrowUp className="h-5 w-5" />
+                        </Button>
+
+                        <Button
+                            onClick={() => adjustServoAngle(180)}
+                            className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
+                        >
+                            <ArrowRight className="h-5 w-5" />
                         </Button>
                     </div>
 
