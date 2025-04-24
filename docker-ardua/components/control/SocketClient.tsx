@@ -1,9 +1,10 @@
+// file: docker-ardua/components/control/SocketClient.tsx
 "use client"
 import {useState, useEffect, useRef, useCallback} from 'react'
 import {Button} from "@/components/ui/button"
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
 import {Input} from "@/components/ui/input"
-import {ChevronDown, ChevronUp} from "lucide-react"
+import {ChevronDown, ChevronUp, ArrowUp, ArrowDown} from "lucide-react" // Добавлены иконки стрелок
 import {Checkbox} from "@/components/ui/checkbox"
 import {Label} from "@/components/ui/label"
 import Joystick from '@/components/control/Joystick'
@@ -43,7 +44,8 @@ export default function SocketClient() {
     const [motorBDirection, setMotorBDirection] = useState<'forward' | 'backward' | 'stop'>('stop')
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp') // Состояние активной вкладки
+    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
+    const [servoAngle, setServoAngle] = useState(90) // Текущий угол сервопривода
 
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -336,13 +338,20 @@ export default function SocketClient() {
 
             lastCommandRef.current = currentCommand
 
-            if (throttleRef.current) {
-                clearTimeout(throttleRef.current)
+            // Если скорость 0 - сразу отправляем команду остановки
+            if (speed === 0) {
+                if (throttleRef.current) {
+                    clearTimeout(throttleRef.current)
+                    throttleRef.current = null
+                }
+                sendCommand("set_speed", {motor, speed: 0})
+                sendCommand(`motor_${motor.toLowerCase()}_stop`)
+                return
             }
 
-            if (speed === 0) {
-                sendCommand("set_speed", {motor, speed: 0})
-                return
+            // Для ненулевой скорости используем троттлинг
+            if (throttleRef.current) {
+                clearTimeout(throttleRef.current)
             }
 
             throttleRef.current = setTimeout(() => {
@@ -353,6 +362,13 @@ export default function SocketClient() {
             }, 40)
         }
     }, [sendCommand])
+
+    // Функция для изменения угла сервопривода
+    const adjustServoAngle = useCallback((delta: number) => {
+        const newAngle = Math.max(0, Math.min(180, servoAngle + delta))
+        setServoAngle(newAngle)
+        sendCommand("set_servo", {angle: newAngle})
+    }, [servoAngle, sendCommand])
 
     const handleMotorAControl = createMotorHandler('A')
     const handleMotorBControl = createMotorHandler('B')
@@ -563,7 +579,6 @@ export default function SocketClient() {
             {/* Диалог моторных контролов */}
             {controlVisible && (
                 <div>
-
                     <Joystick
                         motor="A"
                         onChange={handleMotorAControl}
@@ -578,6 +593,26 @@ export default function SocketClient() {
                         speed={motorBSpeed}
                     />
 
+                    {/* Кнопки управления сервоприводом */}
+                    <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 flex space-x-4 z-50">
+                        {/* Кнопка увеличения угла (+5 градусов) */}
+                        <Button
+                            onClick={() => adjustServoAngle(5)}
+                            className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
+                        >
+                            <ArrowUp className="h-5 w-5" />
+                        </Button>
+
+                        {/* Кнопка уменьшения угла (-5 градусов) */}
+                        <Button
+                            onClick={() => adjustServoAngle(-5)}
+                            className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
+                        >
+                            <ArrowDown className="h-5 w-5" />
+                        </Button>
+                    </div>
+
+                    {/* Кнопка закрытия */}
                     <Button
                         onClick={handleCloseControls}
                         className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
@@ -585,7 +620,6 @@ export default function SocketClient() {
                     >
                         Close
                     </Button>
-
                 </div>
             )}
         </div>
