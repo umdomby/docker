@@ -44,8 +44,7 @@ export const VideoCallApp = () => {
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
-
-    const [replacementMessage, setReplacementMessage] = useState('');
+    const [useBackCamera, setUseBackCamera] = useState(false) // Состояние выбора камеры
 
     const {
         localStream,
@@ -56,7 +55,8 @@ export const VideoCallApp = () => {
         isCallActive,
         isConnected,
         isInRoom,
-        error
+        error,
+        ws // Добавляем доступ к WebSocket соединению
     } = useWebRTC(selectedDevices, username, roomId)
 
     // Загрузка настроек из localStorage
@@ -76,11 +76,40 @@ export const VideoCallApp = () => {
             setShowLocalVideo(savedShowLocalVideo === 'true')
         }
 
+        const savedCameraPref = localStorage.getItem('useBackCamera')
+        if (savedCameraPref !== null) {
+            setUseBackCamera(savedCameraPref === 'true')
+        }
+
         const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
         setAutoJoin(savedAutoJoin)
         loadSettings()
         loadDevices()
     }, [])
+
+    // Функция переключения камеры на Android устройстве
+    const toggleCamera = () => {
+        const newCameraState = !useBackCamera
+        setUseBackCamera(newCameraState)
+        localStorage.setItem('useBackCamera', String(newCameraState))
+
+        // Проверяем соединение перед отправкой
+        if (isConnected && ws) {
+            try {
+                ws.send(JSON.stringify({
+                    type: "switch_camera",
+                    useBackCamera: newCameraState,
+                    room: roomId,
+                    username: username
+                }))
+            } catch (err) {
+                console.error('Error sending camera switch command:', err)
+
+            }
+        } else {
+            console.error('Not connected to server')
+        }
+    }
 
     // Управление локальным звуком
     useEffect(() => {
@@ -390,17 +419,17 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            {error && (
-                <div className={styles.error}>
-                    {error}
-                    {replacementMessage && <div>{replacementMessage}</div>}
-                </div>
-            )}
-
             {activeTab === 'controls' && (
                 <div className={styles.tabContent}>
                     <div className={styles.videoControlsTab}>
                         <div className={styles.controlButtons}>
+                            <button
+                                onClick={toggleCamera}
+                                className={`${styles.controlButton} ${useBackCamera ? styles.active : ''}`}
+                                title={useBackCamera ? 'Переключить на фронтальную камеру' : 'Переключить на заднюю камеру'}
+                            >
+                                {useBackCamera ? '📷⬅️' : '📷➡️'}
+                            </button>
                             <button
                                 onClick={() => rotateVideo(0)}
                                 className={`${styles.controlButton} ${videoSettings.rotation === 0 ? styles.active : ''}`}

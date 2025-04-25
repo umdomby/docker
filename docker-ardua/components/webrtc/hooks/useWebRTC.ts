@@ -217,6 +217,12 @@ export const useWebRTC = (
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
 
+                // Добавляем обработку switch_camera
+                if (data.type === 'switch_camera_ack') {
+                    console.log('Камера на Android успешно переключена');
+                    // Можно показать уведомление пользователю
+                }
+
                 // Добавляем обработку reconnect_request
                 if (data.type === 'reconnect_request') {
                     console.log('Server requested reconnect');
@@ -813,6 +819,7 @@ export const useWebRTC = (
         error,
         retryCount,
         resetConnection,
-        restartMediaDevices
+        restartMediaDevices,
+        ws: ws.current, // Возвращаем текущее соединение
     };
 };

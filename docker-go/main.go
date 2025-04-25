@@ -356,31 +356,44 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				ice["candidate"].(string))
 		}
 
-    switch data["type"].(string) {
-    case "resend_offer":
-        // Логика повторной отправки offer от ведущего
-        if peer.isLeader {
-            // Создаем и отправляем новое offer
-            offer, err := peer.pc.CreateOffer(nil)
-            if err != nil {
-                log.Printf("CreateOffer error: %v", err)
-                continue
-            }
+		switch data["type"].(string) {
+		case "switch_camera":
+		// Пересылка сообщения другому участнику комнаты
+		mu.Lock()
+		for _, p := range rooms[peer.room] {
+			if p.username != peer.username {
+				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					log.Printf("Error sending to %s: %v", p.username, err)
+				}
+			}
+		}
+		mu.Unlock()
 
-            peer.pc.SetLocalDescription(offer)
-            for _, p := range rooms[peer.room] {
-                if !p.isLeader {
-                    p.conn.WriteJSON(map[string]interface{}{
-                        "type": "offer",
-                        "sdp":  offer,
-                    })
-                }
-            }
-        }
-    case "stop_receiving":
-        // На клиенте должно быть обработано закрытие медиапотока
-        continue
-    }
+		case "resend_offer":
+			// Логика повторной отправки offer от ведущего
+			if peer.isLeader {
+				// Создаем и отправляем новое offer
+				offer, err := peer.pc.CreateOffer(nil)
+				if err != nil {
+					log.Printf("CreateOffer error: %v", err)
+					continue
+				}
+
+				peer.pc.SetLocalDescription(offer)
+				for _, p := range rooms[peer.room] {
+					if !p.isLeader {
+						p.conn.WriteJSON(map[string]interface{}{
+							"type": "offer",
+							"sdp":  offer,
+						})
+					}
+				}
+			}
+
+		case "stop_receiving":
+			// На клиенте должно быть обработано закрытие медиапотока
+			continue
+		}
 
 		// Пересылка сообщения другому участнику комнаты
 		mu.Lock()
