@@ -30,7 +30,19 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
-    transition: transform 0.3s ease;
+    transition: all 0.3s ease;
+}
+
+/* When rotated 90 or 270 degrees */
+.remoteVideo[style*="rotate(90deg)"],
+.remoteVideo[style*="rotate(270deg)"] {
+    height: 133%;
+}
+
+.remoteVideo.rotated {
+    height: 133%;
+    width: auto;
+    max-width: 100%;
 }
 
 .localVideoContainer {

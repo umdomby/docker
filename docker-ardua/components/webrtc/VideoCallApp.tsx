@@ -43,7 +43,7 @@ export const VideoCallApp = () => {
     const [muteRemoteAudio, setMuteRemoteAudio] = useState(false)
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
-    const remoteVideoRef = useRef<HTMLVideoElement>(null)
+    const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
     const [useBackCamera, setUseBackCamera] = useState(false)
 
@@ -263,9 +263,19 @@ export const VideoCallApp = () => {
         }
     }
 
+// In your VideoCallApp component, modify the rotateVideo function:
     const rotateVideo = (degrees: number) => {
-        updateVideoSettings({ rotation: degrees })
-    }
+        updateVideoSettings({ rotation: degrees });
+
+        // Add or remove the rotated class based on degrees
+        if (remoteVideoRef.current) {
+            if (degrees === 90 || degrees === 270) {
+                remoteVideoRef.current.classList.add(styles.rotated);
+            } else {
+                remoteVideoRef.current.classList.remove(styles.rotated);
+            }
+        }
+    };
 
     const flipVideoHorizontal = () => {
         updateVideoSettings({ flipH: !videoSettings.flipH })
@@ -294,6 +304,7 @@ export const VideoCallApp = () => {
                     stream={remoteStream}
                     className={styles.remoteVideo}
                     transform={videoTransform}
+                    videoRef={remoteVideoRef}
                 />
             </div>
 

@@ -5,6 +5,7 @@ interface VideoPlayerProps {
     muted?: boolean;
     className?: string;
     transform?: string;
+    videoRef?: React.RefObject<HTMLVideoElement | null>;
 }
 
 type VideoSettings = {
@@ -13,14 +14,20 @@ type VideoSettings = {
     flipV: boolean;
 };
 
-export const VideoPlayer = ({ stream, muted = false, className, transform }: VideoPlayerProps) => {
-    const videoRef = useRef<HTMLVideoElement>(null)
+export const VideoPlayer = ({ stream, muted = false, className, transform, videoRef }: VideoPlayerProps) => {
+    const internalVideoRef = useRef<HTMLVideoElement>(null)
     const [computedTransform, setComputedTransform] = useState<string>('')
+    const [isRotated, setIsRotated] = useState(false)
+
+    // Use the provided ref or the internal one
+    const actualVideoRef = videoRef || internalVideoRef
 
     useEffect(() => {
-        // Применяем трансформации при каждом обновлении transform
+        // Apply transformations and detect rotation
         if (typeof transform === 'string') {
             setComputedTransform(transform)
+            // Check if transform includes 90 or 270 degree rotation
+            setIsRotated(transform.includes('rotate(90deg') || transform.includes('rotate(270deg)'))
         } else {
             try {
                 const saved = localStorage.getItem('videoSettings')
@@ -30,18 +37,21 @@ export const VideoPlayer = ({ stream, muted = false, className, transform }: Vid
                     if (rotation !== 0) fallbackTransform += `rotate(${rotation}deg) `
                     fallbackTransform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
                     setComputedTransform(fallbackTransform)
+                    setIsRotated(rotation === 90 || rotation === 270)
                 } else {
                     setComputedTransform('')
+                    setIsRotated(false)
                 }
             } catch (e) {
                 console.error('Error parsing saved video settings:', e)
                 setComputedTransform('')
+                setIsRotated(false)
             }
         }
     }, [transform])
 
     useEffect(() => {
-        const video = videoRef.current
+        const video = actualVideoRef.current
         if (!video) return
 
         const handleCanPlay = () => {
@@ -64,16 +74,19 @@ export const VideoPlayer = ({ stream, muted = false, className, transform }: Vid
             video.removeEventListener('canplay', handleCanPlay)
             video.srcObject = null
         }
-    }, [stream])
+    }, [stream, actualVideoRef])
 
     return (
         <video
-            ref={videoRef}
+            ref={actualVideoRef}
             autoPlay
             playsInline
             muted={muted}
-            className={className}
-            style={{ transform: computedTransform, transformOrigin: 'center center' }}
+            className={`${className} ${isRotated ? 'rotated' : ''}`}
+            style={{
+                transform: computedTransform,
+                transformOrigin: 'center center',
+            }}
         />
     )
 }
