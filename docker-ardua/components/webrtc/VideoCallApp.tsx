@@ -32,7 +32,8 @@ export const VideoCallApp = () => {
     const [devicesLoaded, setDevicesLoaded] = useState(false)
     const [isJoining, setIsJoining] = useState(false)
     const [autoJoin, setAutoJoin] = useState(false)
-    const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
+    const [activeMainTab, setActiveMainTab] = useState<'webrtc' | 'esp' | null>(null)
+    const [showControls, setShowControls] = useState(false)
     const [videoSettings, setVideoSettings] = useState<VideoSettings>({
         rotation: 0,
         flipH: false,
@@ -44,7 +45,7 @@ export const VideoCallApp = () => {
     const [isFullscreen, setIsFullscreen] = useState(false)
     const remoteVideoRef = useRef<HTMLVideoElement>(null)
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
-    const [useBackCamera, setUseBackCamera] = useState(false) // Состояние выбора камеры
+    const [useBackCamera, setUseBackCamera] = useState(false)
 
     const {
         localStream,
@@ -56,7 +57,7 @@ export const VideoCallApp = () => {
         isConnected,
         isInRoom,
         error,
-        ws // Добавляем доступ к WebSocket соединению
+        ws
     } = useWebRTC(selectedDevices, username, roomId)
 
     // Загрузка настроек из localStorage
@@ -279,7 +280,11 @@ export const VideoCallApp = () => {
     }
 
     const toggleTab = (tab: 'webrtc' | 'esp' | 'controls') => {
-        setActiveTab(activeTab === tab ? null : tab)
+        if (tab === 'controls') {
+            setShowControls(!showControls)
+        } else {
+            setActiveMainTab(activeMainTab === tab ? null : tab)
+        }
     }
 
     return (
@@ -306,26 +311,26 @@ export const VideoCallApp = () => {
                 <div className={styles.tabsContainer}>
                     <button
                         onClick={() => toggleTab('webrtc')}
-                        className={`${styles.tabButton} ${activeTab === 'webrtc' ? styles.activeTab : ''}`}
+                        className={`${styles.tabButton} ${activeMainTab === 'webrtc' ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera" />
+                        {activeMainTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera" />
                     </button>
                     <button
                         onClick={() => toggleTab('esp')}
-                        className={`${styles.tabButton} ${activeTab === 'esp' ? styles.activeTab : ''}`}
+                        className={`${styles.tabButton} ${activeMainTab === 'esp' ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick" />
+                        {activeMainTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick" />
                     </button>
                     <button
                         onClick={() => toggleTab('controls')}
-                        className={`${styles.tabButton} ${activeTab === 'controls' ? styles.activeTab : ''}`}
+                        className={`${styles.tabButton} ${showControls ? styles.activeTab : ''}`}
                     >
-                        {activeTab === 'controls' ? '▲' : '▼'} <img src="/img.svg" alt="Image" />
+                        {showControls ? '▲' : '▼'} <img src="/img.svg" alt="Image" />
                     </button>
                 </div>
             </div>
 
-            {activeTab === 'webrtc' && (
+            {activeMainTab === 'webrtc' && (
                 <div className={styles.tabContent}>
                     {error && <div className={styles.error}>{error}</div>}
                     <div className={styles.controls}>
@@ -413,13 +418,13 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            {activeTab === 'esp' && (
+            {activeMainTab === 'esp' && (
                 <div className={styles.tabContent}>
                     <SocketClient/>
                 </div>
             )}
 
-            {activeTab === 'controls' && (
+            {showControls && (
                 <div className={styles.tabContent}>
                     <div className={styles.videoControlsTab}>
                         <div className={styles.controlButtons}>
