@@ -649,7 +649,7 @@ export default function SocketClient() {
                             onClick={() => adjustServoAngle(15)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
                         >
-                            <ArrowUp className="h-5 w-5" />
+                            <ArrowDown className="h-5 w-5" />
                         </Button>
 
                         {/* Кнопка уменьшения угла (-5 градусов) */}
