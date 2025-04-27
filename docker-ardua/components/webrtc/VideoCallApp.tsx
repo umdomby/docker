@@ -58,6 +58,13 @@ export const VideoCallApp = () => {
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [roomToDelete, setRoomToDelete] = useState<string | null>(null)
 
+
+    const [isClient, setIsClient] = useState(false)
+
+    useEffect(() => {
+        setIsClient(true)
+    }, [])
+
     const {
         localStream,
         remoteStream,
@@ -437,14 +444,23 @@ export const VideoCallApp = () => {
     }
 
     return (
-        <div className={styles.container}>
-            <div ref={videoContainerRef} className={styles.remoteVideoContainer}>
-                <VideoPlayer
-                    stream={remoteStream}
-                    className={styles.remoteVideo}
-                    transform={videoTransform}
-                    videoRef={remoteVideoRef}
-                />
+        <div
+            className={styles.container}
+            suppressHydrationWarning // Добавляем это для игнорирования различий в атрибутах
+        >
+            <div
+                ref={videoContainerRef}
+                className={styles.remoteVideoContainer}
+                suppressHydrationWarning
+            >
+                {isClient && ( // Оборачиваем в проверку isClient для клиент-сайд рендеринга
+                    <VideoPlayer
+                        stream={remoteStream}
+                        className={styles.remoteVideo}
+                        transform={videoTransform}
+                        videoRef={remoteVideoRef}
+                    />
+                )}
             </div>
 
             {showLocalVideo && (
@@ -499,11 +515,12 @@ export const VideoCallApp = () => {
                                 <Checkbox
                                     id="autoJoin"
                                     checked={autoJoin}
-                                    disabled={!isRoomIdComplete} // Делаем чекбокс неактивным, если ID неполный
+                                    disabled={!isRoomIdComplete}
                                     onCheckedChange={(checked) => {
                                         setAutoJoin(!!checked)
                                         localStorage.setItem('autoJoin', checked ? 'true' : 'false')
                                     }}
+                                    suppressHydrationWarning
                                 />
                                 <Label htmlFor="autoJoin">Автоматическое подключение</Label>
                             </div>
