@@ -16,7 +16,7 @@ export const VideoCallApp = () => {
         video: '',
         audio: ''
     });
-    const [roomId, setRoomId] = useState('room1');
+    const [roomId, setRoomId] = useState('');
     const [username, setUsername] = useState(`User${Math.floor(Math.random() * 1000)}`);
     const [originalUsername, setOriginalUsername] = useState('');
     const [hasPermission, setHasPermission] = useState(false);

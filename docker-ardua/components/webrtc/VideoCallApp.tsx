@@ -5,17 +5,24 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import SocketClient from '../control/SocketClient'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 
 type VideoSettings = {
     rotation: number
     flipH: boolean
     flipV: boolean
+}
+
+// Тип для сохраненных комнат
+type SavedRoom = {
+    id: string // Без тире (XXXX-XXXX-XXXX-XXXX -> XXXXXXXXXXXXXXXX)
+    isDefault: boolean
 }
 
 export const VideoCallApp = () => {
@@ -26,7 +33,7 @@ export const VideoCallApp = () => {
     })
     const [showLocalVideo, setShowLocalVideo] = useState(true)
     const [videoTransform, setVideoTransform] = useState('')
-    const [roomId, setRoomId] = useState('room1')
+    const [roomId, setRoomId] = useState('') // С тире (XXXX-XXXX-XXXX-XXXX)
     const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
     const [hasPermission, setHasPermission] = useState(false)
     const [devicesLoaded, setDevicesLoaded] = useState(false)
@@ -46,6 +53,9 @@ export const VideoCallApp = () => {
     const remoteVideoRef = useRef<HTMLVideoElement>(null);
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
     const [useBackCamera, setUseBackCamera] = useState(false)
+    const [savedRooms, setSavedRooms] = useState<SavedRoom[]>([])
+    const [showDeleteDialog, setShowDeleteDialog] = useState(false)
+    const [roomToDelete, setRoomToDelete] = useState<string | null>(null)
 
     const {
         localStream,
@@ -58,10 +68,42 @@ export const VideoCallApp = () => {
         isInRoom,
         error,
         ws
-    } = useWebRTC(selectedDevices, username, roomId)
+    } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, '')) // Удаляем тире при передаче в useWebRTC
 
-    // Загрузка настроек из localStorage
+    // Загрузка сохраненных комнат и настроек из localStorage
     useEffect(() => {
+        const loadSettings = () => {
+            try {
+                const saved = localStorage.getItem('videoSettings')
+                if (saved) {
+                    const parsed = JSON.parse(saved) as VideoSettings
+                    setVideoSettings(parsed)
+                    applyVideoTransform(parsed)
+                }
+            } catch (e) {
+                console.error('Failed to load video settings', e)
+            }
+        }
+
+        const loadSavedRooms = () => {
+            try {
+                const saved = localStorage.getItem('savedRooms')
+                if (saved) {
+                    const rooms: SavedRoom[] = JSON.parse(saved)
+                    setSavedRooms(rooms)
+
+                    // Находим комнату по умолчанию
+                    const defaultRoom = rooms.find(r => r.isDefault)
+                    if (defaultRoom) {
+                        // Форматируем ID с тире для отображения
+                        setRoomId(formatRoomId(defaultRoom.id))
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load saved rooms', e)
+            }
+        }
+
         const savedMuteLocal = localStorage.getItem('muteLocalAudio')
         if (savedMuteLocal !== null) {
             setMuteLocalAudio(savedMuteLocal === 'true')
@@ -84,9 +126,114 @@ export const VideoCallApp = () => {
 
         const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
         setAutoJoin(savedAutoJoin)
+
         loadSettings()
+        loadSavedRooms()
         loadDevices()
     }, [])
+
+    // Форматирование ID комнаты с тире (XXXX-XXXX-XXXX-XXXX)
+    const formatRoomId = (id: string): string => {
+        // Удаляем все недопустимые символы (оставляем только буквы и цифры)
+        const cleanId = id.replace(/[^A-Z0-9]/gi, '')
+
+        // Вставляем тире каждые 4 символа
+        return cleanId.replace(/(.{4})(?=.)/g, '$1-')
+    }
+
+    // Обработчик изменения поля ID комнаты
+    const handleRoomIdChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.target.value.toUpperCase()
+
+        // Удаляем все недопустимые символы (оставляем только буквы, цифры и тире)
+        let cleanInput = input.replace(/[^A-Z0-9-]/gi, '')
+
+        // Ограничиваем длину до 19 символов (16 символов + 3 тире)
+        if (cleanInput.length > 19) {
+            cleanInput = cleanInput.substring(0, 19)
+        }
+
+        // Вставляем тире каждые 4 символа
+        const formatted = formatRoomId(cleanInput)
+        setRoomId(formatted)
+    }
+
+    // Проверка, что введен полный ID комнаты (16 символов без учета тире)
+    const isRoomIdComplete = roomId.replace(/-/g, '').length === 16
+
+    // Сохранение комнаты в список
+    const handleSaveRoom = () => {
+        if (!isRoomIdComplete) return
+
+        const roomIdWithoutDashes = roomId.replace(/-/g, '')
+
+        // Проверяем, не сохранена ли уже эта комната
+        if (savedRooms.some(r => r.id === roomIdWithoutDashes)) {
+            return
+        }
+
+        const newRoom: SavedRoom = {
+            id: roomIdWithoutDashes,
+            isDefault: savedRooms.length === 0 // Первая комната становится по умолчанию
+        }
+
+        const updatedRooms = [...savedRooms, newRoom]
+        setSavedRooms(updatedRooms)
+        saveRoomsToStorage(updatedRooms)
+    }
+
+    // Удаление комнаты из списка
+    const handleDeleteRoom = (roomIdWithoutDashes: string) => {
+        setRoomToDelete(roomIdWithoutDashes)
+        setShowDeleteDialog(true)
+    }
+
+    // Подтверждение удаления комнаты
+    const confirmDeleteRoom = () => {
+        if (!roomToDelete) return
+
+        const updatedRooms = savedRooms.filter(r => r.id !== roomToDelete)
+
+        // Если удаляем комнату по умолчанию, назначаем новую по умолчанию (если есть)
+        if (savedRooms.some(r => r.id === roomToDelete && r.isDefault)) {
+            if (updatedRooms.length > 0) {
+                updatedRooms[0].isDefault = true
+            }
+        }
+
+        setSavedRooms(updatedRooms)
+        saveRoomsToStorage(updatedRooms)
+
+        // Если удаленная комната была текущей, очищаем поле
+        if (roomId.replace(/-/g, '') === roomToDelete) {
+            setRoomId('')
+        }
+
+        setShowDeleteDialog(false)
+        setRoomToDelete(null)
+    }
+
+    // Выбор комнаты из списка
+    const handleSelectRoom = (roomIdWithoutDashes: string) => {
+        // Форматируем ID с тире для отображения
+        setRoomId(formatRoomId(roomIdWithoutDashes))
+    }
+
+    // Установка комнаты по умолчанию
+    const setDefaultRoom = (roomIdWithoutDashes: string) => {
+        const updatedRooms = savedRooms.map(r => ({
+            ...r,
+            isDefault: r.id === roomIdWithoutDashes
+        }))
+
+        setSavedRooms(updatedRooms)
+        saveRoomsToStorage(updatedRooms)
+    }
+
+    // Сохранение списка комнат в localStorage
+    const saveRoomsToStorage = (rooms: SavedRoom[]) => {
+        localStorage.setItem('savedRooms', JSON.stringify(rooms))
+    }
 
     // Функция переключения камеры на Android устройстве
     const toggleCamera = () => {
@@ -100,12 +247,11 @@ export const VideoCallApp = () => {
                 ws.send(JSON.stringify({
                     type: "switch_camera",
                     useBackCamera: newCameraState,
-                    room: roomId,
+                    room: roomId.replace(/-/g, ''),
                     username: username
                 }))
             } catch (err) {
                 console.error('Error sending camera switch command:', err)
-
             }
         } else {
             console.error('Not connected to server')
@@ -132,27 +278,10 @@ export const VideoCallApp = () => {
     }, [remoteStream, muteRemoteAudio])
 
     useEffect(() => {
-        if (autoJoin && hasPermission && !isInRoom) {
+        if (autoJoin && hasPermission && !isInRoom && isRoomIdComplete) {
             handleJoinRoom();
         }
-    }, [autoJoin, hasPermission]); // Зависимости
-
-    const loadSettings = () => {
-        try {
-            const saved = localStorage.getItem('videoSettings')
-            if (saved) {
-                const parsed = JSON.parse(saved) as VideoSettings
-                setVideoSettings(parsed)
-                applyVideoTransform(parsed)
-            }
-        } catch (e) {
-            console.error('Failed to load video settings', e)
-        }
-    }
-
-    const saveSettings = (settings: VideoSettings) => {
-        localStorage.setItem('videoSettings', JSON.stringify(settings))
-    }
+    }, [autoJoin, hasPermission, isRoomIdComplete]); // Зависимости
 
     const applyVideoTransform = (settings: VideoSettings) => {
         const { rotation, flipH, flipV } = settings
@@ -165,6 +294,10 @@ export const VideoCallApp = () => {
             remoteVideoRef.current.style.transform = transform
             remoteVideoRef.current.style.transformOrigin = 'center center'
         }
+    }
+
+    const saveSettings = (settings: VideoSettings) => {
+        localStorage.setItem('videoSettings', JSON.stringify(settings))
     }
 
     const loadDevices = async () => {
@@ -217,8 +350,13 @@ export const VideoCallApp = () => {
     }
 
     const handleJoinRoom = async () => {
+        if (!isRoomIdComplete) return
+
         setIsJoining(true)
         try {
+            // Устанавливаем выбранную комнату как дефолтную
+            setDefaultRoom(roomId.replace(/-/g, ''))
+
             await joinRoom(username)
         } catch (error) {
             console.error('Error joining room:', error)
@@ -233,8 +371,10 @@ export const VideoCallApp = () => {
         try {
             if (!document.fullscreenElement) {
                 await videoContainerRef.current.requestFullscreen()
+                setIsFullscreen(true)
             } else {
                 await document.exitFullscreen()
+                setIsFullscreen(false)
             }
         } catch (err) {
             console.error('Fullscreen error:', err)
@@ -263,11 +403,9 @@ export const VideoCallApp = () => {
         }
     }
 
-// In your VideoCallApp component, modify the rotateVideo function:
     const rotateVideo = (degrees: number) => {
         updateVideoSettings({ rotation: degrees });
 
-        // Add or remove the rotated class based on degrees
         if (remoteVideoRef.current) {
             if (degrees === 90 || degrees === 270) {
                 remoteVideoRef.current.classList.add(styles.rotated);
@@ -370,16 +508,19 @@ export const VideoCallApp = () => {
                         </div>
 
                         <div className={styles.inputGroup}>
+                            <Label htmlFor="room">ID комнаты</Label>
                             <Input
                                 id="room"
                                 value={roomId}
-                                onChange={(e) => setRoomId(e.target.value)}
+                                onChange={handleRoomIdChange}
                                 disabled={isInRoom}
-                                placeholder="ID комнаты"
+                                placeholder="XXXX-XXXX-XXXX-XXXX"
+                                maxLength={19}
                             />
                         </div>
 
                         <div className={styles.inputGroup}>
+                            <Label htmlFor="username">Ваше имя</Label>
                             <Input
                                 id="username"
                                 value={username}
@@ -392,7 +533,7 @@ export const VideoCallApp = () => {
                         {!isInRoom ? (
                             <Button
                                 onClick={handleJoinRoom}
-                                disabled={!hasPermission || isJoining}
+                                disabled={!hasPermission || isJoining || !isRoomIdComplete}
                                 className={styles.button}
                             >
                                 {isJoining ? 'Подключение...' : 'Войти в комнату'}
@@ -401,6 +542,41 @@ export const VideoCallApp = () => {
                             <Button onClick={leaveRoom} className={styles.button}>
                                 Покинуть комнату
                             </Button>
+                        )}
+
+                        <div className={styles.inputGroup}>
+                            <Button
+                                onClick={handleSaveRoom}
+                                disabled={!isRoomIdComplete || savedRooms.some(r => r.id === roomId.replace(/-/g, ''))}
+                                className={styles.button}
+                            >
+                                Сохранить ID комнаты
+                            </Button>
+                        </div>
+
+                        {savedRooms.length > 0 && (
+                            <div className={styles.savedRooms}>
+                                <h3>Сохраненные комнаты:</h3>
+                                <ul>
+                                    {savedRooms.map((room) => (
+                                        <li key={room.id} className={styles.savedRoomItem}>
+                                            <span
+                                                onClick={() => handleSelectRoom(room.id)}
+                                                className={room.isDefault ? styles.defaultRoom : ''}
+                                            >
+                                                {formatRoomId(room.id)}
+                                                {room.isDefault && ' (по умолчанию)'}
+                                            </span>
+                                            <button
+                                                onClick={() => handleDeleteRoom(room.id)}
+                                                className={styles.deleteRoomButton}
+                                            >
+                                                Удалить
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         )}
 
                         <div className={styles.userList}>
@@ -527,6 +703,24 @@ export const VideoCallApp = () => {
                     </div>
                 </div>
             )}
+
+            {/* Диалог подтверждения удаления комнаты */}
+            <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Удалить комнату?</DialogTitle>
+                    </DialogHeader>
+                    <p>Вы уверены, что хотите удалить комнату {roomToDelete ? formatRoomId(roomToDelete) : ''}?</p>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+                            Отмена
+                        </Button>
+                        <Button variant="destructive" onClick={confirmDeleteRoom}>
+                            Удалить
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }
