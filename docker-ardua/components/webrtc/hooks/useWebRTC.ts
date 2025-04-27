@@ -89,21 +89,28 @@ export const useWebRTC = (
             pc.current.ontrack = null;
             pc.current.onnegotiationneeded = null;
             pc.current.oniceconnectionstatechange = null;
+            pc.current.onicegatheringstatechange = null;
+            pc.current.onsignalingstatechange = null;
+            pc.current.onconnectionstatechange = null;
             pc.current.close();
             pc.current = null;
         }
 
         // Остановка медиапотоков
         if (localStream) {
-            localStream.getTracks().forEach(track => track.stop());
+            localStream.getTracks().forEach(track => {
+                track.stop();
+                track.dispatchEvent(new Event('ended'));
+            });
             setLocalStream(null);
         }
 
         if (remoteStream) {
             remoteStream.getTracks().forEach(track => {
                 track.stop();
-                track.dispatchEvent(new Event('ended')); // Принудительно вызываем событие завершения
+                track.dispatchEvent(new Event('ended'));
             });
+            setRemoteStream(null);
         }
 
         setIsCallActive(false);
@@ -113,13 +120,18 @@ export const useWebRTC = (
         retryAttempts.current = 0;
     };
 
+
     const leaveRoom = () => {
         if (ws.current?.readyState === WebSocket.OPEN) {
-            ws.current.send(JSON.stringify({
-                type: 'leave',
-                room: roomId,
-                username
-            }));
+            try {
+                ws.current.send(JSON.stringify({
+                    type: 'leave',
+                    room: roomId,
+                    username
+                }));
+            } catch (e) {
+                console.error('Error sending leave message:', e);
+            }
         }
         cleanup();
         setUsers([]);

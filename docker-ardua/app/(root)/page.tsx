@@ -10,33 +10,33 @@ import WebRTC from  "@/components/webrtc";
 
 
 export default async function Home() {
-    const session = await getUserSession();
+    // const session = await getUserSession();
 
-    if (!session?.id) {
-        return (
-            <Container className="flex flex-col my-10">
-                <Suspense fallback={<Loading />}>
-                    123
-                </Suspense>
-            </Container>
-        );
-    }
+    // if (!session?.id) {
+    //     return (
+    //         <Container className="flex flex-col my-10">
+    //             <Suspense fallback={<Loading />}>
+    //                 123
+    //             </Suspense>
+    //         </Container>
+    //     );
+    // }
 
-    const user = await prisma.user.findFirst({
-        where: {
-            id: Number(session.id)
-        }
-    });
+    // const user = await prisma.user.findFirst({
+    //     where: {
+    //         id: Number(session.id)
+    //     }
+    // });
 
-    if (!user) {
-        return (
-            <Container className="flex flex-col my-10">
-                <Suspense fallback={<Loading />}>
-                    123
-                </Suspense>
-            </Container>
-        );
-    }
+    // if (!user) {
+    //     return (
+    //         <Container className="flex flex-col my-10">
+    //             <Suspense fallback={<Loading />}>
+    //                 123
+    //             </Suspense>
+    //         </Container>
+    //     );
+    // }
 
     return (
         // <Container className="flex flex-col my-10">

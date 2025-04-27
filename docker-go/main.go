@@ -137,6 +137,8 @@ func sendRoomInfo(room string) {
 	}
 }
 
+// В файле main.go
+
 func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
     mu.Lock()
     defer mu.Unlock()
@@ -147,37 +149,17 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 
     roomPeers := rooms[room]
 
-    // Ищем существующего ведомого для замены
-    var existingFollower *Peer
-    for _, p := range roomPeers {
-        if !isLeader && !p.isLeader {
-            existingFollower = p
-            break
+    // Удаляем предыдущее соединение этого пользователя, если оно есть
+    if existingPeer, ok := roomPeers[username]; ok {
+        log.Printf("Removing existing connection for user %s", username)
+        if existingPeer.pc != nil {
+            existingPeer.pc.Close()
         }
+        delete(peers, existingPeer.conn.RemoteAddr().String())
+        delete(roomPeers, username)
     }
 
-    // Если нашли ведомого для замены
-    if existingFollower != nil {
-        log.Printf("Replacing follower %s with new follower %s", existingFollower.username, username)
-
-        // Отправляем команду на отключение
-        existingFollower.conn.WriteJSON(map[string]interface{}{
-            "type": "force_disconnect",
-            "data": "You have been replaced by another viewer",
-        })
-
-        // Закрываем соединения
-        if existingFollower.pc != nil {
-            existingFollower.pc.Close()
-        }
-        existingFollower.conn.Close()
-
-        // Удаляем из комнаты
-        delete(roomPeers, existingFollower.username)
-        delete(peers, existingFollower.conn.RemoteAddr().String())
-    }
-
-    // Проверяем лимит участников
+    // Проверяем лимит участников (1 ведущий + 1 ведомый)
     if len(roomPeers) >= 2 {
         return nil, nil
     }
@@ -197,7 +179,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         isLeader: isLeader,
     }
 
-    // Добавляем обработчики ICE кандидатов
+    // Обработчики событий WebRTC
     peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
         if c == nil {
             return
@@ -210,48 +192,33 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         })
     })
 
-    // Добавляем обработчик входящих потоков
     peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
         log.Printf("Track received: %s", track.Kind().String())
     })
 
-    // Добавляем обработчик изменения состояния ICE соединения
-    //     peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-    //         log.Printf("ICE Connection State changed: %s", state.String())
-    //     })
-
     peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
         log.Printf("PeerConnection state changed: %s", s.String())
-        if s == webrtc.PeerConnectionStateFailed {
-            // 1. Закрываем проблемное соединение
-            if peerConnection != nil {
-                peerConnection.Close()
-            }
+        if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+            // Удаляем пир при проблемах с соединением
+            mu.Lock()
+            defer mu.Unlock()
 
-            // 2. Уведомляем клиента о необходимости переподключения
-            if conn != nil {
-                conn.WriteJSON(map[string]interface{}{
-                    "type": "reconnect_request",
-                    "reason": "connection_failed",
-                })
+            if p, ok := peers[conn.RemoteAddr().String()]; ok {
+                log.Printf("Cleaning up failed/closed connection for %s", p.username)
+                if p.pc != nil {
+                    p.pc.Close()
+                }
+                delete(peers, conn.RemoteAddr().String())
+                delete(rooms[p.room], p.username)
+                if len(rooms[p.room]) == 0 {
+                    delete(rooms, p.room)
+                }
             }
-
-            // 3. Логируем инцидент
-            log.Printf("Connection failed for user %s in room %s", username, room)
         }
     })
 
     rooms[room][username] = peer
     peers[conn.RemoteAddr().String()] = peer
-
-    // Если это новый ведомый и есть ведущий - запрашиваем новый offer
-    if !isLeader {
-        if leader := getLeader(room); leader != nil {
-            leader.conn.WriteJSON(map[string]interface{}{
-                "type": "resend_offer",
-            })
-        }
-    }
 
     return peer, nil
 }
