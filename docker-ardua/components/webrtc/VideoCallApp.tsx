@@ -5,13 +5,14 @@ import { useWebRTC } from './hooks/useWebRTC'
 import styles from './styles.module.css'
 import { VideoPlayer } from './components/VideoPlayer'
 import { DeviceSelector } from './components/DeviceSelector'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
 import SocketClient from '../control/SocketClient'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+
 
 type VideoSettings = {
     rotation: number
@@ -462,19 +463,19 @@ export const VideoCallApp = () => {
                         onClick={() => toggleTab('webrtc')}
                         className={`${styles.tabButton} ${activeMainTab === 'webrtc' ? styles.activeTab : ''}`}
                     >
-                        {activeMainTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera" />
+                        {activeMainTab === 'webrtc' ? '▲' : '▼'} <img src="/cam.svg" alt="Camera"/>
                     </button>
                     <button
                         onClick={() => toggleTab('esp')}
                         className={`${styles.tabButton} ${activeMainTab === 'esp' ? styles.activeTab : ''}`}
                     >
-                        {activeMainTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick" />
+                        {activeMainTab === 'esp' ? '▲' : '▼'} <img src="/joy.svg" alt="Joystick"/>
                     </button>
                     <button
                         onClick={() => toggleTab('controls')}
                         className={`${styles.tabButton} ${showControls ? styles.activeTab : ''}`}
                     >
-                        {showControls ? '▲' : '▼'} <img src="/img.svg" alt="Image" />
+                        {showControls ? '▲' : '▼'} <img src="/img.svg" alt="Image"/>
                     </button>
                 </div>
             </div>
@@ -498,6 +499,7 @@ export const VideoCallApp = () => {
                                 <Checkbox
                                     id="autoJoin"
                                     checked={autoJoin}
+                                    disabled={!isRoomIdComplete} // Делаем чекбокс неактивным, если ID неполный
                                     onCheckedChange={(checked) => {
                                         setAutoJoin(!!checked)
                                         localStorage.setItem('autoJoin', checked ? 'true' : 'false')
