@@ -430,23 +430,24 @@ export const useWebRTC = (
                     {
                         urls: [
                             'turn:ardua.site:3478',  // UDP/TCP
-                            'turns:ardua.site:5349'   // TLS (если настроен)
+                            // 'turns:ardua.site:5349'   // TLS (если настроен)
                         ],
                         username: 'user1',     // Исправлено: username
                         credential: 'pass1'    // Исправлено: credential
                     },
                     {
                         urls: [
-                            'stun:stun.l.google.com:19301',
-                            'stun:stun.l.google.com:19302',
-                            'stun:stun.l.google.com:19303',
-                            'stun:stun.l.google.com:19304',
-                            'stun:stun.l.google.com:19305',
-                            'stun:stun1.l.google.com:19301',
-                            'stun:stun1.l.google.com:19302',
-                            'stun:stun1.l.google.com:19303',
-                            'stun:stun1.l.google.com:19304',
-                            'stun:stun1.l.google.com:19305'
+                            'stun:ardua.site:3478',
+                            // 'stun:stun.l.google.com:19301',
+                            // 'stun:stun.l.google.com:19302',
+                            // 'stun:stun.l.google.com:19303',
+                            // 'stun:stun.l.google.com:19304',
+                            // 'stun:stun.l.google.com:19305',
+                            // 'stun:stun1.l.google.com:19301',
+                            // 'stun:stun1.l.google.com:19302',
+                            // 'stun:stun1.l.google.com:19303',
+                            // 'stun:stun1.l.google.com:19304',
+                            // 'stun:stun1.l.google.com:19305'
                         ]
                     }
                 ],
