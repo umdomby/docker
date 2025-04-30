@@ -22,7 +22,7 @@ type Peer struct {
 	pc       *webrtc.PeerConnection
 	username string
 	room     string
-	isLeader bool // true для Android (ведущий), false для браузера (ведомый)
+	isLeader bool
 }
 
 type RoomInfo struct {
@@ -51,31 +51,20 @@ func randSeq(n int) string {
 }
 
 func getWebRTCConfig() webrtc.Configuration {
-    return webrtc.Configuration{
-        ICEServers: []webrtc.ICEServer{
-            {
-                URLs:       []string{"turn:ardua.site:3478"},
-                //  URLs:       []string{"turn:ardua.site:3478", "turns:ardua.site:5349"},
-                Username:   "user1",
-                Credential: "pass1",
-            },
-                {URLs: []string{"stun:ardua.site:3478"}},
-//             {URLs: []string{"stun:stun.l.google.com:19301"}},
-//             {URLs: []string{"stun:stun.l.google.com:19302"}},
-//             {URLs: []string{"stun:stun.l.google.com:19303"}},
-//             {URLs: []string{"stun:stun.l.google.com:19304"}},
-//             {URLs: []string{"stun:stun.l.google.com:19305"}},
-//             {URLs: []string{"stun:stun1.l.google.com:19301"}},
-//             {URLs: []string{"stun:stun1.l.google.com:19302"}},
-//             {URLs: []string{"stun:stun1.l.google.com:19303"}},
-//             {URLs: []string{"stun:stun1.l.google.com:19304"}},
-//             {URLs: []string{"stun:stun1.l.google.com:19305"}},
-        },
-        ICETransportPolicy: webrtc.ICETransportPolicyAll,
-        BundlePolicy:       webrtc.BundlePolicyMaxBundle,
-        RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
-        SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
-    }
+	return webrtc.Configuration{
+		ICEServers: []webrtc.ICEServer{
+			{
+				URLs:       []string{"turn:ardua.site:3478"},
+				Username:   "user1",
+				Credential: "pass1",
+			},
+			{URLs: []string{"stun:ardua.site:3478"}},
+		},
+		ICETransportPolicy: webrtc.ICETransportPolicyAll,
+		BundlePolicy:       webrtc.BundlePolicyMaxBundle,
+		RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
+		SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
+	}
 }
 
 func logStatus() {
@@ -94,14 +83,6 @@ func logStatus() {
 		}
 		log.Printf("Room '%s' - Leader: %s, Follower: %s", room, leader, follower)
 	}
-}
-
-func getUsernames(peers map[string]*Peer) []string {
-	usernames := make([]string, 0, len(peers))
-	for username := range peers {
-		usernames = append(usernames, username)
-	}
-	return usernames
 }
 
 func sendRoomInfo(room string) {
@@ -139,132 +120,123 @@ func sendRoomInfo(room string) {
 	}
 }
 
-func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
-    mu.Lock()
-    defer mu.Unlock()
+func cleanupPeer(peer *Peer) {
+	if peer == nil {
+		return
+	}
 
-    if _, exists := rooms[room]; !exists {
-        rooms[room] = make(map[string]*Peer)
-    }
+	if peer.pc != nil {
+		peer.pc.Close()
+	}
+	if peer.conn != nil {
+		peer.conn.Close()
+	}
 
-    roomPeers := rooms[room]
+	mu.Lock()
+	defer mu.Unlock()
 
-    // Ищем существующего ведомого для замены
-    var existingFollower *Peer
-    for _, p := range roomPeers {
-        if !isLeader && !p.isLeader {
-            existingFollower = p
-            break
-        }
-    }
+	// Удаляем из комнаты
+	if roomPeers, exists := rooms[peer.room]; exists {
+		delete(roomPeers, peer.username)
+		if len(roomPeers) == 0 {
+			delete(rooms, peer.room)
+		}
+	}
 
-    // Если нашли ведомого для замены
-    if existingFollower != nil {
-        log.Printf("Replacing follower %s with new follower %s", existingFollower.username, username)
-
-        // Отправляем команду на отключение
-        existingFollower.conn.WriteJSON(map[string]interface{}{
-            "type": "force_disconnect",
-            "data": "You have been replaced by another viewer",
-        })
-
-        // Закрываем соединения
-        if existingFollower.pc != nil {
-            existingFollower.pc.Close()
-        }
-        existingFollower.conn.Close()
-
-        // Удаляем из комнаты
-        delete(roomPeers, existingFollower.username)
-        delete(peers, existingFollower.conn.RemoteAddr().String())
-    }
-
-    // Проверяем лимит участников
-    if len(roomPeers) >= 2 {
-        return nil, nil
-    }
-
-    // Создаем новое PeerConnection
-    peerConnection, err := webrtc.NewPeerConnection(getWebRTCConfig())
-    if err != nil {
-        log.Printf("Failed to create peer connection: %v", err)
-        return nil, err
-    }
-
-    peer := &Peer{
-        conn:     conn,
-        pc:       peerConnection,
-        username: username,
-        room:     room,
-        isLeader: isLeader,
-    }
-
-    // Добавляем обработчики ICE кандидатов
-    peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
-        if c == nil {
-            return
-        }
-
-        candidate := c.ToJSON()
-        conn.WriteJSON(map[string]interface{}{
-            "type": "ice_candidate",
-            "ice":  candidate,
-        })
-    })
-
-    // Добавляем обработчик входящих потоков
-    peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-        log.Printf("Track received: %s", track.Kind().String())
-    })
-
-    // Добавляем обработчик изменения состояния ICE соединения
-    //     peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-    //         log.Printf("ICE Connection State changed: %s", state.String())
-    //     })
-
-    peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-        log.Printf("PeerConnection state changed: %s", s.String())
-        if s == webrtc.PeerConnectionStateFailed {
-            // 1. Закрываем проблемное соединение
-            if peerConnection != nil {
-                peerConnection.Close()
-            }
-
-            // 2. Уведомляем клиента о необходимости переподключения
-            if conn != nil {
-                conn.WriteJSON(map[string]interface{}{
-                    "type": "reconnect_request",
-                    "reason": "connection_failed",
-                })
-            }
-
-            // 3. Логируем инцидент
-            log.Printf("Connection failed for user %s in room %s", username, room)
-        }
-    })
-
-    rooms[room][username] = peer
-    peers[conn.RemoteAddr().String()] = peer
-
-    // Если это новый ведомый и есть ведущий - запрашиваем новый offer
-    if !isLeader {
-        if leader := getLeader(room); leader != nil {
-            leader.conn.WriteJSON(map[string]interface{}{
-                "type": "resend_offer",
-            })
-        }
-    }
-
-    return peer, nil
+	// Удаляем из общего списка пиров
+	delete(peers, peer.conn.RemoteAddr().String())
 }
 
-func getLeader(room string) *Peer {
-    for _, p := range rooms[room] {
-        if p.isLeader {
-            return p
-        }
-    }
-    return nil
+func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	if _, exists := rooms[room]; !exists {
+		rooms[room] = make(map[string]*Peer)
+	}
+
+	roomPeers := rooms[room]
+
+	// Если это ведущий, удаляем предыдущего ведущего
+	if isLeader {
+		for _, p := range roomPeers {
+			if p.isLeader {
+				log.Printf("Replacing leader %s with new leader %s", p.username, username)
+				// Отправляем сообщение о принудительном отключении
+				p.conn.WriteJSON(map[string]interface{}{
+					"type": "force_disconnect",
+					"data": "Replaced by new leader",
+				})
+				cleanupPeer(p)
+				break
+			}
+		}
+	} else {
+		// Если это ведомый, удаляем предыдущего ведомого
+		for _, p := range roomPeers {
+			if !p.isLeader {
+				log.Printf("Replacing follower %s with new follower %s", p.username, username)
+				// Отправляем сообщение о принудительном отключении
+				p.conn.WriteJSON(map[string]interface{}{
+					"type": "force_disconnect",
+					"data": "Replaced by new viewer",
+				})
+				cleanupPeer(p)
+				break
+			}
+		}
+	}
+
+	// Проверяем лимит участников (2 - ведущий и ведомый)
+	if len(roomPeers) >= 2 {
+		return nil, nil
+	}
+
+	// Создаем новое PeerConnection
+	peerConnection, err := webrtc.NewPeerConnection(getWebRTCConfig())
+	if err != nil {
+		log.Printf("Failed to create peer connection: %v", err)
+		return nil, err
+	}
+
+	peer := &Peer{
+		conn:     conn,
+		pc:       peerConnection,
+		username: username,
+		room:     room,
+		isLeader: isLeader,
+	}
+
+	// Обработчики событий WebRTC
+	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+
+		candidate := c.ToJSON()
+		conn.WriteJSON(map[string]interface{}{
+			"type": "ice_candidate",
+			"ice":  candidate,
+		})
+	})
+
+	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+		log.Printf("Track received: %s", track.Kind().String())
+	})
+
+	peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+		log.Printf("PeerConnection state changed: %s", s.String())
+		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
+			log.Printf("Cleaning up peer %s due to connection state %s", peer.username, s.String())
+			cleanupPeer(peer)
+			sendRoomInfo(room)
+		}
+	})
+
+	rooms[room][username] = peer
+	peers[conn.RemoteAddr().String()] = peer
+
+	return peer, nil
 }
 
 func main() {
@@ -285,7 +257,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		log.Println("WebSocket upgrade error:", err)
 		return
 	}
-	defer conn.Close()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered from panic in handleWebSocket: %v", r)
+		}
+	}()
 
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New connection from: %s", remoteAddr)
@@ -328,6 +304,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
 			log.Printf("Connection closed by %s: %v", initData.Username, err)
+			cleanupPeer(peer)
+			sendRoomInfo(initData.Room)
 			break
 		}
 
@@ -337,51 +315,61 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		if sdp, ok := data["sdp"].(map[string]interface{}); ok {
-			sdpType := sdp["type"].(string)
-			sdpStr := sdp["sdp"].(string)
-
-			log.Printf("SDP %s from %s (%s)\n%s",
-				sdpType, initData.Username, initData.Room, sdpStr)
-
-			hasVideo := strings.Contains(sdpStr, "m=video")
-			log.Printf("Video in SDP: %v", hasVideo)
-
-			if !hasVideo && sdpType == "offer" {
-				log.Printf("WARNING: Offer from %s contains no video!", initData.Username)
-			}
-		} else if ice, ok := data["ice"].(map[string]interface{}); ok {
-			log.Printf("ICE from %s: %s:%v %s",
-				initData.Username,
-				ice["sdpMid"].(string),
-				ice["sdpMLineIndex"].(float64),
-				ice["candidate"].(string))
+		// Безопасная обработка типа сообщения
+		msgType, ok := data["type"].(string)
+		if !ok {
+			log.Printf("Invalid message type from %s", initData.Username)
+			continue
 		}
 
-		switch data["type"].(string) {
+		switch msgType {
+		case "sdp":
+			if sdp, ok := data["sdp"].(map[string]interface{}); ok {
+				sdpType, _ := sdp["type"].(string)
+				sdpStr, _ := sdp["sdp"].(string)
+
+				log.Printf("SDP %s from %s (%s)\n%s",
+					sdpType, initData.Username, initData.Room, sdpStr)
+
+				hasVideo := strings.Contains(sdpStr, "m=video")
+				log.Printf("Video in SDP: %v", hasVideo)
+			}
+
+		case "ice_candidate":
+			if ice, ok := data["ice"].(map[string]interface{}); ok {
+				sdpMid, _ := ice["sdpMid"].(string)
+				sdpMLineIndex, _ := ice["sdpMLineIndex"].(float64)
+				candidate, _ := ice["candidate"].(string)
+
+				log.Printf("ICE from %s: %s:%v %s",
+					initData.Username, sdpMid, sdpMLineIndex, candidate)
+			}
+
 		case "switch_camera":
-		// Пересылка сообщения другому участнику комнаты
-		mu.Lock()
-		for _, p := range rooms[peer.room] {
-			if p.username != peer.username {
-				if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					log.Printf("Error sending to %s: %v", p.username, err)
+			mu.Lock()
+			for _, p := range rooms[peer.room] {
+				if p.username != peer.username {
+					if err := p.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+						log.Printf("Error sending to %s: %v", p.username, err)
+					}
 				}
 			}
-		}
-		mu.Unlock()
+			mu.Unlock()
 
 		case "resend_offer":
-			// Логика повторной отправки offer от ведущего
 			if peer.isLeader {
-				// Создаем и отправляем новое offer
 				offer, err := peer.pc.CreateOffer(nil)
 				if err != nil {
 					log.Printf("CreateOffer error: %v", err)
 					continue
 				}
 
-				peer.pc.SetLocalDescription(offer)
+				if err := peer.pc.SetLocalDescription(offer); err != nil {
+					log.Printf("SetLocalDescription error: %v", err)
+					continue
+				}
+
+				mu.Lock()
 				for _, p := range rooms[peer.room] {
 					if !p.isLeader {
 						p.conn.WriteJSON(map[string]interface{}{
@@ -390,11 +378,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 						})
 					}
 				}
+				mu.Unlock()
 			}
-
-		case "stop_receiving":
-			// На клиенте должно быть обработано закрытие медиапотока
-			continue
 		}
 
 		// Пересылка сообщения другому участнику комнаты
@@ -408,17 +393,4 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 		mu.Unlock()
 	}
-
-	// Очистка при отключении
-	mu.Lock()
-	delete(peers, remoteAddr)
-	delete(rooms[peer.room], peer.username)
-	if len(rooms[peer.room]) == 0 {
-		delete(rooms, peer.room)
-	}
-	mu.Unlock()
-
-	log.Printf("User '%s' left room '%s'", peer.username, peer.room)
-	logStatus()
-	sendRoomInfo(peer.room)
 }
