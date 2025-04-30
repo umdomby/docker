@@ -40,7 +40,7 @@ export const useWebRTC = (
 
     // Максимальное количество попыток переподключения
     const MAX_RETRIES = 10;
-    const VIDEO_CHECK_TIMEOUT = 6000; // 4 секунд для проверки видео
+    const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
 
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
