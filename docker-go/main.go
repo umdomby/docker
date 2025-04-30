@@ -206,10 +206,10 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         log.Printf("Track received: %s", track.Kind().String())
     })
 
-    // Добавляем обработчик изменения состояния ICE соединения
-    //     peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-    //         log.Printf("ICE Connection State changed: %s", state.String())
-    //     })
+    //Добавляем обработчик изменения состояния ICE соединения
+    peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
+        log.Printf("ICE Connection State changed: %s", state.String())
+    })
 
     peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
         log.Printf("PeerConnection state changed: %s", s.String())
