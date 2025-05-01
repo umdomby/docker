@@ -645,11 +645,48 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Логируем базовую информацию о сообщении
-		msgType, ok := data["type"].(string)
-		if !ok {
-			log.Printf("Received message without 'type' field from %s: %v", peer.username, data)
-			continue
-		}
+        msgType, ok := data["type"].(string)
+        if !ok {
+            // ДОБАВЬТЕ ЭТУ ПРОВЕРКУ:
+if action, ok := data["action"].(string); ok && action == "join" {
+    room, _ := data["room"].(string)
+    username, _ := data["username"].(string)
+    isLeader, _ := data["isLeader"].(bool)
+
+    log.Printf("Processing join from %s (room: %s, leader: %v)", username, room, isLeader)
+
+    // Если это ведомый и уже есть другой ведомый - заменяем его
+    if !isLeader {
+        mu.Lock()
+        if roomPeers, exists := rooms[room]; exists {
+            for _, p := range roomPeers {
+                if !p.isLeader {
+                    // Отправляем команду на отключение старому ведомому
+                    p.mu.Lock()
+                    if p.conn != nil {
+                        p.conn.WriteJSON(map[string]interface{}{
+                            "type": "force_disconnect",
+                            "data": "Replaced by new viewer",
+                        })
+                    }
+                    p.mu.Unlock()
+                    break
+                }
+            }
+        }
+        mu.Unlock()
+
+        // Отправляем подтверждение
+        conn.WriteJSON(map[string]interface{}{
+            "type": "join_ack",
+            "status": "processed",
+        })
+    }
+    continue
+}
+            log.Printf("Received message without 'type' field from %s: %v", peer.username, data)
+            continue
+        }
 		// log.Printf("Received '%s' message from %s", msgType, peer.username) // Логируем тип сообщения
 
 		// --- Умная пересылка сообщений (SDP, ICE) ---

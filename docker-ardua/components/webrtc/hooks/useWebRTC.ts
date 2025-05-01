@@ -257,6 +257,11 @@ export const useWebRTC = (
                     return;
                 }
 
+                if (data.type === 'join_ack') {
+                    console.log('Join request acknowledged by server');
+                    return;
+                }
+
                 if (data.type === 'force_disconnect') {
                     // Обработка принудительного отключения
                     console.log('Получена команда принудительного отключения');
@@ -722,6 +727,9 @@ export const useWebRTC = (
     };
 
     const joinRoom = async (uniqueUsername: string) => {
+        if (retryAttempts.current > 0) {
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryAttempts.current));
+        }
         setError(null);
         setIsInRoom(false);
         setIsConnected(false);
