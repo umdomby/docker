@@ -5,7 +5,7 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
-	// "strings" // Удален неиспользуемый импорт
+	"strings" // Удален неиспользуемый импорт
 	"sync"
 	"time"
 
@@ -25,6 +25,7 @@ type Peer struct {
 	room     string                  // Комната, к которой подключен пользователь
 	isLeader bool                    // true для Android (ведущий), false для браузера (ведомый)
 	mu       sync.Mutex              // Мьютекс для защиты доступа к pc и conn из разных горутин
+	lastActivity time.Time // Добавляем поле для отслеживания активности
 }
 
 // RoomInfo содержит информацию о комнате для отправки клиентам
@@ -314,13 +315,14 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 		return nil, err // Возвращаем ошибку, если PeerConnection не создан
 	}
 
-	peer := &Peer{
-		conn:     conn,
-		pc:       peerConnection,
-		username: username,
-		room:     room,
-		isLeader: isLeader,
-	}
+peer := &Peer{
+    conn:         conn,
+    pc:           peerConnection,
+    username:     username,
+    room:         room,
+    isLeader:     isLeader,
+    lastActivity: time.Now(), // Инициализация времени создания
+}
 
 	// --- Настройка Обработчиков PeerConnection ---
 
@@ -493,14 +495,50 @@ func main() {
 		w.Write([]byte("Status logged to console"))
 	})
 
+    // Запускаем очистку каждые 5 минут
+    go func() {
+        ticker := time.NewTicker(5 * time.Minute)
+        for range ticker.C {
+            cleanupInactivePeers()
+            logStatus()
+        }
+    }()
+
 	log.Println("Server starting on :8080")
 	logStatus() // Начальный статус
 	// Запуск HTTP сервера
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
+func cleanupInactivePeers() {
+    mu.Lock()
+    defer mu.Unlock()
+
+    now := time.Now()
+    for room, roomPeers := range rooms {
+        for username, peer := range roomPeers {
+            peer.mu.Lock()
+            isAlive := peer.conn != nil && now.Sub(peer.lastActivity) < 2*time.Minute
+            peer.mu.Unlock()
+
+            if !isAlive {
+                delete(roomPeers, username)
+                log.Printf("Removed inactive peer %s from room %s", username, room)
+                go closePeerConnection(peer, "Inactive peer cleanup")
+            }
+        }
+
+        if len(roomPeers) == 0 {
+            delete(rooms, room)
+            log.Printf("Removed empty room %s", room)
+        }
+    }
+}
+
 // handleWebSocket обрабатывает входящие WebSocket соединения
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+
+
 	// Обновляем HTTP соединение до WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -578,6 +616,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 			break // Выходим из цикла чтения
 		}
+
+        // Обновляем время последней активности
+        peer.mu.Lock()
+        peer.lastActivity = time.Now()
+        peer.mu.Unlock()
 
 		// Парсим полученное сообщение как JSON
 		var data map[string]interface{}
@@ -672,18 +715,21 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		case "ice_candidate":
 			// ICE кандидаты пересылаются другому пиру в комнате
 			if targetPeer != nil {
-				if ice, iceOk := data["ice"].(map[string]interface{}); iceOk { // Проверяем тип перед доступом
-					if candidate, candOk := ice["candidate"].(string); candOk {
-						candSnippet := candidate
-						if len(candSnippet) > 40 { // Обрезаем для лога
-							candSnippet = candSnippet[:40]
-						}
-						log.Printf("... Forwarding ICE candidate from %s to %s (Candidate: %s...)", peer.username, targetPeer.username, candSnippet)
-					} else {
-						log.Printf("WARN: Received 'ice_candidate' from %s with invalid 'candidate' field.", peer.username)
-						break // Не пересылаем некорректный кандидат
-					}
-				} else {
+
+
+
+			        if ice, iceOk := data["ice"].(map[string]interface{}); iceOk {
+                        if candidate, candOk := ice["candidate"].(string); candOk {
+                            // Пропускаем локальные (host) кандидаты если уже есть релейные
+                            if strings.Contains(candidate, "typ relay") ||
+                               !strings.Contains(candidate, "typ host") {
+                                // Пересылаем только важные кандидаты
+                                targetPeer.mu.Lock()
+                                targetPeer.conn.WriteMessage(websocket.TextMessage, msg)
+                                targetPeer.mu.Unlock()
+                            }
+                        }
+                    } else {
 					log.Printf("WARN: Received 'ice_candidate' from %s with invalid 'ice' field structure.", peer.username)
 					break // Не пересылаем некорректный кандидат
 				}
