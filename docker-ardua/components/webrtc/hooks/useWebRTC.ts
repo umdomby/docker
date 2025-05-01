@@ -399,43 +399,6 @@ export const useWebRTC = (
         ws.current.onmessage = handleMessage;
     };
 
-    const createAndSendOffer = async () => {
-        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
-            return;
-        }
-
-        try {
-            const offer = await pc.current.createOffer({
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-                iceRestart: false,
-            });
-
-            const standardizedOffer = {
-                ...offer,
-                sdp: normalizeSdp(offer.sdp)
-            };
-
-            console.log('Устанавливаем локальное описание с оффером');
-            await pc.current.setLocalDescription(standardizedOffer);
-
-            ws.current.send(JSON.stringify({
-                type: "offer",
-                sdp: standardizedOffer,
-                room: roomId,
-                username
-            }));
-
-            setIsCallActive(true);
-
-            // Запускаем проверку получения видео
-            startVideoCheckTimer();
-        } catch (err) {
-            console.error('Ошибка создания оффера:', err);
-            setError('Ошибка создания предложения соединения');
-        }
-    };
-
     const initializeWebRTC = async () => {
         try {
             cleanup();
