@@ -505,7 +505,8 @@ export const VideoCallApp = () => {
                             {isCallActive && ' (Звонок активен)'}
                             {users.length > 0 && (
                                 <div>
-                                    Роль: {users[0] === username ? "Ведущий" : "Ведомый"}
+                                    {/*Роль: {users[0] === username ? "Ведущий" : "Ведомый"}*/}
+                                    Роль: "Ведомый"
                                 </div>
                             )}
                         </div>
