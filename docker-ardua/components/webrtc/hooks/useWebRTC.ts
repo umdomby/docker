@@ -10,7 +10,7 @@ interface WebSocketMessage {
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
-// Добавляем новый тип сообщения
+    // Добавляем новый тип сообщения
     force_disconnect?: boolean;
 }
 
@@ -257,11 +257,6 @@ export const useWebRTC = (
                     return;
                 }
 
-                if (data.type === 'join_ack') {
-                    console.log('Join request acknowledged by server');
-                    return;
-                }
-
                 if (data.type === 'force_disconnect') {
                     // Обработка принудительного отключения
                     console.log('Получена команда принудительного отключения');
@@ -399,6 +394,43 @@ export const useWebRTC = (
         ws.current.onmessage = handleMessage;
     };
 
+    const createAndSendOffer = async () => {
+        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
+            return;
+        }
+
+        try {
+            const offer = await pc.current.createOffer({
+                offerToReceiveAudio: true,
+                offerToReceiveVideo: true,
+                iceRestart: false,
+            });
+
+            const standardizedOffer = {
+                ...offer,
+                sdp: normalizeSdp(offer.sdp)
+            };
+
+            console.log('Устанавливаем локальное описание с оффером');
+            await pc.current.setLocalDescription(standardizedOffer);
+
+            ws.current.send(JSON.stringify({
+                type: "offer",
+                sdp: standardizedOffer,
+                room: roomId,
+                username
+            }));
+
+            setIsCallActive(true);
+
+            // Запускаем проверку получения видео
+            startVideoCheckTimer();
+        } catch (err) {
+            console.error('Ошибка создания оффера:', err);
+            setError('Ошибка создания предложения соединения');
+        }
+    };
+
     const initializeWebRTC = async () => {
         try {
             cleanup();
@@ -511,7 +543,7 @@ export const useWebRTC = (
                 // Не отправляем пустые кандидаты
                 if (!candidate.candidate || candidate.candidate.length === 0) return false;
 
-                // Приоритет для relay-кандидатов (TURN)
+                // Приоритет для relay-кандидатов
                 if (candidate.candidate.includes('typ relay')) return true;
 
                 // Игнорируем host-кандидаты после первого подключения
@@ -519,107 +551,34 @@ export const useWebRTC = (
                     return false;
                 }
 
-                // Игнорируем неполные кандидаты
-                if (!candidate.candidate.includes('typ')) return false;
-
                 return true;
             };
 
             // Обработка входящих медиапотоков
             pc.current.ontrack = (event) => {
-                if (!event.streams || event.streams.length === 0) {
-                    console.warn('Получен track без stream');
-                    return;
-                }
-
-                const newStream = event.streams[0];
-                const videoTrack = newStream.getVideoTracks()[0];
-                const audioTrack = newStream.getAudioTracks()[0];
-
-                // Проверяем наличие хотя бы одного трека (аудио или видео)
-                if (!videoTrack && !audioTrack) {
-                    console.warn('Получен stream без треков');
-                    return;
-                }
-
-                // Если это видео трек, проверяем его работоспособность
-                if (videoTrack) {
-                    const checkVideoPlayback = () => {
+                if (event.streams && event.streams[0]) {
+                    // Проверяем, что видеопоток содержит данные
+                    const videoTrack = event.streams[0].getVideoTracks()[0];
+                    if (videoTrack) {
                         const videoElement = document.createElement('video');
                         videoElement.srcObject = new MediaStream([videoTrack]);
-                        videoElement.muted = true;
-                        videoElement.style.display = 'none';
-                        document.body.appendChild(videoElement);
+                        videoElement.onloadedmetadata = () => {
+                            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+                                setRemoteStream(event.streams[0]);
+                                setIsCallActive(true);
 
-                        let playbackCheckTimeout: NodeJS.Timeout;
-
-                        const cleanup = () => {
-                            if (playbackCheckTimeout) clearTimeout(playbackCheckTimeout);
-                            videoElement.remove();
-                        };
-
-                        videoElement.onplaying = () => {
-                            console.log('Видео трек воспроизводится');
-                            cleanup();
-                            safeSetRemoteStream(newStream);
-                        };
-
-                        videoElement.onerror = () => {
-                            console.warn('Ошибка воспроизведения видео трека');
-                            cleanup();
-                            if (!remoteStream) {
-                                console.log('Попытка восстановления соединения...');
-                                setTimeout(resetConnection, 2000);
+                                // Видео получено, очищаем таймер проверки
+                                if (videoCheckTimeout.current) {
+                                    clearTimeout(videoCheckTimeout.current);
+                                    videoCheckTimeout.current = null;
+                                }
+                            } else {
+                                console.warn('Получен пустой видеопоток');
                             }
                         };
-
-                        // Если видео не началось через 3 секунды - считаем ошибкой
-                        playbackCheckTimeout = setTimeout(() => {
-                            console.warn('Таймаут ожидания видео');
-                            cleanup();
-                            if (!remoteStream) {
-                                console.log('Попытка восстановления соединения...');
-                                setTimeout(resetConnection, 2000);
-                            }
-                        }, 3000);
-
-                        videoElement.play().catch(err => {
-                            console.warn('Ошибка play():', err);
-                            cleanup();
-                        });
-                    };
-
-                    // Откладываем проверку, чтобы дать время на инициализацию
-                    setTimeout(checkVideoPlayback, 500);
-                } else {
-                    // Если только аудио трек, просто устанавливаем поток
-                    safeSetRemoteStream(newStream);
-                }
-            };
-
-            // Безопасное обновление состояния remoteStream
-            const safeSetRemoteStream = (stream: MediaStream) => {
-                try {
-                    // Проверяем, что треки все еще активны
-                    const hasActiveTracks = stream.getTracks().some(track => track.readyState === 'live');
-
-                    if (hasActiveTracks) {
-                        setRemoteStream(stream);
-                        setIsCallActive(true);
-
-                        // Останавливаем предыдущие проверки
-                        if (videoCheckTimeout.current) {
-                            clearTimeout(videoCheckTimeout.current);
-                            videoCheckTimeout.current = null;
-                        }
                     } else {
-                        console.warn('Попытка установить неактивный stream');
-                        if (!remoteStream) {
-                            resetConnection();
-                        }
+                        console.warn('Входящий поток не содержит видео');
                     }
-                } catch (err) {
-                    console.error('Ошибка при обновлении remoteStream:', err);
                 }
             };
 
@@ -676,36 +635,23 @@ export const useWebRTC = (
             try {
                 const stats = await pc.current.getStats();
                 let hasActiveVideo = false;
-                let bytesReceived = 0;
-                let packetsLost = 0;
-                let packetsReceived = 0;
 
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                        bytesReceived = report.bytesReceived || 0;
-                        packetsLost = report.packetsLost || 0;
-                        packetsReceived = report.packetsReceived || 0;
-
-                        if (bytesReceived > 0) {
+                        if (report.bytesReceived > 0) {
                             hasActiveVideo = true;
                         }
                     }
                 });
 
-                // Проверяем потерю пакетов
-                const lossRate = packetsReceived > 0 ? packetsLost / packetsReceived : 0;
-
                 if (!hasActiveVideo && isCallActive) {
                     console.warn('Нет активного видеопотока, пытаемся восстановить...');
-                    resetConnection();
-                } else if (lossRate > 0.1) { // Если потеряно более 10% пакетов
-                    console.warn(`Высокий уровень потерь пакетов (${Math.round(lossRate * 100)}%), перезапускаем соединение...`);
                     resetConnection();
                 }
             } catch (err) {
                 console.error('Ошибка получения статистики:', err);
             }
-        }, 5000); // Проверяем каждые 5 секунд
+        }, 5000);
     };
 
     const resetConnection = async () => {
@@ -714,10 +660,6 @@ export const useWebRTC = (
             leaveRoom();
             return;
         }
-
-        // Добавляем задержку перед повторной попыткой
-        const delay = Math.min(2000 * (retryAttempts.current + 1), 10000); // Максимум 10 секунд
-        await new Promise(resolve => setTimeout(resolve, delay));
 
         // Полная очистка перед повторным подключением
         cleanup();
@@ -729,22 +671,15 @@ export const useWebRTC = (
         } catch (err) {
             retryAttempts.current += 1;
             setRetryCount(retryAttempts.current);
-
-            // Рекурсивный вызов с ограничением попыток
-            if (retryAttempts.current < MAX_RETRIES) {
-                await resetConnection();
-            }
         }
     };
 
     const restartMediaDevices = async () => {
         try {
-            // Останавливаем текущие треки
             if (localStream) {
                 localStream.getTracks().forEach(track => track.stop());
             }
 
-            // Получаем новый поток с теми же устройствами
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: deviceIds.video ? {
                     deviceId: { exact: deviceIds.video },
@@ -766,17 +701,12 @@ export const useWebRTC = (
 
             setLocalStream(stream);
 
-            // Обновляем треки в PeerConnection
             if (pc.current) {
                 const senders = pc.current.getSenders();
-
-                // Заменяем аудио и видео треки
                 stream.getTracks().forEach(track => {
                     const sender = senders.find(s => s.track?.kind === track.kind);
                     if (sender) {
-                        sender.replaceTrack(track).catch(err => {
-                            console.error('Ошибка замены трека:', err);
-                        });
+                        sender.replaceTrack(track);
                     } else {
                         pc.current?.addTrack(track, stream);
                     }
@@ -792,9 +722,6 @@ export const useWebRTC = (
     };
 
     const joinRoom = async (uniqueUsername: string) => {
-        if (retryAttempts.current > 0) {
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryAttempts.current));
-        }
         setError(null);
         setIsInRoom(false);
         setIsConnected(false);
@@ -844,7 +771,7 @@ export const useWebRTC = (
 
                 connectionTimeout.current = setTimeout(() => {
                     cleanupEvents();
-                    reject(new Error('Таймаут ожидания ответа от сервера'));
+                    console.log('Таймаут ожидания ответа от сервера');
                 }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
@@ -852,8 +779,7 @@ export const useWebRTC = (
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
-                    isLeader: false, // Браузер всегда ведомый
-                    reconnect: retryAttempts.current > 0 // Указываем, что это переподключение
+                    isLeader: false // Браузер всегда ведомый
                 }));
             });
 
@@ -861,7 +787,12 @@ export const useWebRTC = (
             setIsInRoom(true);
             shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
-            // 5. Запускаем таймер проверки видео
+            // 5. Создаем оффер, если мы первые в комнате
+            if (users.length === 0) {
+                await createAndSendOffer();
+            }
+
+            // 6. Запускаем таймер проверки видео
             startVideoCheckTimer();
 
         } catch (err) {
@@ -877,9 +808,6 @@ export const useWebRTC = (
 
             // Автоматическая повторная попытка
             if (retryAttempts.current < MAX_RETRIES) {
-                retryAttempts.current += 1;
-                setRetryCount(retryAttempts.current);
-
                 setTimeout(() => {
                     joinRoom(uniqueUsername).catch(console.error);
                 }, 2000 * (retryAttempts.current + 1));
