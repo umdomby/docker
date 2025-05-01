@@ -432,11 +432,11 @@ export default function SocketClient() {
     }
 
     return (
-        <div className="flex flex-col items-center min-h-screen p-4 bg-transparent">
+        <div className="flex flex-col items-center min-h-screen p-4 bg-transparent mt-12">
             {/* Основной контейнер с управлением */}
             {activeTab === 'esp' && (
                 <div
-                    className="w-full max-w-md space-y-4 bg-transparent rounded-lg p-4 sm:p-6 border border-gray-200 backdrop-blur-sm"
+                    className="w-full max-w-md space-y-2 bg-transparent rounded-lg p-2 sm:p-2 border border-gray-200 backdrop-blur-sm"
                     style={{maxHeight: '90vh', overflowY: 'auto'}}>
                     {/* Заголовок и статус */}
                     <div className="flex flex-col items-center space-y-2">
