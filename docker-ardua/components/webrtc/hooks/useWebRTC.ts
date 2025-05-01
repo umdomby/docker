@@ -275,7 +275,7 @@ export const useWebRTC = (
                 else if (data.type === 'error') {
                     setError(data.data);
                 }
-                else if (data.type === 'offer') {
+                if (data.type === 'offer') {
                     if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
                         try {
                             if (isNegotiating.current) {
@@ -309,9 +309,6 @@ export const useWebRTC = (
 
                             setIsCallActive(true);
                             isNegotiating.current = false;
-
-                            // Запускаем проверку получения видео
-                            startVideoCheckTimer();
                         } catch (err) {
                             console.error('Ошибка обработки оффера:', err);
                             setError('Ошибка обработки предложения соединения');
@@ -568,35 +565,18 @@ export const useWebRTC = (
             pc.current.oniceconnectionstatechange = () => {
                 if (!pc.current) return;
 
-                if (pc.current?.iceConnectionState === 'disconnected' ||
-                    pc.current?.iceConnectionState === 'failed') {
-                    console.log('ICE соединение разорвано, возможно нас заменили');
-                    leaveRoom();
-                }
-
                 console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
 
                 switch (pc.current.iceConnectionState) {
                     case 'failed':
                         console.log('Перезапуск ICE...');
-                        setTimeout(() => {
-                            if (pc.current && pc.current.iceConnectionState === 'failed') {
-                                pc.current.restartIce();
-                                if (isInRoom && !isCallActive) {
-                                    createAndSendOffer().catch(console.error);
-                                }
-                            }
-                        }, 1000);
+                        resetConnection();
                         break;
 
                     case 'disconnected':
                         console.log('Соединение прервано...');
                         setIsCallActive(false);
-                        setTimeout(() => {
-                            if (pc.current && pc.current.iceConnectionState === 'disconnected') {
-                                createAndSendOffer().catch(console.error);
-                            }
-                        }, 2000);
+                        resetConnection();
                         break;
 
                     case 'connected':

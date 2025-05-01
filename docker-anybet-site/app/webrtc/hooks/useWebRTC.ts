@@ -176,14 +176,14 @@ export const useWebRTC = (
                     deviceId: { exact: deviceIds.video },
                     width: { ideal: 640 },
                     height: { ideal: 480 },
-                    frameRate: { ideal: 30 }
-                } : true,
+                    frameRate: { ideal: 24 }
+                } : false,
                 audio: deviceIds.audio ? {
                     deviceId: { exact: deviceIds.audio },
                     echoCancellation: true,
                     noiseSuppression: true,
                     autoGainControl: true
-                } : true
+                } : false
             });
 
             setLocalStream(stream);
