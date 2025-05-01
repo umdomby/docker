@@ -165,34 +165,42 @@ func sendRoomInfo(room string) {
 
 // closePeerConnection безопасно закрывает WebRTC и WebSocket соединения пира
 func closePeerConnection(peer *Peer, reason string) {
-	if peer == nil {
-		return
-	}
-	peer.mu.Lock() // Блокируем мьютекс пира
-	defer peer.mu.Unlock()
+    if peer == nil {
+        return
+    }
+    peer.mu.Lock() // Блокируем мьютекс пира
+    defer peer.mu.Unlock()
 
-	// 1. Закрываем WebRTC соединение
-	if peer.pc != nil {
-		log.Printf("Closing PeerConnection for %s (Reason: %s)", peer.username, reason)
-		// Небольшая задержка перед закрытием, чтобы дать время на отправку последних сообщений
-		time.Sleep(100 * time.Millisecond)
-		if err := peer.pc.Close(); err != nil {
-			log.Printf("Error closing peer connection for %s: %v", peer.username, err)
-		}
-		peer.pc = nil // Убираем ссылку
-	}
+    // 1. Закрываем WebRTC соединение
+    if peer.pc != nil {
+        log.Printf("Closing PeerConnection for %s (Reason: %s)", peer.username, reason)
 
-	// 2. Закрываем WebSocket соединение
-	if peer.conn != nil {
-		log.Printf("Closing WebSocket connection for %s (Reason: %s)", peer.username, reason)
-		// Отправляем сообщение о закрытии клиенту
-		peer.conn.WriteControl(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason),
-			time.Now().Add(time.Second)) // Даем секунду на отправку
-		// Закрываем соединение со стороны сервера
-		peer.conn.Close()
-		peer.conn = nil // Убираем ссылку
-	}
+        // Останавливаем все отправители
+        for _, sender := range peer.pc.GetSenders() {
+            if sender.Track() != nil {
+                sender.ReplaceTrack(nil)
+            }
+        }
+
+        // Небольшая задержка перед закрытием
+        time.Sleep(100 * time.Millisecond)
+        if err := peer.pc.Close(); err != nil {
+            log.Printf("Error closing peer connection for %s: %v", peer.username, err)
+        }
+        peer.pc = nil // Убираем ссылку
+    }
+
+    // 2. Закрываем WebSocket соединение
+    if peer.conn != nil {
+        log.Printf("Closing WebSocket connection for %s (Reason: %s)", peer.username, reason)
+        // Отправляем сообщение о закрытии клиенту
+        peer.conn.WriteControl(websocket.CloseMessage,
+            websocket.FormatCloseMessage(websocket.CloseNormalClosure, reason),
+            time.Now().Add(time.Second)) // Даем секунду на отправку
+        // Закрываем соединение со стороны сервера
+        peer.conn.Close()
+        peer.conn = nil // Убираем ссылку
+    }
 }
 
 // handlePeerJoin обрабатывает присоединение нового пользователя к комнате
@@ -328,10 +336,17 @@ peer := &Peer{
 
 	// Обработчик для ICE кандидатов: отправляем кандидата другому пиру через WebSocket
 	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
-			log.Printf("ICE candidate gathering complete for %s", peer.username)
-			return
-		}
+        if c == nil {
+            // При завершении сбора кандидатов
+            peer.mu.Lock()
+            defer peer.mu.Unlock()
+            if peer.conn != nil {
+                peer.conn.WriteJSON(map[string]interface{}{
+                    "type": "ice_complete",
+                })
+            }
+            return
+        }
 
 		candidateJSON := c.ToJSON()
 		log.Printf("Generated ICE candidate for %s: %s", peer.username, candidateJSON.Candidate)
@@ -559,7 +574,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Устанавливаем таймаут на чтение первого сообщения
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) // 10 секунд на отправку initData
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second)) // 2 секунд на отправку initData
 	err = conn.ReadJSON(&initData)
 	conn.SetReadDeadline(time.Time{}) // Сбрасываем таймаут после успешного чтения
 

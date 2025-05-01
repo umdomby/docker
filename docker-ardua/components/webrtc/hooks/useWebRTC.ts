@@ -67,24 +67,20 @@ export const useWebRTC = (
     };
 
     const cleanup = () => {
+        console.log('Выполняется полная очистка ресурсов');
+
         // Очистка таймеров
-        if (connectionTimeout.current) {
-            clearTimeout(connectionTimeout.current);
-            connectionTimeout.current = null;
-        }
+        [connectionTimeout, statsInterval, videoCheckTimeout].forEach(timer => {
+            if (timer.current) {
+                clearTimeout(timer.current);
+                timer.current = null;
+            }
+        });
 
-        if (statsInterval.current) {
-            clearInterval(statsInterval.current);
-            statsInterval.current = null;
-        }
-
-        if (videoCheckTimeout.current) {
-            clearTimeout(videoCheckTimeout.current);
-            videoCheckTimeout.current = null;
-        }
-
-        // Очистка WebRTC соединения
+        // Полная очистка PeerConnection
         if (pc.current) {
+            console.log('Закрытие PeerConnection');
+            // Отключаем все обработчики событий
             pc.current.onicecandidate = null;
             pc.current.ontrack = null;
             pc.current.onnegotiationneeded = null;
@@ -92,32 +88,49 @@ export const useWebRTC = (
             pc.current.onicegatheringstatechange = null;
             pc.current.onsignalingstatechange = null;
             pc.current.onconnectionstatechange = null;
-            pc.current.close();
+
+            // Закрываем все трансцепторы
+            pc.current.getTransceivers().forEach(transceiver => {
+                try {
+                    transceiver.stop();
+                } catch (err) {
+                    console.warn('Ошибка при остановке трансцептора:', err);
+                }
+            });
+
+            // Закрываем соединение
+            try {
+                pc.current.close();
+            } catch (err) {
+                console.warn('Ошибка при закрытии PeerConnection:', err);
+            }
             pc.current = null;
         }
 
-        // Остановка медиапотоков
-        if (localStream) {
-            localStream.getTracks().forEach(track => {
-                track.stop();
-                track.dispatchEvent(new Event('ended'));
-            });
-            setLocalStream(null);
-        }
+        // Остановка и очистка медиапотоков
+        [localStream, remoteStream].forEach(stream => {
+            if (stream) {
+                console.log(`Остановка ${stream === localStream ? 'локального' : 'удаленного'} потока`);
+                stream.getTracks().forEach(track => {
+                    try {
+                        track.stop();
+                        track.dispatchEvent(new Event('ended'));
+                    } catch (err) {
+                        console.warn('Ошибка при остановке трека:', err);
+                    }
+                });
+            }
+        });
 
-        if (remoteStream) {
-            remoteStream.getTracks().forEach(track => {
-                track.stop();
-                track.dispatchEvent(new Event('ended'));
-            });
-            setRemoteStream(null);
-        }
-
-        setIsCallActive(false);
+        // Сброс состояний
+        setLocalStream(null);
+        setRemoteStream(null);
         pendingIceCandidates.current = [];
         isNegotiating.current = false;
         shouldCreateOffer.current = false;
-        retryAttempts.current = 0;
+        setIsCallActive(false);
+
+        console.log('Очистка завершена');
     };
 
 
@@ -512,17 +525,10 @@ export const useWebRTC = (
                 if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
                     try {
                         // Фильтруем нежелательные кандидаты
-                        if (event.candidate.candidate &&
-                            event.candidate.candidate.length > 0 &&
-                            !event.candidate.candidate.includes('0.0.0.0')) {
-
+                        if (shouldSendIceCandidate(event.candidate)) {
                             ws.current.send(JSON.stringify({
                                 type: 'ice_candidate',
-                                ice: {
-                                    candidate: event.candidate.candidate,
-                                    sdpMid: event.candidate.sdpMid || '0',
-                                    sdpMLineIndex: event.candidate.sdpMLineIndex || 0
-                                },
+                                ice: event.candidate.toJSON(),
                                 room: roomId,
                                 username
                             }));
@@ -531,6 +537,21 @@ export const useWebRTC = (
                         console.error('Ошибка отправки ICE кандидата:', err);
                     }
                 }
+            };
+
+            const shouldSendIceCandidate = (candidate: RTCIceCandidate) => {
+                // Не отправляем пустые кандидаты
+                if (!candidate.candidate || candidate.candidate.length === 0) return false;
+
+                // Приоритет для relay-кандидатов
+                if (candidate.candidate.includes('typ relay')) return true;
+
+                // Игнорируем host-кандидаты после первого подключения
+                if (retryAttempts.current > 0 && candidate.candidate.includes('typ host')) {
+                    return false;
+                }
+
+                return true;
             };
 
             // Обработка входящих медиапотоков
@@ -569,7 +590,7 @@ export const useWebRTC = (
 
                 switch (pc.current.iceConnectionState) {
                     case 'failed':
-                        console.log('Перезапуск ICE...');
+                        console.log('Ошибка ICE, перезапуск...');
                         resetConnection();
                         break;
 
@@ -640,16 +661,22 @@ export const useWebRTC = (
             return;
         }
 
-        retryAttempts.current += 1;
-        setRetryCount(retryAttempts.current);
-        console.log(`Попытка восстановления #${retryAttempts.current}`);
+        // Добавьте задержку перед повторным подключением
+        const delay = Math.min(2000 * retryAttempts.current, 10000); // Макс 10 сек
+        await new Promise(resolve => setTimeout(resolve, delay));
+
+        console.log(`Попытка восстановления #${retryAttempts.current + 1}`);
+
+        // Полная очистка перед повторным подключением
+        cleanup();
 
         try {
-            await leaveRoom();
-            await new Promise(resolve => setTimeout(resolve, 1000 * retryAttempts.current));
             await joinRoom(username);
+            retryAttempts.current = 0; // Сброс счетчика при успехе
         } catch (err) {
             console.error('Ошибка при восстановлении соединения:', err);
+            retryAttempts.current += 1;
+            setRetryCount(retryAttempts.current);
         }
     };
 
