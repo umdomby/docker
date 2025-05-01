@@ -661,20 +661,14 @@ export const useWebRTC = (
             return;
         }
 
-        // Добавьте задержку перед повторным подключением
-        const delay = Math.min(2000 * retryAttempts.current, 10000); // Макс 10 сек
-        await new Promise(resolve => setTimeout(resolve, delay));
-
-        console.log(`Попытка восстановления #${retryAttempts.current + 1}`);
-
         // Полная очистка перед повторным подключением
         cleanup();
 
         try {
+            // При переподключении явно указываем, что мы ведомый
             await joinRoom(username);
-            retryAttempts.current = 0; // Сброс счетчика при успехе
+            retryAttempts.current = 0;
         } catch (err) {
-            console.error('Ошибка при восстановлении соединения:', err);
             retryAttempts.current += 1;
             setRetryCount(retryAttempts.current);
         }
@@ -791,7 +785,7 @@ export const useWebRTC = (
 
             // 4. Успешное подключение
             setIsInRoom(true);
-            shouldCreateOffer.current = true;
+            shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
             // 5. Создаем оффер, если мы первые в комнате
             if (users.length === 0) {
