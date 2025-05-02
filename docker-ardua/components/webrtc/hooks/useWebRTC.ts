@@ -150,6 +150,7 @@ export const useWebRTC = (
         const isHuawei = /huawei/i.test(navigator.userAgent);
         if (!isHuawei) return () => {};
 
+
         const monitorInterval = setInterval(async () => {
             if (!pc.current || !isCallActive) return;
 
