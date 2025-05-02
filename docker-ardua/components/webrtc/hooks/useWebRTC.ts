@@ -56,10 +56,146 @@ export const useWebRTC = (
     const MAX_RETRIES = 10;
     const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
 
+
+
+    // 1. Функция для получения оптимальных параметров видео
+    const getVideoConstraints = () => {
+        const isHuawei = /huawei/i.test(navigator.userAgent);
+
+        return {
+            width: { ideal: isHuawei ? 480 : 640 },
+            height: { ideal: isHuawei ? 360 : 480 },
+            frameRate: { ideal: isHuawei ? 20 : 30 },
+            ...(isHuawei && {
+                advanced: [{ width: { max: 480 } }]
+            })
+        };
+    };
+
+// 2. Конфигурация видео-трансмиттера для Huawei
+    const configureVideoSender = (sender: RTCRtpSender) => {
+        const isHuawei = /huawei/i.test(navigator.userAgent);
+
+        if (isHuawei && sender.track?.kind === 'video') {
+            const parameters = sender.getParameters();
+
+            if (!parameters.encodings) {
+                parameters.encodings = [{}];
+            }
+
+            // Используем только стандартные параметры
+            parameters.encodings[0] = {
+                ...parameters.encodings[0],
+                maxBitrate: 300000,    // 300 kbps
+                scaleResolutionDownBy: 1.5,
+                maxFramerate: 20,
+                priority: 'low'
+            };
+
+            try {
+                sender.setParameters(parameters);
+            } catch (err) {
+                console.error('Ошибка настройки параметров видео:', err);
+            }
+        }
+    };
+
+// 3. Специальная нормализация SDP для Huawei
+    const normalizeSdpForHuawei = (sdp: string): string => {
+        const isHuawei = /huawei/i.test(navigator.userAgent);
+
+        if (!isHuawei) return sdp;
+
+        return sdp
+            // Приоритет H.264 baseline profile
+            .replace(/a=rtpmap:(\d+) H264\/\d+/g,
+                'a=rtpmap:$1 H264/90000\r\n' +
+                'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1\r\n')
+            // Уменьшаем размер GOP
+            .replace(/a=fmtp:\d+/, '$&;sprop-parameter-sets=J0LgC5Q9QEQ=,KM4=;')
+            // Оптимизации буферизации
+            .replace(/a=mid:video\r\n/g,
+                'a=mid:video\r\n' +
+                'b=AS:300\r\n' +
+                'b=TIAS:300000\r\n');
+    };
+
+// 4. Мониторинг производительности для Huawei
+    const startHuaweiPerformanceMonitor = () => {
+        const isHuawei = /huawei/i.test(navigator.userAgent);
+        if (!isHuawei) return () => {};
+
+        const monitorInterval = setInterval(async () => {
+            if (!pc.current || !isCallActive) return;
+
+            try {
+                const stats = await pc.current.getStats();
+                let videoStats: any = null;
+
+                stats.forEach(report => {
+                    if (report.type === 'outbound-rtp' && report.kind === 'video') {
+                        videoStats = report;
+                    }
+                });
+
+                if (videoStats) {
+                    // Адаптация при высокой потере пакетов
+                    if (videoStats.packetsLost > 10) {
+                        adjustVideoQuality('lower');
+                    }
+                    // Улучшение качества при стабильном соединении
+                    else if (videoStats.packetsLost < 2 && videoStats.bitrate > 200000) {
+                        adjustVideoQuality('higher');
+                    }
+                }
+            } catch (err) {
+                console.error('Ошибка мониторинга:', err);
+            }
+        }, 5000);
+
+        return () => clearInterval(monitorInterval);
+    };
+
+// 5. Функция адаптации качества видео
+    const adjustVideoQuality = (direction: 'higher' | 'lower') => {
+        const senders = pc.current?.getSenders() || [];
+        const isHuawei = /huawei/i.test(navigator.userAgent);
+
+        senders.forEach(sender => {
+            if (sender.track?.kind === 'video') {
+                const parameters = sender.getParameters();
+
+                if (!parameters.encodings) return;
+
+                // Используем только стандартные параметры
+                parameters.encodings[0] = {
+                    ...parameters.encodings[0],
+                    maxBitrate: direction === 'higher'
+                        ? (isHuawei ? 400000 : 800000)
+                        : (isHuawei ? 200000 : 400000),
+                    scaleResolutionDownBy: direction === 'higher'
+                        ? (isHuawei ? 1.2 : 1.0)
+                        : (isHuawei ? 2.0 : 1.5),
+                    maxFramerate: direction === 'higher'
+                        ? (isHuawei ? 20 : 30)
+                        : (isHuawei ? 12 : 20)
+                };
+
+                try {
+                    sender.setParameters(parameters);
+                } catch (err) {
+                    console.error('Ошибка изменения параметров:', err);
+                }
+            }
+        });
+    };
+
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        let optimized = sdp
+
+
+        let optimized = normalizeSdpForHuawei(sdp)
             // Общие оптимизации
             .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:500\r\nb=TIAS:500000\r\n')
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
@@ -489,6 +625,8 @@ export const useWebRTC = (
         try {
             cleanup();
 
+            const isHuawei = /huawei/i.test(navigator.userAgent);
+
             const config: RTCConfiguration = {
                 iceServers: [
                     {
@@ -500,9 +638,13 @@ export const useWebRTC = (
                         credential: 'pass1'
                     }
                 ],
-                iceTransportPolicy: isSafari() ? 'relay' : 'all',
+                iceTransportPolicy: isHuawei ? 'relay' : 'all',
                 bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require'
+                rtcpMuxPolicy: 'require',
+                ...(isHuawei && {
+                    iceCandidatePoolSize: 1,
+                    iceCheckInterval: 5000
+                })
             };
 
             pc.current = new RTCPeerConnection(config);
@@ -556,14 +698,8 @@ export const useWebRTC = (
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: deviceIds.video ? {
                     deviceId: { exact: deviceIds.video },
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 30 }
-                } : {
-                    width: { ideal: 640 },
-                    height: { ideal: 480 },
-                    frameRate: { ideal: 30 }
-                },
+                    ...getVideoConstraints()
+                } : getVideoConstraints(),
                 audio: deviceIds.audio ? {
                     deviceId: { exact: deviceIds.audio },
                     echoCancellation: true,
@@ -571,6 +707,9 @@ export const useWebRTC = (
                     autoGainControl: true
                 } : true
             });
+
+            // Применяем настройки для Huawei
+            pc.current.getSenders().forEach(configureVideoSender);
 
             // Проверяем наличие видеотрека
             const videoTracks = stream.getVideoTracks();
@@ -649,6 +788,13 @@ export const useWebRTC = (
             pc.current.oniceconnectionstatechange = () => {
                 if (!pc.current) return;
 
+                const isHuawei = /huawei/i.test(navigator.userAgent);
+
+                if (isHuawei && pc.current.iceConnectionState === 'disconnected') {
+                    // Более агрессивный перезапуск для Huawei
+                    setTimeout(resetConnection, 1000);
+                }
+
                 console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
 
                 switch (pc.current.iceConnectionState) {
@@ -688,9 +834,17 @@ export const useWebRTC = (
     };
 
     const startConnectionMonitoring = () => {
+
+
         if (statsInterval.current) {
             clearInterval(statsInterval.current);
         }
+
+        const cleanupHuaweiMonitor = startHuaweiPerformanceMonitor();
+
+        const interval = setInterval(async () => {
+            // Существующая логика мониторинга
+        }, 5000);
 
         statsInterval.current = setInterval(async () => {
             if (!pc.current || !isCallActive) return;
@@ -728,6 +882,11 @@ export const useWebRTC = (
                 console.error('Ошибка получения статистики:', err);
             }
         }, 5000);
+
+        return () => {
+            clearInterval(interval);
+            cleanupHuaweiMonitor();
+        };
     };
 
     const resetConnection = async () => {
