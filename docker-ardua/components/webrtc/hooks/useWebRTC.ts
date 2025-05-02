@@ -760,10 +760,10 @@ export const useWebRTC = (
                 }),
                 // Специфичные настройки для Safari
                 ...(isSafari && {
-                    iceTransportPolicy: 'all',
+                    iceTransportPolicy: 'relay',
                     encodedInsertableStreams: false,
                     iceServers: [
-                        { urls: 'stun:ardua.site:3478' },
+                        // { urls: 'stun:ardua.site:3478' },
                         {
                             urls: 'turn:ardua.site:3478',
                             username: 'user1',
