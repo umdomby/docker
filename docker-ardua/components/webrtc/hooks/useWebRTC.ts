@@ -730,19 +730,17 @@ export const useWebRTC = (
 
             const config: RTCConfiguration = {
                 iceServers: [
+                    { urls: 'stun:ardua.site:3478' },
                     {
-                        urls: [
-                            'stun:ardua.site:3478',
-                            'turn:ardua.site:3478',
-
-                        ],
+                        urls: 'turn:ardua.site:3478',
                         username: 'user1',
                         credential: 'pass1'
                     }
                 ],
-                // Настройки по умолчанию
+                iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
+                iceCandidatePoolSize: 0,
                 // Специфичные настройки для Huawei
                 ...(isHuawei && {
                     iceTransportPolicy: 'all', // Только relay для Huawei
@@ -750,12 +748,8 @@ export const useWebRTC = (
                     rtcpMuxPolicy: 'require',
                     iceCandidatePoolSize: 1,
                     iceCheckInterval: 3000, // Более частые проверки
-                    iceServers: [ // Приоритет для TURN
-                        {
-                            urls: 'stun:ardua.site:3478',
-                            username: 'user1',
-                            credential: 'pass1'
-                        },
+                    iceServers: [
+                        { urls: 'stun:ardua.site:3478' },
                         {
                             urls: 'turn:ardua.site:3478',
                             username: 'user1',
@@ -767,11 +761,26 @@ export const useWebRTC = (
                 // Специфичные настройки для Safari
                 ...(isSafari && {
                     iceTransportPolicy: 'all',
-                    encodedInsertableStreams: false
+                    encodedInsertableStreams: false,
+                    iceServers: [
+                        { urls: 'stun:ardua.site:3478' },
+                        {
+                            urls: 'turn:ardua.site:3478',
+                            username: 'user1',
+                            credential: 'pass1'
+                        }
+                    ]
                 })
             };
 
             pc.current = new RTCPeerConnection(config);
+
+            pc.current.addEventListener('icecandidate', event => {
+                if (event.candidate) {
+                    console.log('Using candidate type:',
+                        event.candidate.candidate.split(' ')[7]);
+                }
+            });
 
             // Особые обработчики для Safari
             if (isSafari) {

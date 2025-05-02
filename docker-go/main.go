@@ -61,12 +61,14 @@ func randSeq(n int) string {
 func getWebRTCConfig() webrtc.Configuration {
 	return webrtc.Configuration{
 		ICEServers: []webrtc.ICEServer{
-			{
-				URLs:       []string{"turn:ardua.site:3478"},
-				Username:   "user1",
-				Credential: "pass1",
-			},
-			{URLs: []string{"stun:ardua.site:3478"}},
+            {
+                URLs: []string{"stun:ardua.site:3478"},
+            },
+            {
+                URLs:       []string{"turn:ardua.site:3478"},
+                Username:   "user1",
+                Credential: "pass1",
+            },
 		},
 		ICETransportPolicy: webrtc.ICETransportPolicyAll,
 		BundlePolicy:       webrtc.BundlePolicyMaxBundle,
