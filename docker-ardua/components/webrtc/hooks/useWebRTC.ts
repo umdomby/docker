@@ -45,25 +45,31 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        // Сначала очищаем от network-cost
-        let normalized = sdp.replace(/a=network-cost:.+\r\n/g, '');
+        // 1. Ограничиваем битрейт
+        let normalized = sdp.replace(
+            /a=mid:video\r\n/g,
+            'a=mid:video\r\nb=AS:300\r\nb=TIAS:300000\r\n'
+        );
 
-        normalized = normalized.trim();
+        // 2. Устанавливаем приоритет H.264
+        normalized = normalized.replace(
+            /a=rtpmap:(\d+) H264\/\d+/g,
+            'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1'
+        );
 
-        if (!normalized.startsWith('v=')) {
-            normalized = 'v=0\r\n' + normalized;
-        }
-        if (!normalized.includes('\r\no=')) {
-            normalized = normalized.replace('\r\n', '\r\no=- 0 0 IN IP4 0.0.0.0\r\n');
-        }
-        if (!normalized.includes('\r\ns=')) {
-            normalized = normalized.replace('\r\n', '\r\ns=-\r\n');
-        }
-        if (!normalized.includes('\r\nt=')) {
-            normalized = normalized.replace('\r\n', '\r\nt=0 0\r\n');
-        }
+        // 3. Удаляем RTX (повторную передачу)
+        normalized = normalized.replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '');
+        normalized = normalized.replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
-        return normalized + '\r\n';
+        return normalized;
+    };
+
+    const validateSdp = (sdp: string): boolean => {
+        // Проверяем основные обязательные части SDP
+        return sdp.includes('v=') &&
+            sdp.includes('m=audio') &&
+            sdp.includes('m=video') &&
+            sdp.includes('a=rtpmap');
     };
 
     const cleanup = () => {
@@ -399,19 +405,28 @@ export const useWebRTC = (
             return;
         }
 
+        let offer: RTCSessionDescriptionInit | null = null;
+
         try {
-            const offer = await pc.current.createOffer({
+            offer = await pc.current.createOffer({
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
                 iceRestart: false,
             });
 
+            // Нормализуем SDP оффера
             const standardizedOffer = {
                 ...offer,
                 sdp: normalizeSdp(offer.sdp)
             };
 
-            console.log('Устанавливаем локальное описание с оффером');
+            console.log('Normalized SDP:', standardizedOffer.sdp);
+
+            // Валидация SDP перед установкой
+            if (!validateSdp(standardizedOffer.sdp)) {
+                throw new Error('Invalid SDP format after normalization');
+            }
+
             await pc.current.setLocalDescription(standardizedOffer);
 
             ws.current.send(JSON.stringify({
@@ -422,12 +437,29 @@ export const useWebRTC = (
             }));
 
             setIsCallActive(true);
-
-            // Запускаем проверку получения видео
             startVideoCheckTimer();
         } catch (err) {
-            console.error('Ошибка создания оффера:', err);
-            setError('Ошибка создания предложения соединения');
+            console.error('Offer creation error:', err);
+            setError(`Offer failed: ${err instanceof Error ? err.message : String(err)}`);
+
+            // Fallback - попробуем отправить оригинальный offer без модификаций
+            if (offer && pc.current) {
+                try {
+                    await pc.current.setLocalDescription(offer);
+                    ws.current?.send(JSON.stringify({
+                        type: "offer",
+                        sdp: offer,
+                        room: roomId,
+                        username
+                    }));
+                    setIsCallActive(true);
+                } catch (fallbackErr) {
+                    console.error('Fallback also failed:', fallbackErr);
+                    resetConnection();
+                }
+            } else {
+                resetConnection();
+            }
         }
     };
 
