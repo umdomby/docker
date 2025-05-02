@@ -10,7 +10,7 @@ interface WebSocketMessage {
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
-    // Добавляем новый тип сообщения
+// Добавляем новый тип сообщения
     force_disconnect?: boolean;
 }
 
@@ -61,15 +61,40 @@ export const useWebRTC = (
     // 1. Функция для получения оптимальных параметров видео
     const getVideoConstraints = () => {
         const isHuawei = /huawei/i.test(navigator.userAgent);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent);
 
-        return {
-            width: { ideal: isHuawei ? 480 : 640 },
-            height: { ideal: isHuawei ? 360 : 480 },
-            frameRate: { ideal: isHuawei ? 20 : 30 },
-            ...(isHuawei && {
-                advanced: [{ width: { max: 480 } }]
-            })
+        // Базовые параметры для всех устройств
+        const baseConstraints = {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30 }
         };
+
+        // Специфичные настройки для Huawei
+        if (isHuawei) {
+            return {
+                ...baseConstraints,
+                width: { ideal: 480 },
+                height: { ideal: 360 },
+                frameRate: { ideal: 20 },
+                advanced: [{ width: { max: 480 } }]
+            };
+        }
+
+        // Специфичные настройки для Safari
+        if (isSafari) {
+            return {
+                ...baseConstraints,
+                frameRate: { ideal: 25 }, // Чуть меньше FPS для стабильности
+                advanced: [
+                    { frameRate: { max: 25 } },
+                    { width: { max: 640 }, height: { max: 480 } }
+                ]
+            };
+        }
+
+        return baseConstraints;
     };
 
 // 2. Конфигурация видео-трансмиттера для Huawei
@@ -193,30 +218,31 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const isHuawei = /huawei/i.test(navigator.userAgent);
 
+        let optimized = sdp;
 
-        let optimized = normalizeSdpForHuawei(sdp)
-            // Общие оптимизации
-            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:500\r\nb=TIAS:500000\r\n')
+        // Оптимизации только для Huawei
+        if (isHuawei) {
+            optimized = normalizeSdpForHuawei(optimized);
+        }
+
+        // Общие оптимизации для всех устройств
+        optimized = optimized
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:800\r\nb=TIAS:800000\r\n')
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
-        // Специфичные оптимизации для Android
-        if (platform === 'android') {
-            optimized = optimized
-                .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
-                .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '')
-                .replace(/a=framerate:\d+\r\n/g, 'a=framerate:15\r\n')
-                .replace(/a=imageattr:\d+.+?\r\n/g, '')
-                .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '');
-        }
-
-        // Специфичные оптимизации для iOS
-        if (platform === 'ios') {
+        // Дополнительные оптимизации для Safari
+        if (isSafari) {
             optimized = optimized
                 .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '')
-                .replace(/a=extmap:\d+ urn:ietf:params:rtp-hdrext:sdes:mid\r\n/g, '');
+                .replace(/a=extmap:\d+ urn:ietf:params:rtp-hdrext:sdes:mid\r\n/g, '')
+                .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
+                .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '');
         }
 
         return optimized;
@@ -625,6 +651,8 @@ export const useWebRTC = (
         try {
             cleanup();
 
+            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+                /iPad|iPhone|iPod/.test(navigator.userAgent);
             const isHuawei = /huawei/i.test(navigator.userAgent);
 
             const config: RTCConfiguration = {
@@ -638,19 +666,26 @@ export const useWebRTC = (
                         credential: 'pass1'
                     }
                 ],
-                iceTransportPolicy: isHuawei ? 'relay' : 'all',
+                // Настройки по умолчанию
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
+                // Специфичные настройки для Huawei
                 ...(isHuawei && {
+                    iceTransportPolicy: 'relay',
                     iceCandidatePoolSize: 1,
                     iceCheckInterval: 5000
+                }),
+                // Специфичные настройки для Safari
+                ...(isSafari && {
+                    iceTransportPolicy: 'relay',
+                    encodedInsertableStreams: false
                 })
             };
 
             pc.current = new RTCPeerConnection(config);
 
             // Особые обработчики для Safari
-            if (isSafari()) {
+            if (isSafari) {
                 // @ts-ignore - свойство для Safari
                 pc.current.addEventListener('negotiationneeded', async () => {
                     if (shouldCreateOffer.current) {
@@ -659,19 +694,6 @@ export const useWebRTC = (
                 });
             }
 
-            pc.current = new RTCPeerConnection(config);
-
-            // Особый обработчик для Safari
-            if (isSafari()) {
-                // @ts-ignore - свойство для Safari
-                pc.current.addEventListener('negotiationneeded', async () => {
-                    if (shouldCreateOffer.current) {
-                        await createAndSendOffer();
-                    }
-                });
-            }
-
-            pc.current = new RTCPeerConnection(config);
 
             // Обработчики событий WebRTC
             pc.current.onnegotiationneeded = () => {
@@ -833,18 +855,38 @@ export const useWebRTC = (
         }
     };
 
+    const adjustVideoQualityForSafari = (direction: 'higher' | 'lower') => {
+        const senders = pc.current?.getSenders() || [];
+
+        senders.forEach(sender => {
+            if (sender.track?.kind === 'video') {
+                const parameters = sender.getParameters();
+
+                if (!parameters.encodings) return;
+
+                parameters.encodings[0] = {
+                    ...parameters.encodings[0],
+                    maxBitrate: direction === 'higher' ? 800000 : 400000,
+                    scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
+                    maxFramerate: direction === 'higher' ? 25 : 15
+                };
+
+                try {
+                    sender.setParameters(parameters);
+                } catch (err) {
+                    console.error('Ошибка изменения параметров:', err);
+                }
+            }
+        });
+    };
+
     const startConnectionMonitoring = () => {
-
-
         if (statsInterval.current) {
             clearInterval(statsInterval.current);
         }
 
-        const cleanupHuaweiMonitor = startHuaweiPerformanceMonitor();
-
-        const interval = setInterval(async () => {
-            // Существующая логика мониторинга
-        }, 5000);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent);
 
         statsInterval.current = setInterval(async () => {
             if (!pc.current || !isCallActive) return;
@@ -854,29 +896,37 @@ export const useWebRTC = (
                 let hasActiveVideo = false;
                 let packetsLost = 0;
                 let totalPackets = 0;
+                let videoJitter = 0;
 
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && report.kind === 'video') {
-                        if (report.bytesReceived > 0) {
-                            hasActiveVideo = true;
-                        }
-                        if (report.packetsLost !== undefined && report.packetsReceived !== undefined) {
-                            packetsLost += report.packetsLost;
-                            totalPackets += report.packetsReceived;
-                        }
+                        if (report.bytesReceived > 0) hasActiveVideo = true;
+                        if (report.packetsLost !== undefined) packetsLost += report.packetsLost;
+                        if (report.packetsReceived !== undefined) totalPackets += report.packetsReceived;
+                        if (report.jitter !== undefined) videoJitter = report.jitter;
                     }
                 });
 
-                // Проверка потери пакетов
-                if (totalPackets > 0 && packetsLost / totalPackets > 0.1) { // >10% потерь
-                    console.warn('Высокий уровень потерь пакетов, переподключение...');
+                // Общая проверка для всех устройств
+                if (!hasActiveVideo && isCallActive) {
+                    console.warn('Нет активного видеопотока, пытаемся восстановить...');
                     resetConnection();
                     return;
                 }
 
-                if (!hasActiveVideo && isCallActive) {
-                    console.warn('Нет активного видеопотока, пытаемся восстановить...');
-                    resetConnection();
+                // Специфичные проверки для Safari
+                if (isSafari) {
+                    // Проверка на высокую задержку
+                    if (videoJitter > 0.3) { // Jitter в секундах
+                        console.log('Высокий jitter на Safari, уменьшаем битрейт');
+                        adjustVideoQualityForSafari('lower');
+                    }
+                    // Проверка потери пакетов
+                    else if (totalPackets > 0 && packetsLost / totalPackets > 0.05) { // >5% потерь
+                        console.warn('Высокий уровень потерь пакетов на Safari, переподключение...');
+                        resetConnection();
+                        return;
+                    }
                 }
             } catch (err) {
                 console.error('Ошибка получения статистики:', err);
@@ -884,8 +934,9 @@ export const useWebRTC = (
         }, 5000);
 
         return () => {
-            clearInterval(interval);
-            cleanupHuaweiMonitor();
+            if (statsInterval.current) {
+                clearInterval(statsInterval.current);
+            }
         };
     };
 
