@@ -762,11 +762,12 @@ export const useWebRTC = (
                     iceTransportPolicy: 'relay',
                     encodedInsertableStreams: false,
                     iceServers: [
+                        { urls: 'stun:ardua.site:3478' },
                         {
                             urls: 'turn:ardua.site:3478',
                             username: 'user1',
                             credential: 'pass1'
-                        }
+                        },
                     ]
                 })
             };
