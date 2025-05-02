@@ -262,7 +262,7 @@ export const useWebRTC = (
             sdp.includes('a=rtpmap');
     };
 
-    const cleanup = () => {
+    let cleanup = () => {
         console.log('Выполняется полная очистка ресурсов');
 
         // Очистка таймеров
@@ -812,6 +812,25 @@ export const useWebRTC = (
                 if (!pc.current) return;
 
                 const isHuawei = /huawei/i.test(navigator.userAgent);
+
+                if (pc.current.iceConnectionState === 'connected' && isHuawei) {
+                    // Сохраняем функцию остановки для cleanup
+                    const stopHuaweiMonitor = startHuaweiPerformanceMonitor();
+
+                    // Автоматическая остановка при разрыве
+                    pc.current.onconnectionstatechange = () => {
+                        if (pc.current?.connectionState === 'disconnected') {
+                            stopHuaweiMonitor();
+                        }
+                    };
+
+                    // Также останавливаем при ручной очистке
+                    const originalCleanup = cleanup;
+                    cleanup = () => {
+                        stopHuaweiMonitor();
+                        originalCleanup();
+                    };
+                }
 
                 if (isHuawei && pc.current.iceConnectionState === 'disconnected') {
                     // Более агрессивный перезапуск для Huawei
