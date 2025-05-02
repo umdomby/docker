@@ -38,6 +38,20 @@ export const useWebRTC = (
     const videoCheckTimeout = useRef<NodeJS.Timeout | null>(null);
     const retryAttempts = useRef(0);
 
+    const [platform, setPlatform] = useState<'desktop' | 'ios' | 'android'>('desktop');
+
+
+    useEffect(() => {
+        const userAgent = navigator.userAgent;
+        if (/iPad|iPhone|iPod/.test(userAgent)) {
+            setPlatform('ios');
+        } else if (/Android/i.test(userAgent)) {
+            setPlatform('android');
+        } else {
+            setPlatform('desktop');
+        }
+    }, []);
+
     // Максимальное количество попыток переподключения
     const MAX_RETRIES = 10;
     const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
@@ -45,23 +59,36 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        // 1. Ограничиваем битрейт
-        let normalized = sdp.replace(
-            /a=mid:video\r\n/g,
-            'a=mid:video\r\nb=AS:300\r\nb=TIAS:300000\r\n'
-        );
+        // Оптимизации для Android
+        let optimized = sdp
+            // Ограничение битрейта
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:500\r\nb=TIAS:500000\r\n')
+            // Приоритет H.264
+            .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
+            // Удаление RTX
+            .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
+            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
+            // Оптимизация для Android
+            .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
+            .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '')
+            // Уменьшение FPS
+            .replace(/a=framerate:\d+\r\n/g, 'a=framerate:15\r\n');
 
-        // 2. Устанавливаем приоритет H.264
-        normalized = normalized.replace(
-            /a=rtpmap:(\d+) H264\/\d+/g,
-            'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1'
-        );
+        // Дополнительные настройки для Android
+        if (isAndroid()) {
+            optimized = optimized
+                // Уменьшение разрешения
+                .replace(/a=imageattr:\d+.+?\r\n/g, '')
+                // Отключение временного масштабирования
+                .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '');
+        }
 
-        // 3. Удаляем RTX (повторную передачу)
-        normalized = normalized.replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '');
-        normalized = normalized.replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
+        return optimized;
+    };
 
-        return normalized;
+// Функция определения Android
+    const isAndroid = (): boolean => {
+        return /Android/i.test(navigator.userAgent);
     };
 
     const validateSdp = (sdp: string): boolean => {
@@ -405,7 +432,20 @@ export const useWebRTC = (
             return;
         }
 
-        let offer: RTCSessionDescriptionInit | null = null;
+        const offer = await pc.current.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+            iceRestart: false,
+            // Разные настройки для разных платформ
+            ...(platform === 'android' && {
+                offerToReceiveVideo: true,
+                voiceActivityDetection: false
+            }),
+            ...(platform === 'ios' && {
+                iceRestart: true,
+                offerToReceiveVideo: true
+            })
+        });
 
         try {
             offer = await pc.current.createOffer({
@@ -463,6 +503,12 @@ export const useWebRTC = (
         }
     };
 
+    // Функция определения Safari
+    const isSafari = (): boolean => {
+        return /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent);
+    };
+
     const initializeWebRTC = async () => {
         try {
             cleanup();
@@ -471,32 +517,34 @@ export const useWebRTC = (
                 iceServers: [
                     {
                         urls: [
-                            'turn:ardua.site:3478',  // UDP/TCP
-                            // 'turns:ardua.site:5349'   // TLS (если настроен)
+                            'turn:ardua.site:3478',
+                            'stun:ardua.site:3478'
                         ],
-                        username: 'user1',     // Исправлено: username
-                        credential: 'pass1'    // Исправлено: credential
-                    },
-                    {
-                        urls: [
-                            'stun:ardua.site:3478',
-                            // 'stun:stun.l.google.com:19301',
-                            // 'stun:stun.l.google.com:19302',
-                            // 'stun:stun.l.google.com:19303',
-                            // 'stun:stun.l.google.com:19304',
-                            // 'stun:stun.l.google.com:19305',
-                            // 'stun:stun1.l.google.com:19301',
-                            // 'stun:stun1.l.google.com:19302',
-                            // 'stun:stun1.l.google.com:19303',
-                            // 'stun:stun1.l.google.com:19304',
-                            // 'stun:stun1.l.google.com:19305'
-                        ]
+                        username: 'user1',
+                        credential: 'pass1'
                     }
                 ],
-                iceTransportPolicy: 'all',
+                // Особые настройки для Safari
+                iceTransportPolicy: 'relay', // Для iOS лучше использовать только relay
                 bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require'
+                rtcpMuxPolicy: 'require',
+                // Дополнительные параметры для iOS
+                encodedInsertableStreams: false,
+                // @ts-ignore - свойство для Safari
+                optional: [{ RtpDataChannels: true }]
             };
+
+            pc.current = new RTCPeerConnection(config);
+
+            // Особый обработчик для Safari
+            if (isSafari()) {
+                // @ts-ignore - свойство для Safari
+                pc.current.addEventListener('negotiationneeded', async () => {
+                    if (shouldCreateOffer.current) {
+                        await createAndSendOffer();
+                    }
+                });
+            }
 
             pc.current = new RTCPeerConnection(config);
 
@@ -667,14 +715,27 @@ export const useWebRTC = (
             try {
                 const stats = await pc.current.getStats();
                 let hasActiveVideo = false;
+                let packetsLost = 0;
+                let totalPackets = 0;
 
                 stats.forEach(report => {
                     if (report.type === 'inbound-rtp' && report.kind === 'video') {
                         if (report.bytesReceived > 0) {
                             hasActiveVideo = true;
                         }
+                        if (report.packetsLost !== undefined && report.packetsReceived !== undefined) {
+                            packetsLost += report.packetsLost;
+                            totalPackets += report.packetsReceived;
+                        }
                     }
                 });
+
+                // Проверка потери пакетов
+                if (totalPackets > 0 && packetsLost / totalPackets > 0.1) { // >10% потерь
+                    console.warn('Высокий уровень потерь пакетов, переподключение...');
+                    resetConnection();
+                    return;
+                }
 
                 if (!hasActiveVideo && isCallActive) {
                     console.warn('Нет активного видеопотока, пытаемся восстановить...');
@@ -693,17 +754,26 @@ export const useWebRTC = (
             return;
         }
 
-        // Полная очистка перед повторным подключением
-        cleanup();
+        // Увеличиваем таймаут с каждой попыткой
+        const retryDelay = Math.min(2000 * (retryAttempts.current + 1), 10000);
 
-        try {
-            // При переподключении явно указываем, что мы ведомый
-            await joinRoom(username);
-            retryAttempts.current = 0;
-        } catch (err) {
-            retryAttempts.current += 1;
-            setRetryCount(retryAttempts.current);
-        }
+        console.log(`Попытка переподключения #${retryAttempts.current + 1}, задержка: ${retryDelay}ms`);
+
+        cleanup();
+        retryAttempts.current += 1;
+        setRetryCount(retryAttempts.current);
+
+        setTimeout(async () => {
+            try {
+                await joinRoom(username);
+                retryAttempts.current = 0;
+            } catch (err) {
+                console.error('Ошибка переподключения:', err);
+                if (retryAttempts.current < MAX_RETRIES) {
+                    resetConnection();
+                }
+            }
+        }, retryDelay);
     };
 
     const restartMediaDevices = async () => {
