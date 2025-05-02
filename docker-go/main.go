@@ -274,26 +274,24 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
     }
 
     // Настройка обработчиков ICE кандидатов и треков...
-	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
-		if c == nil {
-			// log.Printf("ICE candidate gathering complete for %s", peer.username) // Можно логировать для отладки
-			return
-		}
-		// Отправляем кандидата немедленно
-		peer.mu.Lock()
-		conn := peer.conn // Копируем под мьютексом
-		peer.mu.Unlock()
-		if conn != nil {
-			// log.Printf("Sending ICE candidate from %s: %s...", peer.username, c.ToJSON().Candidate[:30]) // Лог кандидата
-			err := conn.WriteJSON(map[string]interface{}{
-				"type": "ice_candidate",
-				"ice":  c.ToJSON(), // Отправляем полный объект
-			})
-			if err != nil {
-				// log.Printf("Error sending ICE candidate to %s: %v", peer.username, err) // Лог ошибки отправки
-			}
-		}
-	})
+    peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
+        if c == nil {
+            return
+        }
+
+        // Отправляем все кандидаты, не фильтруем
+        peer.mu.Lock()
+        defer peer.mu.Unlock()
+        if peer.conn != nil {
+            err := peer.conn.WriteJSON(map[string]interface{}{
+                "type": "ice_candidate",
+                "ice":  c.ToJSON(),
+            })
+            if err != nil {
+                log.Printf("Error sending ICE candidate: %v", err)
+            }
+        }
+    })
 
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		log.Printf("Track received for %s in room %s: Type: %s, Codec: %s",
