@@ -429,6 +429,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		// Пересылка конкретных типов сообщений нужному адресату
 		switch dataType {
 		case "offer":
+            log.Printf("Received offer from %s: %s", peer.username, data["sdp"])
 			// Оффер от Лидера -> Ведомому
 			if peer.isLeader && !targetPeer.isLeader {
 				log.Printf(">>> Forwarding Offer from %s to %s", peer.username, targetPeer.username)

@@ -737,38 +737,36 @@ export const useWebRTC = (
                         credential: 'pass1'
                     }
                 ],
-                iceTransportPolicy: 'all',
+                // iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
-                iceCandidatePoolSize: 0,
                 // Специфичные настройки для Huawei
                 ...(isHuawei && {
                     iceTransportPolicy: 'all', // Только relay для Huawei
-                    bundlePolicy: 'max-bundle',
-                    rtcpMuxPolicy: 'require',
                     iceCandidatePoolSize: 1,
                     iceCheckInterval: 3000, // Более частые проверки
-                    iceServers: [
-                        { urls: 'stun:ardua.site:3478' },
-                        {
-                            urls: 'turn:ardua.site:3478',
-                            username: 'user1',
-                            credential: 'pass1'
-                        }
-
-                    ]
+                    // iceServers: [
+                    //     { urls: 'stun:ardua.site:3478' },
+                    //     {
+                    //         urls: 'turn:ardua.site:3478',
+                    //         username: 'user1',
+                    //         credential: 'pass1'
+                    //     }
+                    //
+                    // ]
                 }),
                 ...(isSafari && {
                     iceTransportPolicy: 'relay',
                     encodedInsertableStreams: false,
-                    iceServers: [
-                        { urls: 'stun:ardua.site:3478' },
-                        {
-                            urls: 'turn:ardua.site:3478',
-                            username: 'user1',
-                            credential: 'pass1'
-                        },
-                    ]
+                    iceCandidatePoolSize: 0,
+                    // iceServers: [
+                    //     { urls: 'stun:ardua.site:3478' },
+                    //     {
+                    //         urls: 'turn:ardua.site:3478',
+                    //         username: 'user1',
+                    //         credential: 'pass1'
+                    //     },
+                    // ]
                 })
             };
 
