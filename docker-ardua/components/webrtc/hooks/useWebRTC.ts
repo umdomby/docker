@@ -732,8 +732,9 @@ export const useWebRTC = (
                 iceServers: [
                     {
                         urls: [
+                            'stun:ardua.site:3478',
                             'turn:ardua.site:3478',
-                            'stun:ardua.site:3478'
+
                         ],
                         username: 'user1',
                         credential: 'pass1'
@@ -744,27 +745,28 @@ export const useWebRTC = (
                 rtcpMuxPolicy: 'require',
                 // Специфичные настройки для Huawei
                 ...(isHuawei && {
-                    iceTransportPolicy: 'relay', // Только relay для Huawei
+                    iceTransportPolicy: 'all', // Только relay для Huawei
                     bundlePolicy: 'max-bundle',
                     rtcpMuxPolicy: 'require',
                     iceCandidatePoolSize: 1,
                     iceCheckInterval: 3000, // Более частые проверки
                     iceServers: [ // Приоритет для TURN
                         {
-                            urls: 'turn:ardua.site:3478',
+                            urls: 'stun:ardua.site:3478',
                             username: 'user1',
                             credential: 'pass1'
                         },
                         {
-                            urls: 'stun:ardua.site:3478',
+                            urls: 'turn:ardua.site:3478',
                             username: 'user1',
                             credential: 'pass1'
                         }
+
                     ]
                 }),
                 // Специфичные настройки для Safari
                 ...(isSafari && {
-                    iceTransportPolicy: 'relay',
+                    iceTransportPolicy: 'all',
                     encodedInsertableStreams: false
                 })
             };
