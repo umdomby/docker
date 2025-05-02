@@ -14,6 +14,15 @@ interface WebSocketMessage {
     force_disconnect?: boolean;
 }
 
+interface CustomRTCRtpCodecParameters extends RTCRtpCodecParameters {
+    parameters?: {
+        'level-asymmetry-allowed'?: number;
+        'packetization-mode'?: number;
+        'profile-level-id'?: string;
+        [key: string]: any;
+    };
+}
+
 export const useWebRTC = (
     deviceIds: { video: string; audio: string },
     username: string,
@@ -58,11 +67,23 @@ export const useWebRTC = (
 
 
 
-    // 1. Функция для получения оптимальных параметров видео
+    // 1. Улучшенная функция для получения параметров видео для Huawei
     const getVideoConstraints = () => {
         const isHuawei = /huawei/i.test(navigator.userAgent);
         const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
             /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+        // Специальные параметры для Huawei
+        if (isHuawei) {
+            return {
+                width: { ideal: 480, max: 640 },
+                height: { ideal: 360, max: 480 },
+                frameRate: { ideal: 20, max: 25 },
+                // Huawei лучше работает с этими параметрами
+                facingMode: 'environment',
+                resizeMode: 'crop-and-scale'
+            };
+        }
 
         // Базовые параметры для всех устройств
         const baseConstraints = {
@@ -135,14 +156,17 @@ export const useWebRTC = (
             // Приоритет H.264 baseline profile
             .replace(/a=rtpmap:(\d+) H264\/\d+/g,
                 'a=rtpmap:$1 H264/90000\r\n' +
-                'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1\r\n')
+                'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n')
             // Уменьшаем размер GOP
             .replace(/a=fmtp:\d+/, '$&;sprop-parameter-sets=J0LgC5Q9QEQ=,KM4=;')
-            // Оптимизации буферизации
+            // Оптимизации буферизации и битрейта
             .replace(/a=mid:video\r\n/g,
                 'a=mid:video\r\n' +
-                'b=AS:300\r\n' +
-                'b=TIAS:300000\r\n');
+                'b=AS:250\r\n' +  // Уменьшенный битрейт для Huawei
+                'b=TIAS:250000\r\n' +
+                'a=rtcp-fb:* ccm fir\r\n' +
+                'a=rtcp-fb:* nack\r\n' +
+                'a=rtcp-fb:* nack pli\r\n');
     };
 
 // 4. Мониторинг производительности для Huawei
@@ -157,27 +181,29 @@ export const useWebRTC = (
             try {
                 const stats = await pc.current.getStats();
                 let videoStats: any = null;
+                let connectionStats: any = null;
 
                 stats.forEach(report => {
                     if (report.type === 'outbound-rtp' && report.kind === 'video') {
                         videoStats = report;
                     }
+                    if (report.type === 'candidate-pair' && report.selected) {
+                        connectionStats = report;
+                    }
                 });
 
-                if (videoStats) {
-                    // Адаптация при высокой потере пакетов
-                    if (videoStats.packetsLost > 10) {
+                if (videoStats && connectionStats) {
+                    // Адаптация при высокой потере пакетов или задержке
+                    if (videoStats.packetsLost > 5 ||
+                        (connectionStats.currentRoundTripTime && connectionStats.currentRoundTripTime > 0.5)) {
+                        console.log('Высокие потери или задержка, уменьшаем качество');
                         adjustVideoQuality('lower');
-                    }
-                    // Улучшение качества при стабильном соединении
-                    else if (videoStats.packetsLost < 2 && videoStats.bitrate > 200000) {
-                        adjustVideoQuality('higher');
                     }
                 }
             } catch (err) {
                 console.error('Ошибка мониторинга:', err);
             }
-        }, 5000);
+        }, 3000); // Более частый мониторинг для Huawei
 
         return () => clearInterval(monitorInterval);
     };
@@ -186,31 +212,77 @@ export const useWebRTC = (
     const adjustVideoQuality = (direction: 'higher' | 'lower') => {
         const senders = pc.current?.getSenders() || [];
         const isHuawei = /huawei/i.test(navigator.userAgent);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+            /iPad|iPhone|iPod/.test(navigator.userAgent);
 
         senders.forEach(sender => {
             if (sender.track?.kind === 'video') {
                 const parameters = sender.getParameters();
 
-                if (!parameters.encodings) return;
+                if (!parameters.encodings || parameters.encodings.length === 0) {
+                    parameters.encodings = [{}];
+                }
 
-                // Используем только стандартные параметры
-                parameters.encodings[0] = {
+                // Базовые параметры для всех устройств
+                const baseEncoding: RTCRtpEncodingParameters = {
                     ...parameters.encodings[0],
-                    maxBitrate: direction === 'higher'
-                        ? (isHuawei ? 400000 : 800000)
-                        : (isHuawei ? 200000 : 400000),
-                    scaleResolutionDownBy: direction === 'higher'
-                        ? (isHuawei ? 1.2 : 1.0)
-                        : (isHuawei ? 2.0 : 1.5),
-                    maxFramerate: direction === 'higher'
-                        ? (isHuawei ? 20 : 30)
-                        : (isHuawei ? 12 : 20)
+                    active: true,
                 };
 
+                // Специфичные настройки для Huawei
+                if (isHuawei) {
+                    parameters.encodings[0] = {
+                        ...baseEncoding,
+                        maxBitrate: direction === 'higher' ? 300000 : 150000,
+                        scaleResolutionDownBy: direction === 'higher' ? undefined : 1.5,
+                        maxFramerate: direction === 'higher' ? 20 : 15,
+                        priority: direction === 'higher' ? 'medium' : 'low',
+                    };
+
+                    // Безопасная установка параметров кодека для Huawei
+                    if (parameters.codecs) {
+                        parameters.codecs = parameters.codecs.map(codec => {
+                            const customCodec = codec as CustomRTCRtpCodecParameters;
+                            if (customCodec.mimeType === 'video/H264') {
+                                return {
+                                    ...customCodec,
+                                    parameters: {
+                                        ...(customCodec.parameters || {}),
+                                        'level-asymmetry-allowed': 1,
+                                        'packetization-mode': 1,
+                                        'profile-level-id': '42e01f'
+                                    }
+                                };
+                            }
+                            return codec;
+                        });
+                    }
+                }
+                else if (isSafari) {
+                    parameters.encodings[0] = {
+                        ...baseEncoding,
+                        maxBitrate: direction === 'higher' ? 600000 : 300000,
+                        scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.3,
+                        maxFramerate: direction === 'higher' ? 25 : 15,
+                    };
+                }
+                else {
+                    parameters.encodings[0] = {
+                        ...baseEncoding,
+                        maxBitrate: direction === 'higher' ? 800000 : 400000,
+                        scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
+                        maxFramerate: direction === 'higher' ? 30 : 20,
+                    };
+                }
+
                 try {
-                    sender.setParameters(parameters);
+                    sender.setParameters(parameters).then(() => {
+                        console.log(`Качество видео ${direction === 'higher' ? 'увеличено' : 'уменьшено'}`);
+                    }).catch(err => {
+                        console.error('Ошибка применения параметров:', err);
+                    });
                 } catch (err) {
-                    console.error('Ошибка изменения параметров:', err);
+                    console.error('Критическая ошибка изменения параметров:', err);
                 }
             }
         });
@@ -672,9 +744,23 @@ export const useWebRTC = (
                 rtcpMuxPolicy: 'require',
                 // Специфичные настройки для Huawei
                 ...(isHuawei && {
-                    iceTransportPolicy: 'relay',
+                    iceTransportPolicy: 'relay', // Только relay для Huawei
+                    bundlePolicy: 'max-bundle',
+                    rtcpMuxPolicy: 'require',
                     iceCandidatePoolSize: 1,
-                    iceCheckInterval: 5000
+                    iceCheckInterval: 3000, // Более частые проверки
+                    iceServers: [ // Приоритет для TURN
+                        {
+                            urls: 'turn:ardua.site:3478',
+                            username: 'user1',
+                            credential: 'pass1'
+                        },
+                        {
+                            urls: 'stun:ardua.site:3478',
+                            username: 'user1',
+                            credential: 'pass1'
+                        }
+                    ]
                 }),
                 // Специфичные настройки для Safari
                 ...(isSafari && {
@@ -694,6 +780,21 @@ export const useWebRTC = (
                     }
                 });
             }
+            if (isHuawei) {
+                pc.current.oniceconnectionstatechange = () => {
+                    if (!pc.current) return;
+
+                    console.log('Huawei ICE состояние:', pc.current.iceConnectionState);
+
+                    // Более агрессивное восстановление для Huawei
+                    if (pc.current.iceConnectionState === 'disconnected' ||
+                        pc.current.iceConnectionState === 'failed') {
+                        console.log('Huawei: соединение прервано, переподключение...');
+                        setTimeout(resetConnection, 1000);
+                    }
+                };
+            }
+
 
 
             // Обработчики событий WebRTC
@@ -765,6 +866,13 @@ export const useWebRTC = (
             };
 
             const shouldSendIceCandidate = (candidate: RTCIceCandidate) => {
+
+                const isHuawei = /huawei/i.test(navigator.userAgent);
+
+                // Для Huawei отправляем только relay-кандидаты
+                if (isHuawei) {
+                    return candidate.candidate.includes('typ relay');
+                }
                 // Не отправляем пустые кандидаты
                 if (!candidate.candidate || candidate.candidate.length === 0) return false;
 
