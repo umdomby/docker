@@ -181,118 +181,97 @@ func closePeerConnection(peer *Peer, reason string) {
 
 // Обработка присоединения нового пользователя (ключевые изменения здесь)
 func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
-	mu.Lock() // Блокируем доступ к общим ресурсам rooms и peers
-	defer mu.Unlock()
+    mu.Lock()
+    defer mu.Unlock()
 
-	// Создаем комнату, если ее нет
-	if _, exists := rooms[room]; !exists {
-		if !isLeader {
-			// Ведомый не может создать комнату, лидер должен быть первым
-			log.Printf("Follower '%s' attempted to join non-existent room '%s'. Leader must join first.", username, room)
-			conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room does not exist. Leader must join first."})
-			conn.Close()
-			return nil, errors.New("room does not exist for follower") // <--- ИСПОЛЬЗОВАНИЕ errors.New
-		}
-		log.Printf("Leader '%s' creating new room: %s", username, room)
-		rooms[room] = make(map[string]*Peer)
-	}
+    // Создаем комнату, если ее нет
+    if _, exists := rooms[room]; !exists {
+        if !isLeader {
+            conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room does not exist. Leader must join first."})
+            conn.Close()
+            return nil, errors.New("room does not exist for follower")
+        }
+        rooms[room] = make(map[string]*Peer)
+    }
 
-	roomPeers := rooms[room]
+    roomPeers := rooms[room]
 
-	// --- Логика Замены Ведомого (только если новый - ведомый) ---
-	if !isLeader {
-		var existingFollower *Peer = nil
-		for _, p := range roomPeers {
-			if !p.isLeader {
-				existingFollower = p
-				break
-			}
-		}
+    // Логика замены ведомого
+    if !isLeader {
+        // Отключаем предыдущего ведомого, если он есть
+        var existingFollower *Peer
+        for _, p := range roomPeers {
+            if !p.isLeader {
+                existingFollower = p
+                break
+            }
+        }
 
-		// Если есть старый ведомый, отключаем его
-		if existingFollower != nil {
-			log.Printf("Follower '%s' already exists in room '%s'. Disconnecting old follower to replace with new follower '%s'.", existingFollower.username, room, username)
-			existingFollower.mu.Lock()
-			if existingFollower.conn != nil {
-				existingFollower.conn.WriteJSON(map[string]interface{}{
-					"type": "force_disconnect",
-					"data": "You have been replaced by another viewer.",
-				})
-			}
-			existingFollower.mu.Unlock()
+        if existingFollower != nil {
+            log.Printf("Replacing old follower %s with new follower %s", existingFollower.username, username)
 
-			// Запускаем закрытие соединений старого ведомого в отдельной горутине
-			go closePeerConnection(existingFollower, "Replaced by new follower")
+            // Отправляем команду на отключение старому ведомому
+            existingFollower.mu.Lock()
+            if existingFollower.conn != nil {
+                existingFollower.conn.WriteJSON(map[string]interface{}{
+                    "type": "force_disconnect",
+                    "data": "You have been replaced by another viewer",
+                })
+            }
+            existingFollower.mu.Unlock()
 
-			// Удаляем старого ведомого из комнаты и глобального списка
-			delete(roomPeers, existingFollower.username)
-			var oldAddr string
-			for addr, p := range peers {
-				if p == existingFollower {
-					oldAddr = addr
-					break
-				}
-			}
-			if oldAddr != "" {
-				delete(peers, oldAddr)
-			} else if existingFollower.conn != nil {
-				// Попытка удалить по адресу из объекта, если не нашли по ссылке
-				delete(peers, existingFollower.conn.RemoteAddr().String())
-			}
-			log.Printf("Old follower %s removed from room %s.", existingFollower.username, room)
-		}
-	}
+            // Удаляем старого ведомого
+            delete(roomPeers, existingFollower.username)
+            for addr, p := range peers {
+                if p == existingFollower {
+                    delete(peers, addr)
+                    break
+                }
+            }
+        }
 
-	// --- Проверка Лимита Участников ---
-	var currentLeaderCount, currentFollowerCount int
-	for _, p := range roomPeers {
-		if p.isLeader {
-			currentLeaderCount++
-		} else {
-			currentFollowerCount++
-		}
-	}
+        // Находим лидера и отправляем ему команду на переподключение
+        var leaderPeer *Peer
+        for _, p := range roomPeers {
+            if p.isLeader {
+                leaderPeer = p
+                break
+            }
+        }
 
-	// Проверяем, можно ли добавить нового участника
-	if isLeader && currentLeaderCount > 0 {
-		log.Printf("Room '%s' already has a leader. Cannot add another leader '%s'.", room, username)
-		conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room already has a leader"})
-		conn.Close()
-		return nil, nil // Пир не создан, но не ошибка сервера
-	}
-	if !isLeader && currentFollowerCount > 0 {
-		log.Printf("Room '%s' already has a follower. Cannot add another follower '%s'. (This should not happen due to replacement logic).", room, username)
-		conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room already has a follower (Internal Server Error?)"})
-		conn.Close()
-		return nil, nil
-	}
-	// Проверка на общее кол-во > 2 (на всякий случай)
-	if len(roomPeers) >= 2 {
-		log.Printf("Room '%s' is full (already has 2 participants). Cannot add '%s'.", room, username)
-		conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room is full"})
-		conn.Close()
-		return nil, nil
-	}
+        if leaderPeer != nil {
+            log.Printf("Sending rejoin command to leader %s", leaderPeer.username)
+            leaderPeer.mu.Lock()
+            leaderConn := leaderPeer.conn
+            leaderPeer.mu.Unlock()
 
-	// --- Создание PeerConnection для нового пира ---
-	log.Printf("Creating new PeerConnection for %s (isLeader: %v) in room %s", username, isLeader, room)
-	peerConnection, err := webrtc.NewPeerConnection(getWebRTCConfig())
-	if err != nil {
-		log.Printf("Failed to create peer connection for %s: %v", username, err)
-		return nil, err // Возвращаем ошибку сервера
-	}
+            if leaderConn != nil {
+                err := leaderConn.WriteJSON(map[string]interface{}{
+                    "type": "rejoin_and_offer",
+                    "room": room,
+                })
+                if err != nil {
+                    log.Printf("Error sending rejoin command to leader: %v", err)
+                }
+            }
+        }
+    }
 
-	peer := &Peer{
-		conn:     conn,
-		pc:       peerConnection,
-		username: username,
-		room:     room,
-		isLeader: isLeader,
-	}
+    // Остальная логика создания пира...
+    peerConnection, err := webrtc.NewPeerConnection(getWebRTCConfig())
+    if err != nil {
+        return nil, err
+    }
 
-	// --- Настройка обработчиков PeerConnection ---
+    peer := &Peer{
+        conn:     conn,
+        pc:       peerConnection,
+        username: username,
+        room:     room,
+        isLeader: isLeader,
+    }
 
-	// Отправка ICE кандидатов клиенту, который их сгенерировал
+    // Настройка обработчиков ICE кандидатов и треков...
 	peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			// log.Printf("ICE candidate gathering complete for %s", peer.username) // Можно логировать для отладки
@@ -314,7 +293,6 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 		}
 	})
 
-	// Обработка входящих треков (только логируем)
 	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
 		log.Printf("Track received for %s in room %s: Type: %s, Codec: %s",
 			peer.username, peer.room, track.Kind(), track.Codec().MimeType)
@@ -330,63 +308,11 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 		}()
 	})
 
-	// Логирование смены состояний (для отладки)
-	peerConnection.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) {
-		log.Printf("ICE State Change for %s: %s", peer.username, state.String())
-	})
-	peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
-		log.Printf("PeerConnection State Change for %s: %s", peer.username, s.String())
-	})
+    // Добавляем пира в комнату
+    rooms[room][username] = peer
+    peers[conn.RemoteAddr().String()] = peer
 
-	// --- Добавление пира в структуры ---
-	rooms[room][username] = peer
-	peers[conn.RemoteAddr().String()] = peer
-	log.Printf("Peer %s (isLeader: %v) added to room %s", username, isLeader, room)
-
-	// --- *** НОВАЯ ЛОГИКА: Запрос "перезахода" лидеру *** ---
-	if !isLeader { // Если подключился ВЕДОМЫЙ
-		// Ищем лидера в этой комнате
-		var leaderPeer *Peer = nil
-		for _, p := range roomPeers {
-			if p.isLeader {
-				leaderPeer = p
-				break
-			}
-		}
-
-		// Если лидер найден, отправляем ему команду "перезайти и предложить"
-		if leaderPeer != nil {
-			log.Printf(">>> Sending 'rejoin_and_offer' command to leader %s for room %s", leaderPeer.username, room)
-			leaderPeer.mu.Lock()
-			leaderConn := leaderPeer.conn
-			leaderPeer.mu.Unlock()
-
-			if leaderConn != nil {
-				err := leaderConn.WriteJSON(map[string]interface{}{
-					"type": "rejoin_and_offer", // Новая команда для клиента лидера
-					"room": room, // Передаем ID комнаты
-				})
-				if err != nil {
-					log.Printf("Error sending 'rejoin_and_offer' to leader %s: %v", leaderPeer.username, err)
-					conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Failed to contact leader to start session"})
-				}
-			} else {
-				log.Printf("Cannot send 'rejoin_and_offer', leader %s connection is nil", leaderPeer.username)
-				conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Leader seems disconnected"})
-			}
-		} else {
-			// Этого не должно произойти, так как мы проверяли существование комнаты ранее
-			log.Printf("CRITICAL ERROR: Follower %s joined room %s, but no leader found!", peer.username, room)
-			conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Internal server error: Leader not found"})
-			conn.Close()
-			// Удаляем только что добавленного пира
-			delete(rooms[room], peer.username)
-			delete(peers, conn.RemoteAddr().String())
-			return nil, errors.New("leader disappeared unexpectedly") // <--- ИСПОЛЬЗОВАНИЕ errors.New
-		}
-	}
-
-	return peer, nil // Возвращаем успешно созданный пир
+    return peer, nil
 }
 
 // Главная функция (без изменений от первой версии)
