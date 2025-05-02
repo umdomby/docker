@@ -59,28 +59,28 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        // Оптимизации для Android
         let optimized = sdp
-            // Ограничение битрейта
+            // Общие оптимизации
             .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:500\r\nb=TIAS:500000\r\n')
-            // Приоритет H.264
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
-            // Удаление RTX
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
-            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
-            // Оптимизация для Android
-            .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
-            .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '')
-            // Уменьшение FPS
-            .replace(/a=framerate:\d+\r\n/g, 'a=framerate:15\r\n');
+            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
-        // Дополнительные настройки для Android
-        if (isAndroid()) {
+        // Специфичные оптимизации для Android
+        if (platform === 'android') {
             optimized = optimized
-                // Уменьшение разрешения
+                .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
+                .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '')
+                .replace(/a=framerate:\d+\r\n/g, 'a=framerate:15\r\n')
                 .replace(/a=imageattr:\d+.+?\r\n/g, '')
-                // Отключение временного масштабирования
                 .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '');
+        }
+
+        // Специфичные оптимизации для iOS
+        if (platform === 'ios') {
+            optimized = optimized
+                .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '')
+                .replace(/a=extmap:\d+ urn:ietf:params:rtp-hdrext:sdes:mid\r\n/g, '');
         }
 
         return optimized;
@@ -432,27 +432,21 @@ export const useWebRTC = (
             return;
         }
 
-        const offer = await pc.current.createOffer({
-            offerToReceiveAudio: true,
-            offerToReceiveVideo: true,
-            iceRestart: false,
-            // Разные настройки для разных платформ
-            ...(platform === 'android' && {
-                offerToReceiveVideo: true,
-                voiceActivityDetection: false
-            }),
-            ...(platform === 'ios' && {
-                iceRestart: true,
-                offerToReceiveVideo: true
-            })
-        });
-
         try {
-            offer = await pc.current.createOffer({
+            // Создаем оффер с учетом платформы
+            const offerOptions: RTCOfferOptions = {
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
                 iceRestart: false,
-            });
+                ...(platform === 'android' && {
+                    voiceActivityDetection: false
+                }),
+                ...(platform === 'ios' && {
+                    iceRestart: true
+                })
+            };
+
+            const offer = await pc.current.createOffer(offerOptions);
 
             // Нормализуем SDP оффера
             const standardizedOffer = {
@@ -481,25 +475,7 @@ export const useWebRTC = (
         } catch (err) {
             console.error('Offer creation error:', err);
             setError(`Offer failed: ${err instanceof Error ? err.message : String(err)}`);
-
-            // Fallback - попробуем отправить оригинальный offer без модификаций
-            if (offer && pc.current) {
-                try {
-                    await pc.current.setLocalDescription(offer);
-                    ws.current?.send(JSON.stringify({
-                        type: "offer",
-                        sdp: offer,
-                        room: roomId,
-                        username
-                    }));
-                    setIsCallActive(true);
-                } catch (fallbackErr) {
-                    console.error('Fallback also failed:', fallbackErr);
-                    resetConnection();
-                }
-            } else {
-                resetConnection();
-            }
+            resetConnection();
         }
     };
 
@@ -524,15 +500,22 @@ export const useWebRTC = (
                         credential: 'pass1'
                     }
                 ],
-                // Особые настройки для Safari
-                iceTransportPolicy: 'relay', // Для iOS лучше использовать только relay
+                iceTransportPolicy: isSafari() ? 'relay' : 'all',
                 bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require',
-                // Дополнительные параметры для iOS
-                encodedInsertableStreams: false,
-                // @ts-ignore - свойство для Safari
-                optional: [{ RtpDataChannels: true }]
+                rtcpMuxPolicy: 'require'
             };
+
+            pc.current = new RTCPeerConnection(config);
+
+            // Особые обработчики для Safari
+            if (isSafari()) {
+                // @ts-ignore - свойство для Safari
+                pc.current.addEventListener('negotiationneeded', async () => {
+                    if (shouldCreateOffer.current) {
+                        await createAndSendOffer();
+                    }
+                });
+            }
 
             pc.current = new RTCPeerConnection(config);
 
