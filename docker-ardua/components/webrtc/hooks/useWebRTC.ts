@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import {RoomInfo} from "@/components/webrtc/types";
 
 interface WebSocketMessage {
     type: string;
@@ -10,8 +11,13 @@ interface WebSocketMessage {
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
-// Добавляем новый тип сообщения
+    isLeader?: boolean;
     force_disconnect?: boolean;
+}
+
+interface RoomInfoMessage extends WebSocketMessage {
+    type: 'room_info';
+    data: RoomInfo;
 }
 
 interface CustomRTCRtpCodecParameters extends RTCRtpCodecParameters {
@@ -36,7 +42,7 @@ export const useWebRTC = (
     const [isInRoom, setIsInRoom] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [retryCount, setRetryCount] = useState(0);
-
+    const [isLeader, setIsLeader] = useState(false);
     const ws = useRef<WebSocket | null>(null);
     const pc = useRef<RTCPeerConnection | null>(null);
     const pendingIceCandidates = useRef<RTCIceCandidate[]>([]);
@@ -510,6 +516,15 @@ export const useWebRTC = (
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
 
+                // Устанавливаем isLeader при получении room_info
+                if (data.type === 'room_info') {
+                    const roomInfo = (data as RoomInfoMessage).data;
+                    if (roomInfo) {
+                        setIsLeader(roomInfo.leader === username);
+                        setUsers(roomInfo.users || []);
+                    }
+                }
+
                 // Добавляем обработку switch_camera
                 if (data.type === 'switch_camera_ack') {
                     console.log('Камера на Android успешно переключена');
@@ -667,8 +682,13 @@ export const useWebRTC = (
             return;
         }
 
+        // Проверяем роль перед созданием оффера
+        if (!isLeader) {
+            console.warn('Попытка создания оффера ведомым - игнорируем');
+            return;
+        }
+
         try {
-            // Создаем оффер с учетом платформы
             const offerOptions: RTCOfferOptions = {
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
@@ -682,8 +702,6 @@ export const useWebRTC = (
             };
 
             const offer = await pc.current.createOffer(offerOptions);
-
-            // Нормализуем SDP оффера
             const standardizedOffer = {
                 ...offer,
                 sdp: normalizeSdp(offer.sdp)
@@ -691,7 +709,6 @@ export const useWebRTC = (
 
             console.log('Normalized SDP:', standardizedOffer.sdp);
 
-            // Валидация SDP перед установкой
             if (!validateSdp(standardizedOffer.sdp)) {
                 throw new Error('Invalid SDP format after normalization');
             }
@@ -702,7 +719,8 @@ export const useWebRTC = (
                 type: "offer",
                 sdp: standardizedOffer,
                 room: roomId,
-                username
+                username,
+                isLeader: true // Явно указываем что это лидер
             }));
 
             setIsCallActive(true);
@@ -1156,6 +1174,7 @@ export const useWebRTC = (
         setError(null);
         setIsInRoom(false);
         setIsConnected(false);
+        setIsLeader(false); // Сбрасываем состояние при подключении
 
         try {
             // 1. Подключаем WebSocket
@@ -1206,6 +1225,8 @@ export const useWebRTC = (
                 }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
+
+                // Отправляем запрос на подключение с указанием роли
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
@@ -1218,12 +1239,7 @@ export const useWebRTC = (
             setIsInRoom(true);
             shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
-            // 5. Создаем оффер, если мы первые в комнате
-            if (users.length === 0) {
-                await createAndSendOffer();
-            }
-
-            // 6. Запускаем таймер проверки видео
+            // 5. Запускаем таймер проверки видео
             startVideoCheckTimer();
 
         } catch (err) {
@@ -1261,6 +1277,7 @@ export const useWebRTC = (
         isCallActive,
         isConnected,
         isInRoom,
+        isLeader,
         error,
         retryCount,
         resetConnection,

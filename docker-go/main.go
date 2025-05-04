@@ -107,6 +107,11 @@ func sendRoomInfo(room string) {
 	mu.Lock()
 	defer mu.Unlock()
 
+    roomPeers, exists := rooms[room]
+    if !exists || roomPeers == nil {
+        return
+    }
+
 	if roomPeers, exists := rooms[room]; exists {
 		var leader, follower string
 		users := make([]string, 0, len(roomPeers))
@@ -186,13 +191,14 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
     mu.Lock()
     defer mu.Unlock()
 
-    // Создаем комнату, если ее нет
+    // Инициализируем комнату, если ее нет
     if _, exists := rooms[room]; !exists {
         if !isLeader {
             conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room does not exist. Leader must join first."})
             conn.Close()
             return nil, errors.New("room does not exist for follower")
         }
+        // Инициализируем мапу для новой комнаты
         rooms[room] = make(map[string]*Peer)
     }
 
@@ -200,6 +206,21 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 
     // Логика замены ведомого
     if !isLeader {
+        // Проверяем что в комнате уже есть лидер
+        hasLeader := false
+        for _, p := range roomPeers {
+            if p.isLeader {
+                hasLeader = true
+                break
+            }
+        }
+
+        if !hasLeader {
+            conn.WriteJSON(map[string]interface{}{"type": "error", "data": "No leader in room"})
+            conn.Close()
+            return nil, errors.New("no leader in room")
+        }
+
         // Отключаем предыдущего ведомого, если он есть
         var existingFollower *Peer
         for _, p := range roomPeers {
@@ -259,7 +280,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         }
     }
 
-    // Остальная логика создания пира...
+    // Создаем PeerConnection
     peerConnection, err := webrtc.NewPeerConnection(getWebRTCConfig())
     if err != nil {
         return nil, err
@@ -273,13 +294,12 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         isLeader: isLeader,
     }
 
-    // Настройка обработчиков ICE кандидатов и треков...
+    // Настройка обработчиков ICE кандидатов и треков
     peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
         if c == nil {
             return
         }
 
-        // Отправляем все кандидаты, не фильтруем
         peer.mu.Lock()
         defer peer.mu.Unlock()
         if peer.conn != nil {
@@ -293,20 +313,19 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         }
     })
 
-	peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
-		log.Printf("Track received for %s in room %s: Type: %s, Codec: %s",
-			peer.username, peer.room, track.Kind(), track.Codec().MimeType)
-		// Читаем данные, чтобы не блокировать буфер
-		go func() {
-			buffer := make([]byte, 1500)
-			for {
-				_, _, readErr := track.Read(buffer)
-				if readErr != nil {
-					return
-				}
-			}
-		}()
-	})
+    peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
+        log.Printf("Track received for %s in room %s: Type: %s, Codec: %s",
+            peer.username, peer.room, track.Kind(), track.Codec().MimeType)
+        go func() {
+            buffer := make([]byte, 1500)
+            for {
+                _, _, readErr := track.Read(buffer)
+                if readErr != nil {
+                    return
+                }
+            }
+        }()
+    })
 
     // Добавляем пира в комнату
     rooms[room][username] = peer
@@ -330,199 +349,210 @@ func main() {
 
 // Обработчик WebSocket соединений (изменения в логике пересылки)
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println("WebSocket upgrade error:", err)
-		return
-	}
-	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        log.Println("WebSocket upgrade error:", err)
+        return
+    }
+    remoteAddr := conn.RemoteAddr().String()
+    log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
 
-	// --- Чтение первого сообщения для идентификации ---
-	var initData struct {
-		Room     string `json:"room"`
-		Username string `json:"username"`
-		IsLeader bool   `json:"isLeader"`
-	}
-	conn.SetReadDeadline(time.Now().Add(10 * time.Second))
-	err = conn.ReadJSON(&initData)
-	conn.SetReadDeadline(time.Time{}) // Сброс таймаута
+    // --- Чтение первого сообщения для идентификации ---
+    var initData struct {
+        Room     string `json:"room"`
+        Username string `json:"username"`
+        IsLeader bool   `json:"isLeader"`
+    }
+    conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+    err = conn.ReadJSON(&initData)
+    conn.SetReadDeadline(time.Time{}) // Сброс таймаута
 
-	if err != nil {
-		log.Printf("Read init data error from %s: %v. Closing.", remoteAddr, err)
-		conn.Close()
-		return
-	}
-	if initData.Room == "" || initData.Username == "" {
-		log.Printf("Invalid init data from %s: Room or Username is empty. Closing.", remoteAddr)
-		conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room and Username cannot be empty"})
-		conn.Close()
-		return
-	}
+    if err != nil {
+        log.Printf("Read init data error from %s: %v. Closing.", remoteAddr, err)
+        conn.Close()
+        return
+    }
+    if initData.Room == "" || initData.Username == "" {
+        log.Printf("Invalid init data from %s: Room or Username is empty. Closing.", remoteAddr)
+        conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room and Username cannot be empty"})
+        conn.Close()
+        return
+    }
 
-	log.Printf("User '%s' (isLeader: %v) attempting to join room '%s' from %s", initData.Username, initData.IsLeader, initData.Room, remoteAddr)
+    log.Printf("User '%s' (isLeader: %v) attempting to join room '%s' from %s", initData.Username, initData.IsLeader, initData.Room, remoteAddr)
 
-	// --- Присоединение пира к комнате ---
-	peer, err := handlePeerJoin(initData.Room, initData.Username, initData.IsLeader, conn)
-	if err != nil {
-		log.Printf("Error handling peer join for %s: %v", initData.Username, err)
-		// Сообщение об ошибке и закрытие соединения уже произошли в handlePeerJoin
-		return
-	}
-	if peer == nil {
-		log.Printf("Peer %s was not created. Connection closed by handlePeerJoin.", initData.Username)
-		return
-	}
+    // --- Присоединение пира к комнате ---
+    peer, err := handlePeerJoin(initData.Room, initData.Username, initData.IsLeader, conn)
+    if err != nil {
+        log.Printf("Error handling peer join for %s: %v", initData.Username, err)
+        // Сообщение об ошибке и закрытие соединения уже произошли в handlePeerJoin
+        return
+    }
+    if peer == nil {
+        log.Printf("Peer %s was not created. Connection closed by handlePeerJoin.", initData.Username)
+        return
+    }
 
-	// Успешное добавление пира
-	log.Printf("User '%s' successfully joined room '%s' as %s", peer.username, peer.room, map[bool]string{true: "leader", false: "follower"}[peer.isLeader])
-	logStatus()
-	sendRoomInfo(peer.room) // Отправляем всем обновленную информацию
+    // Успешное добавление пира
+    log.Printf("User '%s' successfully joined room '%s' as %s", peer.username, peer.room, map[bool]string{true: "leader", false: "follower"}[peer.isLeader])
+    logStatus()
+    sendRoomInfo(peer.room) // Отправляем всем обновленную информацию
 
-	// --- Цикл чтения сообщений от клиента ---
-	for {
-		msgType, msg, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
-				log.Printf("Unexpected WebSocket close error for %s: %v", peer.username, err)
-			} else {
-				log.Printf("WebSocket connection closed for %s (Reason: %v)", peer.username, err)
-			}
-			break // Выходим из цикла чтения
-		}
+    // --- Цикл чтения сообщений от клиента ---
+    for {
+        msgType, msg, err := conn.ReadMessage()
+        if err != nil {
+            if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure) {
+                log.Printf("Unexpected WebSocket close error for %s: %v", peer.username, err)
+            } else {
+                log.Printf("WebSocket connection closed for %s (Reason: %v)", peer.username, err)
+            }
+            break // Выходим из цикла чтения
+        }
 
-		// Обрабатываем только текстовые сообщения (JSON)
-		if msgType != websocket.TextMessage {
-			continue
-		}
+        // Обрабатываем только текстовые сообщения (JSON)
+        if msgType != websocket.TextMessage {
+            continue
+        }
 
-		// Парсим JSON
-		var data map[string]interface{}
-		if err := json.Unmarshal(msg, &data); err != nil {
-			log.Printf("JSON unmarshal error from %s: %v", peer.username, err)
-			continue
-		}
+        // Проверяем что сообщение не пустое
+        if len(msg) == 0 {
+            log.Printf("Empty message from %s", peer.username)
+            continue
+        }
 
-		dataType, _ := data["type"].(string)
-		// log.Printf("Received '%s' from %s", dataType, peer.username) // Детальный лог типа сообщения
+        // Парсим JSON
+        var data map[string]interface{}
+        if err := json.Unmarshal(msg, &data); err != nil {
+            log.Printf("JSON unmarshal error from %s: %v", peer.username, err)
+            continue
+        }
 
-		// --- Логика пересылки сообщений ---
-		mu.Lock() // Блокируем для безопасного доступа к rooms
-		roomPeers := rooms[peer.room]
-		var targetPeer *Peer = nil
-		if roomPeers != nil {
-			for _, p := range roomPeers {
-				if p.username != peer.username { // Находим другого пира в комнате
-					targetPeer = p
-					break
-				}
-			}
-		}
-		mu.Unlock() // Разблокируем как можно скорее
+        dataType, ok := data["type"].(string)
+        if !ok || dataType == "" {
+            log.Printf("Message without type from %s", peer.username)
+            continue
+        }
 
-		// Пересылаем только если есть кому (targetPeer != nil)
-		if targetPeer == nil {
-			// log.Printf("No target peer found for message type '%s' from %s in room %s. Ignoring.", dataType, peer.username, peer.room)
-			continue // Если второго участника нет, игнорируем сообщения сигнализации
-		}
+        // log.Printf("Received '%s' from %s", dataType, peer.username) // Детальный лог типа сообщения
 
-		// Пересылка конкретных типов сообщений нужному адресату
-		switch dataType {
-		case "offer":
+        // --- Логика пересылки сообщений ---
+        mu.Lock() // Блокируем для безопасного доступа к rooms
+        roomPeers := rooms[peer.room]
+        var targetPeer *Peer = nil
+        if roomPeers != nil {
+            for _, p := range roomPeers {
+                if p.username != peer.username { // Находим другого пира в комнате
+                    targetPeer = p
+                    break
+                }
+            }
+        }
+        mu.Unlock() // Разблокируем как можно скорее
+
+        // Пересылаем только если есть кому (targetPeer != nil)
+        if targetPeer == nil {
+            // log.Printf("No target peer found for message type '%s' from %s in room %s. Ignoring.", dataType, peer.username, peer.room)
+            continue // Если второго участника нет, игнорируем сообщения сигнализации
+        }
+
+        // Пересылка конкретных типов сообщений нужному адресату
+        switch dataType {
+        case "offer":
             log.Printf("Received offer from %s: %s", peer.username, data["sdp"])
-			// Оффер от Лидера -> Ведомому
-			if peer.isLeader && !targetPeer.isLeader {
-				log.Printf(">>> Forwarding Offer from %s to %s", peer.username, targetPeer.username)
-				targetPeer.mu.Lock()
-				conn := targetPeer.conn
-				targetPeer.mu.Unlock()
-				if conn != nil {
-					// Используем WriteMessage для отправки исходного байтового среза msg
-					if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-						log.Printf("!!! Error forwarding offer to %s: %v", targetPeer.username, err)
-					}
-				}
-			} else {
-				log.Printf("WARN: Received 'offer' from unexpected peer %s (isLeader: %v) or target %s (isLeader: %v). Ignoring.",
-					peer.username, peer.isLeader, targetPeer.username, targetPeer.isLeader)
-			}
+            // Оффер от Лидера -> Ведомому
+            if peer.isLeader && !targetPeer.isLeader {
+                log.Printf(">>> Forwarding Offer from %s to %s", peer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                conn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if conn != nil {
+                    // Используем WriteMessage для отправки исходного байтового среза msg
+                    if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+                        log.Printf("!!! Error forwarding offer to %s: %v", targetPeer.username, err)
+                    }
+                }
+            } else {
+                log.Printf("WARN: Received 'offer' from unexpected peer %s (isLeader: %v) or target %s (isLeader: %v). Ignoring.",
+                    peer.username, peer.isLeader, targetPeer.username, targetPeer.isLeader)
+            }
 
-		case "answer":
-			// Ответ от Ведомого -> Лидеру
-			if !peer.isLeader && targetPeer.isLeader {
-				log.Printf("<<< Forwarding Answer from %s to %s", peer.username, targetPeer.username)
-				targetPeer.mu.Lock()
-				conn := targetPeer.conn
-				targetPeer.mu.Unlock()
-				if conn != nil {
-					// Используем WriteMessage для отправки исходного байтового среза msg
-					if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-						log.Printf("!!! Error forwarding answer to %s: %v", targetPeer.username, err)
-					}
-				}
-			} else {
-				log.Printf("WARN: Received 'answer' from unexpected peer %s (isLeader: %v) or target %s (isLeader: %v). Ignoring.",
-					peer.username, peer.isLeader, targetPeer.username, targetPeer.isLeader)
-			}
+        case "answer":
+            // Ответ от Ведомого -> Лидеру
+            if !peer.isLeader && targetPeer.isLeader {
+                log.Printf("<<< Forwarding Answer from %s to %s", peer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                conn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if conn != nil {
+                    // Используем WriteMessage для отправки исходного байтового среза msg
+                    if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+                        log.Printf("!!! Error forwarding answer to %s: %v", targetPeer.username, err)
+                    }
+                }
+            } else {
+                log.Printf("WARN: Received 'answer' from unexpected peer %s (isLeader: %v) or target %s (isLeader: %v). Ignoring.",
+                    peer.username, peer.isLeader, targetPeer.username, targetPeer.isLeader)
+            }
 
-		case "ice_candidate":
-			// ICE кандидаты -> Другому участнику
-			// log.Printf("... Forwarding ICE candidate from %s to %s", peer.username, targetPeer.username) // Можно добавить для отладки
-			targetPeer.mu.Lock()
-			conn := targetPeer.conn
-			targetPeer.mu.Unlock()
-			if conn != nil {
-				// Используем WriteMessage для отправки исходного байтового среза msg
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					// log.Printf("!!! Error forwarding ICE candidate to %s: %v", targetPeer.username, err) // Лог ошибки
-				}
-			}
+        case "ice_candidate":
+            // ICE кандидаты -> Другому участнику
+            // log.Printf("... Forwarding ICE candidate from %s to %s", peer.username, targetPeer.username) // Можно добавить для отладки
+            targetPeer.mu.Lock()
+            conn := targetPeer.conn
+            targetPeer.mu.Unlock()
+            if conn != nil {
+                // Используем WriteMessage для отправки исходного байтового среза msg
+                if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+                    // log.Printf("!!! Error forwarding ICE candidate to %s: %v", targetPeer.username, err) // Лог ошибки
+                }
+            }
 
-		case "switch_camera":
-			// Любые другие типы сообщений, которые нужно просто переслать
-			log.Printf("Forwarding '%s' message from %s to %s", dataType, peer.username, targetPeer.username)
-			targetPeer.mu.Lock()
-			conn := targetPeer.conn
-			targetPeer.mu.Unlock()
-			if conn != nil {
-				// Используем WriteMessage для отправки исходного байтового среза msg
-				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-					log.Printf("Error forwarding '%s' to %s: %v", dataType, targetPeer.username, err)
-				}
-			}
+        case "switch_camera":
+            // Любые другие типы сообщений, которые нужно просто переслать
+            log.Printf("Forwarding '%s' message from %s to %s", dataType, peer.username, targetPeer.username)
+            targetPeer.mu.Lock()
+            conn := targetPeer.conn
+            targetPeer.mu.Unlock()
+            if conn != nil {
+                // Используем WriteMessage для отправки исходного байтового среза msg
+                if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+                    log.Printf("Error forwarding '%s' to %s: %v", dataType, targetPeer.username, err)
+                }
+            }
 
-		default:
-			log.Printf("Ignoring message with unknown type '%s' from %s", dataType, peer.username)
-		}
-	}
+        default:
+            log.Printf("Ignoring message with unknown type '%s' from %s", dataType, peer.username)
+        }
+    }
 
-	// --- Очистка после завершения цикла чтения ---
-	log.Printf("Cleaning up resources for disconnected user '%s' in room '%s'", peer.username, peer.room)
+    // --- Очистка после завершения цикла чтения ---
+    log.Printf("Cleaning up resources for disconnected user '%s' in room '%s'", peer.username, peer.room)
 
-	// Запускаем закрытие соединений в горутине
-	go closePeerConnection(peer, "WebSocket connection closed")
+    // Запускаем закрытие соединений в горутине
+    go closePeerConnection(peer, "WebSocket connection closed")
 
-	// Удаляем пира из комнаты и глобального списка
-	mu.Lock()
-	roomName := peer.room // Сохраняем имя комнаты
-	if currentRoomPeers, roomExists := rooms[roomName]; roomExists {
-		delete(currentRoomPeers, peer.username)
-		log.Printf("Removed %s from room %s map.", peer.username, roomName)
-		if len(currentRoomPeers) == 0 {
-			delete(rooms, roomName)
-			log.Printf("Room %s is now empty and deleted.", roomName)
-			roomName = "" // Комнаты больше нет для отправки room_info
-		}
-	}
-	delete(peers, remoteAddr)
-	log.Printf("Removed %s (addr: %s) from global peers map.", peer.username, remoteAddr)
-	mu.Unlock()
+    // Удаляем пира из комнаты и глобального списка
+    mu.Lock()
+    roomName := peer.room // Сохраняем имя комнаты
+    if currentRoomPeers, roomExists := rooms[roomName]; roomExists {
+        delete(currentRoomPeers, peer.username)
+        log.Printf("Removed %s from room %s map.", peer.username, roomName)
+        if len(currentRoomPeers) == 0 {
+            delete(rooms, roomName)
+            log.Printf("Room %s is now empty and deleted.", roomName)
+            roomName = "" // Комнаты больше нет для отправки room_info
+        }
+    }
+    delete(peers, remoteAddr)
+    log.Printf("Removed %s (addr: %s) from global peers map.", peer.username, remoteAddr)
+    mu.Unlock()
 
-	logStatus() // Логируем статус после очистки
+    logStatus() // Логируем статус после очистки
 
-	// Отправляем обновленную информацию оставшимся в комнате
-	if roomName != "" {
-		sendRoomInfo(roomName)
-	}
-	log.Printf("Cleanup complete for connection %s.", remoteAddr)
+    // Отправляем обновленную информацию оставшимся в комнате
+    if roomName != "" {
+        sendRoomInfo(roomName)
+    }
+    log.Printf("Cleanup complete for connection %s.", remoteAddr)
 } // Конец handleWebSocket

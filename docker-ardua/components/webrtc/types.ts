@@ -1,6 +1,8 @@
 // file: client/app/webrtc/types.ts
 export interface RoomInfo {
     users: string[];
+    leader: string;
+    follower: string;
 }
 
 export type SignalingMessage =
