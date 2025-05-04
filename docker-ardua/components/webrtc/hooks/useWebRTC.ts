@@ -916,27 +916,31 @@ export const useWebRTC = (
             // Обработка входящих медиапотоков
             pc.current.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
-                    // Проверяем, что видеопоток содержит данные
-                    const videoTrack = event.streams[0].getVideoTracks()[0];
-                    if (videoTrack) {
-                        const videoElement = document.createElement('video');
-                        videoElement.srcObject = new MediaStream([videoTrack]);
-                        videoElement.onloadedmetadata = () => {
-                            if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
-                                setRemoteStream(event.streams[0]);
-                                setIsCallActive(true);
+                    const stream = event.streams[0];
 
-                                // Видео получено, очищаем таймер проверки
-                                if (videoCheckTimeout.current) {
-                                    clearTimeout(videoCheckTimeout.current);
-                                    videoCheckTimeout.current = null;
-                                }
-                            } else {
-                                console.warn('Получен пустой видеопоток');
-                            }
-                        };
+                    // Проверяем наличие видео трека
+                    const videoTrack = stream.getVideoTracks()[0];
+                    if (videoTrack) {
+                        console.log('Получен видеотрек:', videoTrack.id);
+
+                        // Создаем новый MediaStream только с нужными треками
+                        const newRemoteStream = new MediaStream();
+                        stream.getTracks().forEach(track => {
+                            newRemoteStream.addTrack(track);
+                            console.log(`Добавлен ${track.kind} трек в remoteStream`);
+                        });
+
+                        setRemoteStream(newRemoteStream);
+                        setIsCallActive(true);
+
+                        // Очищаем таймер проверки видео
+                        if (videoCheckTimeout.current) {
+                            clearTimeout(videoCheckTimeout.current);
+                            videoCheckTimeout.current = null;
+                        }
                     } else {
                         console.warn('Входящий поток не содержит видео');
+                        startVideoCheckTimer();
                     }
                 }
             };
