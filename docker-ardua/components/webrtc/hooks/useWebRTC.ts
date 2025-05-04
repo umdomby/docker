@@ -88,16 +88,13 @@ export const useWebRTC = (
 
     // 1. Улучшенная функция для получения параметров видео для Huawei
     const getVideoConstraints = () => {
-        const isHuawei = /huawei/i.test(navigator.userAgent);
-        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-            /iPad|iPhone|iPod/.test(navigator.userAgent);
-
+        const { isHuawei , isSafari , isIOS } = detectPlatform();
         // Специальные параметры для Huawei
         if (isHuawei) {
             return {
                 width: { ideal: 480, max: 640 },
                 height: { ideal: 360, max: 480 },
-                frameRate: { ideal: 20, max: 25 },
+                frameRate: { ideal: 20, max: 30 },
                 // Huawei лучше работает с этими параметрами
                 facingMode: 'environment',
                 resizeMode: 'crop-and-scale'
@@ -117,18 +114,18 @@ export const useWebRTC = (
                 ...baseConstraints,
                 width: { ideal: 480 },
                 height: { ideal: 360 },
-                frameRate: { ideal: 20 },
+                frameRate: { ideal: 30 },
                 advanced: [{ width: { max: 480 } }]
             };
         }
 
         // Специфичные настройки для Safari
-        if (isSafari) {
+        if (isSafari || isIOS) {
             return {
                 ...baseConstraints,
-                frameRate: { ideal: 25 }, // Чуть меньше FPS для стабильности
+                frameRate: { ideal: 30 }, // Чуть меньше FPS для стабильности
                 advanced: [
-                    { frameRate: { max: 25 } },
+                    { frameRate: { max: 30 } },
                     { width: { max: 640 }, height: { max: 480 } }
                 ]
             };
@@ -139,7 +136,7 @@ export const useWebRTC = (
 
 // 2. Конфигурация видео-трансмиттера для Huawei
     const configureVideoSender = (sender: RTCRtpSender) => {
-        const isHuawei = /huawei/i.test(navigator.userAgent);
+        const { isHuawei } = detectPlatform();
 
         if (isHuawei && sender.track?.kind === 'video') {
             const parameters = sender.getParameters();
@@ -153,7 +150,7 @@ export const useWebRTC = (
                 ...parameters.encodings[0],
                 maxBitrate: 300000,    // 300 kbps
                 scaleResolutionDownBy: 1.5,
-                maxFramerate: 20,
+                maxFramerate: 30,
                 priority: 'low'
             };
 
@@ -327,21 +324,19 @@ export const useWebRTC = (
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
 
-        // Дополнительные оптимизации для Safari
-        if (isSafari || isIOS) {
+        // Специальные оптимизации для iOS/Safari
+        if (isIOS || isSafari) {
             optimized = optimized
-                .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '')
-                .replace(/a=extmap:\d+ urn:ietf:params:rtp-hdrext:sdes:mid\r\n/g, '')
-                .replace(/a=rtcp-fb:\d+ nack\r\n/g, '')
-                .replace(/a=rtcp-fb:\d+ nack pli\r\n/g, '');
+                // Удаляем лишние RTX кодеки
+                .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
+                .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
+                // Упрощаем параметры
+                .replace(/a=extmap:\d+ .*\r\n/g, '')
+                // Форсируем низкую задержку
+                .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
         }
 
         return optimized;
-    };
-
-// Функция определения Android
-    const isAndroid = (): boolean => {
-        return /Android/i.test(navigator.userAgent);
     };
 
     const validateSdp = (sdp: string): boolean => {
@@ -701,6 +696,7 @@ export const useWebRTC = (
         }
 
         try {
+            const { isIOS, isSafari } = detectPlatform();
             const offerOptions: RTCOfferOptions = {
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
@@ -714,9 +710,18 @@ export const useWebRTC = (
             };
 
             const offer = await pc.current.createOffer(offerOptions);
+
+            // Дополнительная обработка для iOS
+            let modifiedSdp = offer.sdp;
+            if (isIOS || isSafari) {
+                modifiedSdp = modifiedSdp
+                    .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
+                    .replace(/a=ice-options:trickle\r\n/g, '');
+            }
+
             const standardizedOffer = {
                 ...offer,
-                sdp: normalizeSdp(offer.sdp)
+                sdp: normalizeSdp(modifiedSdp)
             };
 
             console.log('Normalized SDP:', standardizedOffer.sdp);
@@ -762,10 +767,13 @@ export const useWebRTC = (
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
                 // Специфичные настройки для Huawei
-                ...(isHuawei && {
-                    iceTransportPolicy: 'all', // Только relay для Huawei
-                    iceCandidatePoolSize: 1,
-                    iceCheckInterval: 3000, // Более частые проверки
+                ...((isIOS || isSafari) && {
+                    iceTransportPolicy: 'relay',
+                    iceCandidatePoolSize: 0,
+                    // Уменьшаем буферизацию для снижения задержки
+                    rtcpIceParameters: {
+                        iceLite: true
+                    }
                 }),
                 ...(isIOS || isSafari && {
                     iceTransportPolicy: 'relay',
@@ -782,6 +790,27 @@ export const useWebRTC = (
                         event.candidate.candidate.split(' ')[7]);
                 }
             });
+
+            // Добавляем обработчик для iOS
+            if (isIOS || isSafari) {
+                pc.current.addEventListener('connectionstatechange', () => {
+                    if (pc.current?.connectionState === 'connected') {
+                        // Оптимизация буферизации для Safari
+                        const senders = pc.current.getSenders();
+                        senders.forEach(sender => {
+                            if (sender.track?.kind === 'video') {
+                                const parameters = sender.getParameters();
+                                if (parameters.encodings?.[0]) {
+                                    parameters.encodings[0].maxBitrate = 500000; // 500 kbps
+                                    parameters.encodings[0].scaleResolutionDownBy = 1.0;
+                                    parameters.encodings[0].maxFramerate = 25;
+                                    sender.setParameters(parameters);
+                                }
+                            }
+                        });
+                    }
+                });
+            }
 
             // Особые обработчики для Safari
             if (isSafari) {
@@ -806,8 +835,6 @@ export const useWebRTC = (
                     }
                 };
             }
-
-
 
             // Обработчики событий WebRTC
             pc.current.onnegotiationneeded = () => {
