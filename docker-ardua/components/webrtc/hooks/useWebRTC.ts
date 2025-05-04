@@ -71,6 +71,19 @@ export const useWebRTC = (
     const MAX_RETRIES = 10;
     const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
 
+    // Добавляем функцию для определения платформы
+    const detectPlatform = () => {
+        const ua = navigator.userAgent;
+        return {
+            isIOS: /iPad|iPhone|iPod/.test(ua),
+            isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+                /iPad|iPhone|iPod/.test(navigator.userAgent),
+            isChrome: /chrome/i.test(ua),
+            isHuawei: /huawei/i.test(navigator.userAgent),
+            isAndroid: /Android/i.test(navigator.userAgent)
+        };
+    };
+
 
 
     // 1. Улучшенная функция для получения параметров видео для Huawei
@@ -154,7 +167,7 @@ export const useWebRTC = (
 
 // 3. Специальная нормализация SDP для Huawei
     const normalizeSdpForHuawei = (sdp: string): string => {
-        const isHuawei = /huawei/i.test(navigator.userAgent);
+        const { isHuawei } = detectPlatform();
 
         if (!isHuawei) return sdp;
 
@@ -173,11 +186,12 @@ export const useWebRTC = (
                 'a=rtcp-fb:* ccm fir\r\n' +
                 'a=rtcp-fb:* nack\r\n' +
                 'a=rtcp-fb:* nack pli\r\n');
+
     };
 
-// 4. Мониторинг производительности для Huawei
+    // 4. Мониторинг производительности для Huawei
     const startHuaweiPerformanceMonitor = () => {
-        const isHuawei = /huawei/i.test(navigator.userAgent);
+        const { isHuawei } = detectPlatform();
         if (!isHuawei) return () => {};
 
 
@@ -214,12 +228,11 @@ export const useWebRTC = (
         return () => clearInterval(monitorInterval);
     };
 
-// 5. Функция адаптации качества видео
+   // 5. Функция адаптации качества видео
     const adjustVideoQuality = (direction: 'higher' | 'lower') => {
         const senders = pc.current?.getSenders() || [];
-        const isHuawei = /huawei/i.test(navigator.userAgent);
-        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-            /iPad|iPhone|iPod/.test(navigator.userAgent);
+
+        const { isHuawei, isSafari, isIOS } = detectPlatform();
 
         senders.forEach(sender => {
             if (sender.track?.kind === 'video') {
@@ -264,7 +277,7 @@ export const useWebRTC = (
                         });
                     }
                 }
-                else if (isSafari) {
+                else if (isSafari || isIOS) {
                     parameters.encodings[0] = {
                         ...baseEncoding,
                         maxBitrate: direction === 'higher' ? 600000 : 300000,
@@ -297,9 +310,7 @@ export const useWebRTC = (
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
-        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-            /iPad|iPhone|iPod/.test(navigator.userAgent);
-        const isHuawei = /huawei/i.test(navigator.userAgent);
+        const { isHuawei, isSafari, isIOS } = detectPlatform();
 
         let optimized = sdp;
 
@@ -315,8 +326,9 @@ export const useWebRTC = (
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
+
         // Дополнительные оптимизации для Safari
-        if (isSafari) {
+        if (isSafari || isIOS) {
             optimized = optimized
                 .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '')
                 .replace(/a=extmap:\d+ urn:ietf:params:rtp-hdrext:sdes:mid\r\n/g, '')
@@ -732,19 +744,11 @@ export const useWebRTC = (
         }
     };
 
-    // Функция определения Safari
-    const isSafari = (): boolean => {
-        return /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-            /iPad|iPhone|iPod/.test(navigator.userAgent);
-    };
-
     const initializeWebRTC = async () => {
         try {
             cleanup();
 
-            const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-                /iPad|iPhone|iPod/.test(navigator.userAgent);
-            const isHuawei = /huawei/i.test(navigator.userAgent);
+            const { isIOS, isSafari, isHuawei } = detectPlatform();
 
             const config: RTCConfiguration = {
                 iceServers: [
@@ -755,7 +759,6 @@ export const useWebRTC = (
                         credential: 'pass1'
                     }
                 ],
-                // iceTransportPolicy: 'all',
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
                 // Специфичные настройки для Huawei
@@ -763,28 +766,11 @@ export const useWebRTC = (
                     iceTransportPolicy: 'all', // Только relay для Huawei
                     iceCandidatePoolSize: 1,
                     iceCheckInterval: 3000, // Более частые проверки
-                    // iceServers: [
-                    //     { urls: 'stun:ardua.site:3478' },
-                    //     {
-                    //         urls: 'turn:ardua.site:3478',
-                    //         username: 'user1',
-                    //         credential: 'pass1'
-                    //     }
-                    //
-                    // ]
                 }),
-                ...(isSafari && {
+                ...(isIOS || isSafari && {
                     iceTransportPolicy: 'relay',
                     encodedInsertableStreams: false,
                     iceCandidatePoolSize: 0,
-                    // iceServers: [
-                    //     { urls: 'stun:ardua.site:3478' },
-                    //     {
-                    //         urls: 'turn:ardua.site:3478',
-                    //         username: 'user1',
-                    //         credential: 'pass1'
-                    //     },
-                    // ]
                 })
             };
 
@@ -949,7 +935,7 @@ export const useWebRTC = (
             pc.current.oniceconnectionstatechange = () => {
                 if (!pc.current) return;
 
-                const isHuawei = /huawei/i.test(navigator.userAgent);
+                const { isHuawei } = detectPlatform();
 
                 if (pc.current.iceConnectionState === 'connected' && isHuawei) {
                     // Сохраняем функцию остановки для cleanup
@@ -1043,8 +1029,7 @@ export const useWebRTC = (
             clearInterval(statsInterval.current);
         }
 
-        const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-            /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const { isSafari } = detectPlatform();
 
         statsInterval.current = setInterval(async () => {
             if (!pc.current || !isCallActive) return;
