@@ -496,34 +496,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
             }
 
         case "ice_candidate":
-            // Проверяем user-agent на iOS
-            isIOS := strings.Contains(r.Header.Get("User-Agent"), "iPhone") ||
-                     strings.Contains(r.Header.Get("User-Agent"), "iPad")
-
-            if isIOS {
-                // Для iOS фильтруем кандидаты перед пересылкой
-                if strings.Contains(message["ice"].(map[string]interface{})["candidate"].(string), "typ relay") ||
-                   strings.Contains(message["ice"].(map[string]interface{})["candidate"].(string), "typ srflx") {
-                    targetPeer.mu.Lock()
-                    conn := targetPeer.conn
-                    targetPeer.mu.Unlock()
-                    if conn != nil {
-                        if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-                            log.Printf("Error forwarding ICE candidate to %s: %v", targetPeer.username, err)
-                        }
-                    }
-                }
-            } else {
-                // Для других платформ пересылаем как есть
-                targetPeer.mu.Lock()
-                conn := targetPeer.conn
-                targetPeer.mu.Unlock()
-                if conn != nil {
-                    if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-                        log.Printf("Error forwarding ICE candidate to %s: %v", targetPeer.username, err)
-                    }
-                }
-            }
             // ICE кандидаты -> Другому участнику
             // log.Printf("... Forwarding ICE candidate from %s to %s", peer.username, targetPeer.username) // Можно добавить для отладки
             targetPeer.mu.Lock()

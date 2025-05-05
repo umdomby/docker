@@ -796,7 +796,8 @@ export const useWebRTC = (
                     // Уменьшаем буферизацию для снижения задержки
                     rtcpIceParameters: {
                         iceLite: true
-                    }
+                    },
+                    sdpSemantics: 'unified-plan'
                 } : {})
             };
 
@@ -805,19 +806,21 @@ export const useWebRTC = (
             if (isIOS) {
                 // iOS требует более агрессивного управления ICE
                 pc.current.oniceconnectionstatechange = () => {
-                    if (pc.current?.iceConnectionState === 'disconnected') {
-                        setTimeout(() => {
-                            if (pc.current?.iceConnectionState !== 'connected') {
-                                resetConnection();
-                            }
-                        }, 2000);
+                    if (!pc.current) return;
+
+                    console.log('iOS ICE state:', pc.current.iceConnectionState);
+
+                    if (pc.current.iceConnectionState === 'disconnected' ||
+                        pc.current.iceConnectionState === 'failed') {
+                        console.log('iOS: ICE failed, restarting connection');
+                        setTimeout(resetConnection, 1000);
                     }
                 };
 
-                // iOS лучше работает с перезапуском ICE
-                pc.current.onnegotiationneeded = async () => {
-                    if (shouldCreateOffer.current) {
-                        await createAndSendOffer();
+                // iOS требует быстрой переотправки кандидатов
+                pc.current.onicegatheringstatechange = () => {
+                    if (pc.current?.iceGatheringState === 'complete') {
+                        console.log('iOS: ICE gathering complete');
                     }
                 };
             }
