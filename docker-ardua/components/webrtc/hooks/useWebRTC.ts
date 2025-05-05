@@ -74,13 +74,15 @@ export const useWebRTC = (
     // Добавляем функцию для определения платформы
     const detectPlatform = () => {
         const ua = navigator.userAgent;
+        const isIOS = /iPad|iPhone|iPod/.test(ua);
+        const isSafari = /^((?!chrome|android).)*safari/i.test(ua) || isIOS;
         return {
-            isIOS: /iPad|iPhone|iPod/.test(ua),
-            isSafari: /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
-                /iPad|iPhone|iPod/.test(navigator.userAgent),
+            isIOS,
+            isSafari,
             isChrome: /chrome/i.test(ua),
-            isHuawei: /huawei/i.test(navigator.userAgent),
-            isAndroid: /Android/i.test(navigator.userAgent)
+            isHuawei: /huawei/i.test(ua),
+            isAndroid: /Android/i.test(ua),
+            isMobile: isIOS || /Android/i.test(ua)
         };
     };
 
@@ -88,7 +90,7 @@ export const useWebRTC = (
 
     // 1. Улучшенная функция для получения параметров видео для Huawei
     const getVideoConstraints = () => {
-        const { isHuawei , isSafari , isIOS } = detectPlatform();
+        const { isHuawei, isSafari, isIOS, isMobile } = detectPlatform();
         // Специальные параметры для Huawei
         if (isHuawei) {
             return {
@@ -103,9 +105,9 @@ export const useWebRTC = (
 
         // Базовые параметры для всех устройств
         const baseConstraints = {
-            width: { ideal: 640 },
-            height: { ideal: 480 },
-            frameRate: { ideal: 30 }
+            width: { ideal: isMobile ? 640 : 1280 },
+            height: { ideal: isMobile ? 480 : 720 },
+            frameRate: { ideal: isMobile ? 24 : 30 }
         };
 
         // Специфичные настройки для Huawei
@@ -116,6 +118,19 @@ export const useWebRTC = (
                 height: { ideal: 360 },
                 frameRate: { ideal: 30 },
                 advanced: [{ width: { max: 480 } }]
+            };
+        }
+        if (isIOS) {
+            return {
+                ...baseConstraints,
+                facingMode: 'user', // Фронтальная камера по умолчанию
+                deviceId: deviceIds.video ? { exact: deviceIds.video } : undefined,
+                advanced: [
+                    { facingMode: 'user' }, // Приоритет фронтальной камеры
+                    { width: { max: 640 } },
+                    { height: { max: 480 } },
+                    { frameRate: { max: 24 } }
+                ]
             };
         }
 
@@ -225,7 +240,7 @@ export const useWebRTC = (
         return () => clearInterval(monitorInterval);
     };
 
-   // 5. Функция адаптации качества видео
+// 5. Функция адаптации качества видео
     const adjustVideoQuality = (direction: 'higher' | 'lower') => {
         const senders = pc.current?.getSenders() || [];
 
@@ -700,7 +715,7 @@ export const useWebRTC = (
             const offerOptions: RTCOfferOptions = {
                 offerToReceiveAudio: true,
                 offerToReceiveVideo: true,
-                iceRestart: false,
+                iceRestart: isIOS, // iOS требует перезапуска ICE
                 ...(platform === 'android' && {
                     voiceActivityDetection: false
                 }),
@@ -717,7 +732,11 @@ export const useWebRTC = (
             if (isIOS || isSafari) {
                 modifiedSdp = modifiedSdp
                     .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
-                    .replace(/a=ice-options:trickle\r\n/g, '');
+                    .replace(/a=ice-options:trickle\r\n/g, '')
+                    // Улучшаем параметры видео для iOS
+                    .replace(/a=fmtp:\d+ .*\r\n/g, '$&\r\na=x-google-start-bitrate:800\r\na=x-google-min-bitrate:400\r\n')
+                    // Форсируем низкую задержку
+                    .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
             }
 
             const standardizedOffer = {
@@ -767,10 +786,11 @@ export const useWebRTC = (
                 ],
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
+                iceCandidatePoolSize: isIOS ? 1 : 0,
                 // Специфичные настройки для Huawei
                 ...((isIOS || isSafari) && {
                     iceTransportPolicy: 'relay',
-                    iceCandidatePoolSize: 0,
+                    //iceCandidatePoolSize: 0,
                     // Уменьшаем буферизацию для снижения задержки
                     rtcpIceParameters: {
                         iceLite: true
@@ -780,6 +800,26 @@ export const useWebRTC = (
 
             pc.current = new RTCPeerConnection(config);
 
+            if (isIOS) {
+                // iOS требует более агрессивного управления ICE
+                pc.current.oniceconnectionstatechange = () => {
+                    if (pc.current?.iceConnectionState === 'disconnected') {
+                        setTimeout(() => {
+                            if (pc.current?.iceConnectionState !== 'connected') {
+                                resetConnection();
+                            }
+                        }, 2000);
+                    }
+                };
+
+                // iOS лучше работает с перезапуском ICE
+                pc.current.onnegotiationneeded = async () => {
+                    if (shouldCreateOffer.current) {
+                        await createAndSendOffer();
+                    }
+                };
+            }
+
             pc.current.addEventListener('icecandidate', event => {
                 if (event.candidate) {
                     console.log('Using candidate type:',
@@ -788,35 +828,35 @@ export const useWebRTC = (
             });
 
             // Добавляем обработчик для iOS
-            if (isIOS || isSafari) {
-                pc.current.addEventListener('connectionstatechange', () => {
-                    if (pc.current?.connectionState === 'connected') {
-                        // Оптимизация буферизации для Safari
-                        const senders = pc.current.getSenders();
-                        senders.forEach(sender => {
-                            if (sender.track?.kind === 'video') {
-                                const parameters = sender.getParameters();
-                                if (parameters.encodings?.[0]) {
-                                    parameters.encodings[0].maxBitrate = 500000; // 500 kbps
-                                    parameters.encodings[0].scaleResolutionDownBy = 1.0;
-                                    parameters.encodings[0].maxFramerate = 25;
-                                    sender.setParameters(parameters);
-                                }
-                            }
-                        });
-                    }
-                });
-            }
-
-            // Особые обработчики для Safari
-            if (isSafari) {
-                // @ts-ignore - свойство для Safari
-                pc.current.addEventListener('negotiationneeded', async () => {
-                    if (shouldCreateOffer.current) {
-                        await createAndSendOffer();
-                    }
-                });
-            }
+            // if (isIOS || isSafari) {
+            //     pc.current.addEventListener('connectionstatechange', () => {
+            //         if (pc.current?.connectionState === 'connected') {
+            //             // Оптимизация буферизации для Safari
+            //             const senders = pc.current.getSenders();
+            //             senders.forEach(sender => {
+            //                 if (sender.track?.kind === 'video') {
+            //                     const parameters = sender.getParameters();
+            //                     if (parameters.encodings?.[0]) {
+            //                         parameters.encodings[0].maxBitrate = 500000; // 500 kbps
+            //                         parameters.encodings[0].scaleResolutionDownBy = 1.0;
+            //                         parameters.encodings[0].maxFramerate = 25;
+            //                         sender.setParameters(parameters);
+            //                     }
+            //                 }
+            //             });
+            //         }
+            //     });
+            // }
+            //
+            // // Особые обработчики для Safari
+            // if (isSafari) {
+            //     // @ts-ignore - свойство для Safari
+            //     pc.current.addEventListener('negotiationneeded', async () => {
+            //         if (shouldCreateOffer.current) {
+            //             await createAndSendOffer();
+            //         }
+            //     });
+            // }
             if (isHuawei) {
                 pc.current.oniceconnectionstatechange = () => {
                     if (!pc.current) return;
@@ -857,8 +897,10 @@ export const useWebRTC = (
             const stream = await navigator.mediaDevices.getUserMedia({
                 video: deviceIds.video ? {
                     deviceId: { exact: deviceIds.video },
-                    ...getVideoConstraints()
+                    ...getVideoConstraints(),
+                    ...(isIOS && !deviceIds.video ? { facingMode: 'user' } : {})
                 } : getVideoConstraints(),
+                ...(isIOS && !deviceIds.video ? { facingMode: 'user' } : {}),
                 audio: deviceIds.audio ? {
                     deviceId: { exact: deviceIds.audio },
                     echoCancellation: true,
