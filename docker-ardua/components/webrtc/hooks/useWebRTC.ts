@@ -827,36 +827,6 @@ export const useWebRTC = (
                 }
             });
 
-            // Добавляем обработчик для iOS
-            // if (isIOS || isSafari) {
-            //     pc.current.addEventListener('connectionstatechange', () => {
-            //         if (pc.current?.connectionState === 'connected') {
-            //             // Оптимизация буферизации для Safari
-            //             const senders = pc.current.getSenders();
-            //             senders.forEach(sender => {
-            //                 if (sender.track?.kind === 'video') {
-            //                     const parameters = sender.getParameters();
-            //                     if (parameters.encodings?.[0]) {
-            //                         parameters.encodings[0].maxBitrate = 500000; // 500 kbps
-            //                         parameters.encodings[0].scaleResolutionDownBy = 1.0;
-            //                         parameters.encodings[0].maxFramerate = 25;
-            //                         sender.setParameters(parameters);
-            //                     }
-            //                 }
-            //             });
-            //         }
-            //     });
-            // }
-            //
-            // // Особые обработчики для Safari
-            // if (isSafari) {
-            //     // @ts-ignore - свойство для Safari
-            //     pc.current.addEventListener('negotiationneeded', async () => {
-            //         if (shouldCreateOffer.current) {
-            //             await createAndSendOffer();
-            //         }
-            //     });
-            // }
             if (isHuawei) {
                 pc.current.oniceconnectionstatechange = () => {
                     if (!pc.current) return;
