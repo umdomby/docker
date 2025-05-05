@@ -319,6 +319,17 @@ export const useWebRTC = (
         });
     };
 
+    const normalizeSdpForIOS = (sdp: string): string => {
+        return sdp
+            // Удаляем лишние RTX кодеки
+            .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
+            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
+            // Упрощаем параметры
+            .replace(/a=extmap:\d+ .*\r\n/g, '')
+            // Форсируем низкую задержку
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
+    };
+
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) return '';
 
@@ -331,25 +342,18 @@ export const useWebRTC = (
             optimized = normalizeSdpForHuawei(optimized);
         }
 
+
+        // Специальные оптимизации для iOS/Safari
+        if (isIOS || isSafari) {
+            optimized = normalizeSdpForIOS(optimized);
+        }
+
         // Общие оптимизации для всех устройств
         optimized = optimized
             .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:800\r\nb=TIAS:800000\r\n')
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
-
-
-        // Специальные оптимизации для iOS/Safari
-        if (isIOS || isSafari) {
-            optimized = optimized
-                // Удаляем лишние RTX кодеки
-                .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
-                .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
-                // Упрощаем параметры
-                .replace(/a=extmap:\d+ .*\r\n/g, '')
-                // Форсируем низкую задержку
-                .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
-        }
 
         return optimized;
     };
@@ -786,16 +790,15 @@ export const useWebRTC = (
                 ],
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
-                iceCandidatePoolSize: isIOS ? 1 : 0,
-                // Специфичные настройки для Huawei
-                ...((isIOS || isSafari) && {
+                // Специфичные настройки для iOS/Safari
+                ...(isIOS || isSafari ? {
                     iceTransportPolicy: 'relay',
-                    //iceCandidatePoolSize: 0,
+                    iceCandidatePoolSize: 0,
                     // Уменьшаем буферизацию для снижения задержки
                     rtcpIceParameters: {
                         iceLite: true
                     }
-                })
+                } : {})
             };
 
             pc.current = new RTCPeerConnection(config);
