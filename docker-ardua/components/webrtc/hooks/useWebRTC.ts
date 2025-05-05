@@ -712,7 +712,8 @@ export const useWebRTC = (
             const offer = await pc.current.createOffer(offerOptions);
 
             // Дополнительная обработка для iOS
-            let modifiedSdp = offer.sdp;
+            let modifiedSdp = offer.sdp || ''; // Гарантируем, что modifiedSdp будет строкой
+
             if (isIOS || isSafari) {
                 modifiedSdp = modifiedSdp
                     .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
@@ -774,11 +775,6 @@ export const useWebRTC = (
                     rtcpIceParameters: {
                         iceLite: true
                     }
-                }),
-                ...(isIOS || isSafari && {
-                    iceTransportPolicy: 'relay',
-                    encodedInsertableStreams: false,
-                    iceCandidatePoolSize: 0,
                 })
             };
 
@@ -906,7 +902,7 @@ export const useWebRTC = (
 
             const shouldSendIceCandidate = (candidate: RTCIceCandidate) => {
 
-                const isHuawei = /huawei/i.test(navigator.userAgent);
+                const { isIOS, isSafari, isHuawei } = detectPlatform();
 
                 // Для Huawei отправляем только relay-кандидаты
                 if (isHuawei) {
@@ -919,6 +915,19 @@ export const useWebRTC = (
                 if (candidate.candidate.includes('typ relay')) return true;
 
                 // Игнорируем host-кандидаты после первого подключения
+                if (retryAttempts.current > 0 && candidate.candidate.includes('typ host')) {
+                    return false;
+                }
+
+                // Для iOS/Safari отправляем только relay-кандидаты и srflx
+                if (isIOS || isSafari) {
+                    return candidate.candidate.includes('typ relay') ||
+                        candidate.candidate.includes('typ srflx');
+                }
+
+                // Общие правила для других платформ
+                if (!candidate.candidate || candidate.candidate.length === 0) return false;
+                if (candidate.candidate.includes('typ relay')) return true;
                 if (retryAttempts.current > 0 && candidate.candidate.includes('typ host')) {
                     return false;
                 }
