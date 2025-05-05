@@ -342,7 +342,6 @@ export const useWebRTC = (
             optimized = normalizeSdpForHuawei(optimized);
         }
 
-
         // Специальные оптимизации для iOS/Safari
         if (isIOS || isSafari) {
             optimized = normalizeSdpForIOS(optimized);
