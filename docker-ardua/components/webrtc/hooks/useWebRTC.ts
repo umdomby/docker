@@ -327,7 +327,13 @@ export const useWebRTC = (
             // Упрощаем параметры
             .replace(/a=extmap:\d+ .*\r\n/g, '')
             // Форсируем низкую задержку
-            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n')
+            // Упрощаем SDP для лучшей совместимости с iOS
+            .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
+            .replace(/a=ice-options:trickle\r\n/g, '')
+
+            // Удаляем RTX для Safari
+
     };
 
     const normalizeSdp = (sdp: string | undefined): string => {
@@ -700,76 +706,6 @@ export const useWebRTC = (
         };
 
         ws.current.onmessage = handleMessage;
-    };
-
-    const createAndSendOffer = async () => {
-        if (!pc.current || !ws.current || ws.current.readyState !== WebSocket.OPEN) {
-            return;
-        }
-
-        // Проверяем роль перед созданием оффера
-        if (!isLeader) {
-            console.warn('Попытка создания оффера ведомым - игнорируем');
-            return;
-        }
-
-        try {
-            const { isIOS, isSafari } = detectPlatform();
-            const offerOptions: RTCOfferOptions = {
-                offerToReceiveAudio: true,
-                offerToReceiveVideo: true,
-                iceRestart: isIOS, // iOS требует перезапуска ICE
-                ...(platform === 'android' && {
-                    voiceActivityDetection: false
-                }),
-                ...(platform === 'ios' && {
-                    iceRestart: true
-                })
-            };
-
-            const offer = await pc.current.createOffer(offerOptions);
-
-            // Дополнительная обработка для iOS
-            let modifiedSdp = offer.sdp || ''; // Гарантируем, что modifiedSdp будет строкой
-
-            if (isIOS || isSafari) {
-                modifiedSdp = modifiedSdp
-                    .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
-                    .replace(/a=ice-options:trickle\r\n/g, '')
-                    // Улучшаем параметры видео для iOS
-                    .replace(/a=fmtp:\d+ .*\r\n/g, '$&\r\na=x-google-start-bitrate:800\r\na=x-google-min-bitrate:400\r\n')
-                    // Форсируем низкую задержку
-                    .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n');
-            }
-
-            const standardizedOffer = {
-                ...offer,
-                sdp: normalizeSdp(modifiedSdp)
-            };
-
-            console.log('Normalized SDP:', standardizedOffer.sdp);
-
-            if (!validateSdp(standardizedOffer.sdp)) {
-                throw new Error('Invalid SDP format after normalization');
-            }
-
-            await pc.current.setLocalDescription(standardizedOffer);
-
-            ws.current.send(JSON.stringify({
-                type: "offer",
-                sdp: standardizedOffer,
-                room: roomId,
-                username,
-                isLeader: true // Явно указываем что это лидер
-            }));
-
-            setIsCallActive(true);
-            startVideoCheckTimer();
-        } catch (err) {
-            console.error('Offer creation error:', err);
-            setError(`Offer failed: ${err instanceof Error ? err.message : String(err)}`);
-            resetConnection();
-        }
     };
 
     const initializeWebRTC = async () => {
