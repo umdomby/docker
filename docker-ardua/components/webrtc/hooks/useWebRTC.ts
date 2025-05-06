@@ -53,24 +53,6 @@ export const useWebRTC = (
     const videoCheckTimeout = useRef<NodeJS.Timeout | null>(null);
     const retryAttempts = useRef(0);
 
-    const [platform, setPlatform] = useState<'desktop' | 'ios' | 'android'>('desktop');
-
-
-    useEffect(() => {
-        const userAgent = navigator.userAgent;
-        if (/iPad|iPhone|iPod/.test(userAgent)) {
-            setPlatform('ios');
-        } else if (/Android/i.test(userAgent)) {
-            setPlatform('android');
-        } else {
-            setPlatform('desktop');
-        }
-    }, []);
-
-    // Максимальное количество попыток переподключения
-    const MAX_RETRIES = 10;
-    const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
-
     // Добавляем функцию для определения платформы
     const detectPlatform = () => {
         const ua = navigator.userAgent;
@@ -85,6 +67,10 @@ export const useWebRTC = (
             isMobile: isIOS || /Android/i.test(ua)
         };
     };
+
+    // Максимальное количество попыток переподключения
+    const MAX_RETRIES = 10;
+    const VIDEO_CHECK_TIMEOUT = 7000; // 4 секунд для проверки видео
 
 
 
@@ -330,9 +316,15 @@ export const useWebRTC = (
             .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n')
             // Упрощаем SDP для лучшей совместимости с iOS
             .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
+            // Удаляем ICE options, которые могут мешать
             .replace(/a=ice-options:trickle\r\n/g, '')
-
-            // Удаляем RTX для Safari
+            // Устанавливаем низкий битрейт для iOS
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:300\r\n')
+            // Форсируем H.264
+            .replace(/a=rtpmap:\d+ H264\/\d+/g, 'a=rtpmap:$& profile-level-id=42e01f;packetization-mode=1')
+            // Удаляем несовместимые параметры
+            .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '')
+            .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '');
 
     };
 
@@ -361,14 +353,6 @@ export const useWebRTC = (
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
 
         return optimized;
-    };
-
-    const validateSdp = (sdp: string): boolean => {
-        // Проверяем основные обязательные части SDP
-        return sdp.includes('v=') &&
-            sdp.includes('m=audio') &&
-            sdp.includes('m=video') &&
-            sdp.includes('a=rtpmap');
     };
 
     let cleanup = () => {
@@ -739,7 +723,7 @@ export const useWebRTC = (
 
             pc.current = new RTCPeerConnection(config);
 
-            if (isIOS) {
+            if (isIOS || isSafari) {
                 // iOS требует более агрессивного управления ICE
                 pc.current.oniceconnectionstatechange = () => {
                     if (!pc.current) return;
@@ -881,9 +865,6 @@ export const useWebRTC = (
                 // Общие правила для других платформ
                 if (!candidate.candidate || candidate.candidate.length === 0) return false;
                 if (candidate.candidate.includes('typ relay')) return true;
-                if (retryAttempts.current > 0 && candidate.candidate.includes('typ host')) {
-                    return false;
-                }
 
                 return true;
             };
@@ -1072,6 +1053,7 @@ export const useWebRTC = (
         };
     };
 
+// Модифицируем функцию resetConnection
     const resetConnection = async () => {
         if (retryAttempts.current >= MAX_RETRIES) {
             setError('Не удалось восстановить соединение после нескольких попыток');
@@ -1079,8 +1061,10 @@ export const useWebRTC = (
             return;
         }
 
-        // Увеличиваем таймаут с каждой попыткой
-        const retryDelay = Math.min(2000 * (retryAttempts.current + 1), 10000);
+        // Увеличиваем таймаут с каждой попыткой, особенно для мобильных
+        const { isIOS, isSafari } = detectPlatform();
+        const baseDelay = isIOS || isSafari ? 5000 : 2000; // Больше времени для iOS
+        const retryDelay = Math.min(baseDelay * (retryAttempts.current + 1), 15000);
 
         console.log(`Попытка переподключения #${retryAttempts.current + 1}, задержка: ${retryDelay}ms`);
 
