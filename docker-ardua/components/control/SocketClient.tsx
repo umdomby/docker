@@ -173,7 +173,7 @@ export default function SocketClient() {
             reconnectTimerRef.current = null
         }
 
-        const ws = new WebSocket('wss://ardu.site/ws')
+        const ws = new WebSocket('wss://ardua.site/wsar')
 
         ws.onopen = () => {
             setIsConnected(true)

@@ -3,9 +3,9 @@ version: '3.8'
 services:
   websocket-server:
     build: .
-    container_name: ws-server
+    container_name: wsar-server
     ports:
-      - "1444:1444"
+      - "8086:8086"
     restart: always  # или "always" для более агрессивного перезапуска
     environment:
       - NODE_ENV=production
@@ -14,7 +14,7 @@ services:
       - /app/node_modules
     working_dir: /app
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:1444 || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8086 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

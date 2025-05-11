@@ -3,8 +3,8 @@ import { IncomingMessage } from 'http';
 import { getAllowedDeviceIds } from './fun';
 import { createServer } from 'http';
 
-const PORT = 1444;
-const WS_PATH = '/ws';
+const PORT = 8086;
+const WS_PATH = '/wsar';
 
 const server = createServer();
 const wss = new WebSocketServer({

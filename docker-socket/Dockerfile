@@ -11,6 +11,6 @@ RUN yarn global add ts-node typescript
 # Копирование исходного кода
 COPY . .
 
-EXPOSE 1444
+EXPOSE 8086
 
 CMD ["yarn", "start"]
