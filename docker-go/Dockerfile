@@ -28,7 +28,7 @@ RUN apk add --no-cache tzdata
 COPY --from=builder /server /server
 
 # Открываем порт, который слушает приложение
-EXPOSE 8080
+EXPOSE 8085
 
 # Запускаем сервер
 CMD ["/server"]

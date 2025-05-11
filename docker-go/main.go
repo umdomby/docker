@@ -336,15 +336,15 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 
 // Главная функция (без изменений от первой версии)
 func main() {
-	http.HandleFunc("/ws", handleWebSocket)
+	http.HandleFunc("/wsgo", handleWebSocket)
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
 		logStatus()
 		w.Write([]byte("Status logged to console"))
 	})
 
-	log.Println("Server starting on :8080 (Logic: Leader Re-joins on Follower connect)")
+	log.Println("Server starting on :8085 (Logic: Leader Re-joins on Follower connect)")
 	logStatus()
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Fatal(http.ListenAndServe(":8085", nil))
 }
 
 // Обработчик WebSocket соединений (изменения в логике пересылки)

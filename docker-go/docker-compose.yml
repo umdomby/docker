@@ -3,7 +3,7 @@ services:
     build: .
     container_name: webrtc_server
     ports:
-      - "8080:8080"
+      - "8085:8085"
     environment:
       - TZ=Europe/Minsk
     networks:
@@ -15,7 +15,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/status" ]
+      test: [ "CMD", "curl", "-f", "http://localhost:8085/status" ]
       interval: 30s
       timeout: 10s
       retries: 3

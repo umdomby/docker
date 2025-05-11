@@ -467,7 +467,7 @@ export const useWebRTC = (
             }
 
             try {
-                ws.current = new WebSocket('wss://ardua.site/ws');
+                ws.current = new WebSocket('wss://ardua.site/wsgo');
 
                 const onOpen = () => {
                     cleanupEvents();
