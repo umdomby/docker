@@ -14,10 +14,10 @@ const wss = new WebSocketServer({
 
 interface ClientInfo {
     ws: WebSocket;
-    deviceId?: string;
+    de?: string; // deviceId → de
     ip: string;
     isIdentified: boolean;
-    clientType?: 'browser' | 'esp';
+    ct?: 'browser' | 'esp'; // clientType → ct
     lastActivity: number;
     isAlive: boolean;
 }
@@ -39,7 +39,7 @@ setInterval(() => {
 }, 30000);
 
 wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
-    // Проверяем путь подключения
+// Проверяем путь подключения
     if (req.url !== WS_PATH) {
         ws.close(1002, 'Invalid path');
         return;
@@ -64,10 +64,10 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
     });
 
     ws.send(JSON.stringify({
-        type: 'system',
-        message: 'Connection established',
+        ty: "sys", // type → ty, system → sys
+        me: "Connection established", // message → me
         clientId,
-        status: 'awaiting_identification'
+        st: "awi" // status → st, awaiting_identification → awi
     }));
 
     ws.on('message', async (data: Buffer) => {
@@ -77,46 +77,46 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             console.log(`[${clientId}] Received: ${message}`);
             const parsed = JSON.parse(message);
 
-            if (parsed.type === 'client_type') {
-                client.clientType = parsed.clientType;
+            if (parsed.ty === "clt") { // type → ty, client_type → clt
+                client.ct = parsed.ct; // clientType → ct
                 return;
             }
 
-            if (parsed.type === 'identify') {
+            if (parsed.ty === "idn") { // type → ty, identify → idn
                 const allowedIds = new Set(await getAllowedDeviceIds());
-                if (parsed.deviceId && allowedIds.has(parsed.deviceId)) {
-                    client.deviceId = parsed.deviceId;
+                if (parsed.de && allowedIds.has(parsed.de)) { // deviceId → de
+                    client.de = parsed.de; // deviceId → de
                     client.isIdentified = true;
 
                     ws.send(JSON.stringify({
-                        type: 'system',
-                        message: 'Identification successful',
+                        ty: "sys", // type → ty, system → sys
+                        me: "Identification successful", // message → me
                         clientId,
-                        deviceId: parsed.deviceId,
-                        status: 'connected'
+                        de: parsed.de, // deviceId → de
+                        st: "con" // status → st, connected → con
                     }));
 
                     // Notify browser clients about ESP connection
-                    if (client.clientType === 'esp') {
+                    if (client.ct === "esp") { // clientType → ct
                         clients.forEach(targetClient => {
-                            if (targetClient.clientType === 'browser' &&
-                                targetClient.deviceId === parsed.deviceId) {
-                                console.log(`Notifying browser client ${targetClient.deviceId} about ESP connection`);
+                            if (targetClient.ct === "browser" && // clientType → ct
+                                targetClient.de === parsed.de) { // deviceId → de
+                                console.log(`Notifying browser client ${targetClient.de} about ESP connection`); // deviceId → de
                                 targetClient.ws.send(JSON.stringify({
-                                    type: 'esp_status',
-                                    status: 'connected',
-                                    deviceId: parsed.deviceId,
-                                    timestamp: new Date().toISOString()
+                                    ty: "est", // type → ty, esp_status → est
+                                    st: "con", // status → st, connected → con
+                                    de: parsed.de, // deviceId → de
+                                    ts: new Date().toISOString() // timestamp → ts
                                 }));
                             }
                         });
                     }
                 } else {
                     ws.send(JSON.stringify({
-                        type: 'error',
-                        message: 'Invalid device ID',
+                        ty: "err", // type → ty, error → err
+                        me: "Invalid device ID", // message → me
                         clientId,
-                        status: 'rejected'
+                        st: "rej" // status → st, rejected → rej
                     }));
                     ws.close();
                 }
@@ -125,24 +125,24 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 
             if (!client.isIdentified) {
                 ws.send(JSON.stringify({
-                    type: 'error',
-                    message: 'Not identified',
+                    ty: "err", // type → ty, error → err
+                    me: "Not identified", // message → me
                     clientId
                 }));
                 return;
             }
 
             // Process logs from ESP
-            if (parsed.type === 'log' && client.clientType === 'esp') {
+            if (parsed.ty === "log" && client.ct === "esp") { // type → ty, clientType → ct
                 clients.forEach(targetClient => {
-                    if (targetClient.clientType === 'browser' &&
-                        targetClient.deviceId === client.deviceId) {
+                    if (targetClient.ct === "browser" && // clientType → ct
+                        targetClient.de === client.de) { // deviceId → de
                         targetClient.ws.send(JSON.stringify({
-                            type: 'log',
-                            message: parsed.message,
-                            deviceId: client.deviceId,
-                            timestamp: new Date().toISOString(),
-                            origin: 'esp'
+                            ty: "log", // type → ty
+                            me: parsed.me, // message → me
+                            de: client.de, // deviceId → de
+                            ts: new Date().toISOString(), // timestamp → ts
+                            or: "esp" // origin → or
                         }));
                     }
                 });
@@ -150,15 +150,15 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             }
 
             // Process command acknowledgements
-            if (parsed.type === 'command_ack' && client.clientType === 'esp') {
+            if (parsed.ty === "ack" && client.ct === "esp") { // type → ty, acknowledge → ack, clientType → ct
                 clients.forEach(targetClient => {
-                    if (targetClient.clientType === 'browser' &&
-                        targetClient.deviceId === client.deviceId) {
+                    if (targetClient.ct === "browser" && // clientType → ct
+                        targetClient.de === client.de) { // deviceId → de
                         targetClient.ws.send(JSON.stringify({
-                            type: 'command_ack',
-                            command: parsed.command,
-                            deviceId: client.deviceId,
-                            timestamp: new Date().toISOString()
+                            ty: "ack", // type → ty, acknowledge → ack
+                            co: parsed.co, // command → co
+                            de: client.de, // deviceId → de
+                            ts: new Date().toISOString() // timestamp → ts
                         }));
                     }
                 });
@@ -166,11 +166,11 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
             }
 
             // Route commands to ESP
-            if (parsed.command && parsed.deviceId) {
+            if (parsed.co && parsed.de) { // command → co, deviceId → de
                 let delivered = false;
                 clients.forEach(targetClient => {
-                    if (targetClient.deviceId === parsed.deviceId &&
-                        targetClient.clientType === 'esp' &&
+                    if (targetClient.de === parsed.de && // deviceId → de
+                        targetClient.ct === "esp" && // clientType → ct
                         targetClient.isIdentified) {
                         targetClient.ws.send(message);
                         delivered = true;
@@ -178,19 +178,19 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
                 });
 
                 ws.send(JSON.stringify({
-                    type: delivered ? 'command_status' : 'error',
-                    status: delivered ? 'delivered' : 'esp_not_found',
-                    command: parsed.command,
-                    deviceId: parsed.deviceId,
-                    timestamp: new Date().toISOString()
+                    ty: delivered ? "cst" : "err", // type → ty, command_status → cst, error → err
+                    st: delivered ? "dvd" : "enf", // status → st, delivered → dvd, esp_not_found → enf
+                    co: parsed.co, // command → co
+                    de: parsed.de, // deviceId → de
+                    ts: new Date().toISOString() // timestamp → ts
                 }));
             }
 
         } catch (err) {
             console.error(`[${clientId}] Message error:`, err);
             ws.send(JSON.stringify({
-                type: 'error',
-                message: 'Invalid message format',
+                ty: "err", // type → ty, error → err
+                me: "Invalid message format", // message → me
                 error: (err as Error).message,
                 clientId
             }));
@@ -199,16 +199,16 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 
     ws.on('close', () => {
         console.log(`Client ${clientId} disconnected`);
-        if (client.clientType === 'esp' && client.deviceId) {
+        if (client.ct === "esp" && client.de) { // clientType → ct, deviceId → de
             clients.forEach(targetClient => {
-                if (targetClient.clientType === 'browser' &&
-                    targetClient.deviceId === client.deviceId) {
+                if (targetClient.ct === "browser" && // clientType → ct
+                    targetClient.de === client.de) { // deviceId → de
                     targetClient.ws.send(JSON.stringify({
-                        type: 'esp_status',
-                        status: 'disconnected',
-                        deviceId: client.deviceId,
-                        timestamp: new Date().toISOString(),
-                        reason: 'connection closed'
+                        ty: "est", // type → ty, esp_status → est
+                        st: "dis", // status → st, disconnected → dis
+                        de: client.de, // deviceId → de
+                        ts: new Date().toISOString(), // timestamp → ts
+                        re: "connection closed" // reason → re
                     }));
                 }
             });
@@ -224,3 +224,4 @@ wss.on('connection', async (ws: WebSocket, req: IncomingMessage) => {
 server.listen(PORT, () => {
     console.log(`WebSocket server running on ws://0.0.0.0:${PORT}${WS_PATH}`);
 });
+

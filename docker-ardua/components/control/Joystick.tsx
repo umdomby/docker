@@ -2,22 +2,21 @@
 import { useCallback, useRef, useEffect, useState } from 'react'
 
 type JoystickProps = {
-    motor: 'A' | 'B'
+    mo: 'A' | 'B' // motor → mo
     onChange: (value: number) => void
     direction: 'forward' | 'backward' | 'stop'
-    speed: number
+    sp: number // speed → sp
     className?: string
 }
 
-const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProps) => {
+const Joystick = ({ mo, onChange, direction, sp, className }: JoystickProps) => { // motor → mo, speed → sp
     const containerRef = useRef<HTMLDivElement>(null)
     const knobRef = useRef<HTMLDivElement>(null)
     const isDragging = useRef(false)
     const touchId = useRef<number | null>(null)
     const [isLandscape, setIsLandscape] = useState(false)
-    const [knobPosition, setKnobPosition] = useState(50) // Начальная позиция по центру (50%)
+    const [knobPosition, setKnobPosition] = useState(50)
 
-    // Определяем ориентацию устройства
     useEffect(() => {
         const handleOrientationChange = () => {
             setIsLandscape(window.matchMedia("(orientation: landscape)").matches)
@@ -46,11 +45,9 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
         const y = clientY - rect.top
         const normalizedY = Math.max(0, Math.min(containerHeight, y))
 
-        // Обновляем позицию ползунка (0-100%)
         const positionPercentage = (1 - (normalizedY / containerHeight)) * 100
         setKnobPosition(positionPercentage)
 
-        // Вычисляем значение для отправки (-255 до 255)
         let value = ((containerHeight - normalizedY) / containerHeight) * 510 - 255
         value = Math.max(-255, Math.min(255, value))
 
@@ -72,11 +69,10 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
         if (!isDragging.current) return
         isDragging.current = false
         touchId.current = null
-        setKnobPosition(50) // Возвращаем ползунок в центр
+        setKnobPosition(50)
         onChange(0)
     }, [onChange])
 
-    // Обработчики событий touch
     const onTouchStart = useCallback((e: TouchEvent) => {
         if (touchId.current === null && containerRef.current?.contains(e.target as Node)) {
             const touch = e.changedTouches[0]
@@ -133,26 +129,22 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
             }
         }
 
-        // Добавляем обработчики touch
         container.addEventListener('touchstart', onTouchStart, { passive: false })
         container.addEventListener('touchmove', onTouchMove, { passive: false })
         container.addEventListener('touchend', onTouchEnd, { passive: false })
         container.addEventListener('touchcancel', onTouchEnd, { passive: false })
 
-        // Добавляем обработчики mouse
         container.addEventListener('mousedown', onMouseDown)
         document.addEventListener('mousemove', onMouseMove)
         document.addEventListener('mouseup', onMouseUp)
         container.addEventListener('mouseleave', handleEnd)
 
         return () => {
-            // Удаляем обработчики touch
             container.removeEventListener('touchstart', onTouchStart)
             container.removeEventListener('touchmove', onTouchMove)
             container.removeEventListener('touchend', onTouchEnd)
             container.removeEventListener('touchcancel', onTouchEnd)
 
-            // Удаляем обработчики mouse
             container.removeEventListener('mousedown', onMouseDown)
             document.removeEventListener('mousemove', onMouseMove)
             document.removeEventListener('mouseup', onMouseUp)
@@ -178,11 +170,10 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
                 touchAction: 'none',
                 userSelect: 'none',
                 backgroundColor: 'rgba(0, 0, 0, 0.1)',
-                ...motorStyles[motor],
+                ...motorStyles[mo], // motor → mo
                 zIndex: 1001
             }}
         >
-            {/* Вертикальный трек */}
             <div style={{
                 position: 'absolute',
                 width: '20px',
@@ -191,7 +182,6 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
                 borderRadius: '10px'
             }} />
 
-            {/* Ползунок (knob) */}
             <div
                 ref={knobRef}
                 style={{
@@ -204,13 +194,12 @@ const Joystick = ({ motor, onChange, direction, speed, className }: JoystickProp
                     left: '50%',
                     transform: 'translateX(-50%)',
                     top: `${knobPosition}%`,
-                    marginTop: '-20px', // Компенсация половины высоты ползунка
+                    marginTop: '-20px',
                     transition: isDragging.current ? 'none' : 'top 0.2s ease-out',
                     pointerEvents: 'none'
                 }}
             />
 
-            {/* Центральная отметка */}
             <div style={{
                 position: 'absolute',
                 width: '20px',

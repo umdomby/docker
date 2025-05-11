@@ -1,39 +1,40 @@
-// file: docker-ardua/components/control/SocketClient.tsx
 "use client"
 import {useState, useEffect, useRef, useCallback} from 'react'
 import {Button} from "@/components/ui/button"
 import {Select, SelectContent, SelectItem, SelectTrigger, SelectValue} from "@/components/ui/select"
 import {Input} from "@/components/ui/input"
-import {ChevronDown, ChevronUp, ArrowUp, ArrowDown, ArrowLeft, ArrowRight} from "lucide-react" // Добавлены иконки стрелок
+import {ChevronDown, ChevronUp, ArrowUp, ArrowDown, ArrowLeft, ArrowRight} from "lucide-react"
 import {Checkbox} from "@/components/ui/checkbox"
 import {Label} from "@/components/ui/label"
 import Joystick from '@/components/control/Joystick'
 
 type MessageType = {
-    type?: string
-    command?: string
-    deviceId?: string
-    message?: string
-    params?: any
+    ty?: string // type → ty
+    sp?: string
+    co?: string // command → co
+    de?: string // deviceId → de
+    me?: string // message → me
+    mo?: string
+    pa?: any // params → pa
     clientId?: number
-    status?: string
-    timestamp?: string
-    origin?: 'client' | 'esp' | 'server' | 'error'
-    reason?: string
+    st?: string // status → st
+    ts?: string // timestamp → ts
+    or?: 'client' | 'esp' | 'server' | 'error' // origin → or
+    re?: string // reason → re
 }
 
 type LogEntry = {
-    message: string
-    type: 'client' | 'esp' | 'server' | 'error'
+    me: string // message → me
+    ty: 'client' | 'esp' | 'server' | 'error' // type → ty
 }
 
 export default function SocketClient() {
     const [log, setLog] = useState<LogEntry[]>([])
     const [isConnected, setIsConnected] = useState(false)
     const [isIdentified, setIsIdentified] = useState(false)
-    const [deviceId, setDeviceId] = useState('123')
-    const [inputDeviceId, setInputDeviceId] = useState('123')
-    const [newDeviceId, setNewDeviceId] = useState('')
+    const [de, setDe] = useState('123') // deviceId → de
+    const [inputDe, setInputDe] = useState('123') // deviceId → de
+    const [newDe, setNewDe] = useState('') // deviceId → de
     const [deviceList, setDeviceList] = useState<string[]>(['123'])
     const [espConnected, setEspConnected] = useState(false)
     const [controlVisible, setControlVisible] = useState(false)
@@ -45,24 +46,21 @@ export default function SocketClient() {
     const [autoReconnect, setAutoReconnect] = useState(false)
     const [autoConnect, setAutoConnect] = useState(false)
     const [activeTab, setActiveTab] = useState<'webrtc' | 'esp' | 'controls' | null>('esp')
-    const [servoAngle, setServoAngle] = useState(90) // Текущий угол сервопривода
+    const [servoAngle, setServoAngle] = useState(90)
 
     const reconnectAttemptRef = useRef(0)
     const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null)
     const socketRef = useRef<WebSocket | null>(null)
     const commandTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-    const lastMotorACommandRef = useRef<{ speed: number, direction: 'forward' | 'backward' | 'stop' } | null>(null)
-    const lastMotorBCommandRef = useRef<{ speed: number, direction: 'forward' | 'backward' | 'stop' } | null>(null)
+    const lastMotorACommandRef = useRef<{ sp: number, direction: 'forward' | 'backward' | 'stop' } | null>(null) // speed → sp
+    const lastMotorBCommandRef = useRef<{ sp: number, direction: 'forward' | 'backward' | 'stop' } | null>(null) // speed → sp
     const motorAThrottleRef = useRef<NodeJS.Timeout | null>(null)
     const motorBThrottleRef = useRef<NodeJS.Timeout | null>(null)
-    const currentDeviceIdRef = useRef(inputDeviceId)
+    const currentDeRef = useRef(inputDe) // deviceId → de
 
-    // Добавляем новое состояние для чекбокса запрета удаления
     const [preventDeletion, setPreventDeletion] = useState(false);
-
     const [isLandscape, setIsLandscape] = useState(false);
 
-    // В useEffect при загрузке добавляем чтение сохраненного значения
     useEffect(() => {
         const savedPreventDeletion = localStorage.getItem('preventDeletion');
         if (savedPreventDeletion) {
@@ -75,15 +73,12 @@ export default function SocketClient() {
             if (window.screen.orientation) {
                 setIsLandscape(window.screen.orientation.type.includes('landscape'));
             } else {
-                // Fallback для браузеров без screen.orientation API
                 setIsLandscape(window.innerWidth > window.innerHeight);
             }
         };
 
-        // Проверяем при монтировании
         checkOrientation();
 
-        // И добавляем слушатель изменений
         if (window.screen.orientation) {
             window.screen.orientation.addEventListener('change', checkOrientation);
         } else {
@@ -100,8 +95,8 @@ export default function SocketClient() {
     }, []);
 
     useEffect(() => {
-        currentDeviceIdRef.current = inputDeviceId
-    }, [inputDeviceId])
+        currentDeRef.current = inputDe // deviceId → de
+    }, [inputDe])
 
     useEffect(() => {
         const savedDevices = localStorage.getItem('espDeviceList')
@@ -109,13 +104,13 @@ export default function SocketClient() {
             const devices = JSON.parse(savedDevices)
             setDeviceList(devices)
             if (devices.length > 0) {
-                const savedDeviceId = localStorage.getItem('selectedDeviceId')
-                const initialDeviceId = savedDeviceId && devices.includes(savedDeviceId)
-                    ? savedDeviceId
+                const savedDe = localStorage.getItem('selectedDeviceId') // deviceId → de
+                const initialDe = savedDe && devices.includes(savedDe) // deviceId → de
+                    ? savedDe
                     : devices[0]
-                setInputDeviceId(initialDeviceId)
-                setDeviceId(initialDeviceId)
-                currentDeviceIdRef.current = initialDeviceId
+                setInputDe(initialDe) // deviceId → de
+                setDe(initialDe) // deviceId → de
+                currentDeRef.current = initialDe // deviceId → de
             }
         }
 
@@ -130,25 +125,24 @@ export default function SocketClient() {
         }
     }, [])
 
-    // Функция для изменения состояния чекбокса
     const togglePreventDeletion = useCallback((checked: boolean) => {
         setPreventDeletion(checked);
         localStorage.setItem('preventDeletion', checked.toString());
     }, []);
 
-    const saveNewDeviceId = useCallback(() => {
-        if (newDeviceId && !deviceList.includes(newDeviceId)) {
-            const updatedList = [...deviceList, newDeviceId]
+    const saveNewDe = useCallback(() => { // deviceId → de
+        if (newDe && !deviceList.includes(newDe)) { // deviceId → de
+            const updatedList = [...deviceList, newDe] // deviceId → de
             setDeviceList(updatedList)
             localStorage.setItem('espDeviceList', JSON.stringify(updatedList))
-            setInputDeviceId(newDeviceId)
-            setNewDeviceId('')
-            currentDeviceIdRef.current = newDeviceId
+            setInputDe(newDe) // deviceId → de
+            setNewDe('') // deviceId → de
+            currentDeRef.current = newDe // deviceId → de
         }
-    }, [newDeviceId, deviceList])
+    }, [newDe, deviceList])
 
-    const addLog = useCallback((msg: string, type: LogEntry['type']) => {
-        setLog(prev => [...prev.slice(-100), {message: `${new Date().toLocaleTimeString()}: ${msg}`, type}])
+    const addLog = useCallback((msg: string, ty: LogEntry['ty']) => { // type → ty
+        setLog(prev => [...prev.slice(-100), {me: `${new Date().toLocaleTimeString()}: ${msg}`, ty}]) // message → me, type → ty
     }, [])
 
     const cleanupWebSocket = useCallback(() => {
@@ -164,7 +158,7 @@ export default function SocketClient() {
         }
     }, [])
 
-    const connectWebSocket = useCallback((deviceIdToConnect: string) => {
+    const connectWebSocket = useCallback((deToConnect: string) => { // deviceId → de
         cleanupWebSocket()
 
         reconnectAttemptRef.current = 0
@@ -181,13 +175,13 @@ export default function SocketClient() {
             addLog("Connected to WebSocket server", 'server')
 
             ws.send(JSON.stringify({
-                type: 'client_type',
-                clientType: 'browser'
+                ty: "clt", // type → ty, client_type → clt
+                ct: "browser" // clientType → ct
             }))
 
             ws.send(JSON.stringify({
-                type: 'identify',
-                deviceId: deviceIdToConnect
+                ty: "idn", // type → ty, identify → idn
+                de: deToConnect // deviceId → de
             }))
         }
 
@@ -196,31 +190,39 @@ export default function SocketClient() {
                 const data: MessageType = JSON.parse(event.data)
                 console.log("Received message:", data)
 
-                if (data.type === "system") {
-                    if (data.status === "connected") {
+                if (data.ty === "ack") {
+                    if (data.co === "SPD" && data.sp !== undefined) {
+                        addLog(`Speed set: ${data.sp} for motor ${data.mo || 'unknown'}`, 'esp');
+                    } else {
+                        addLog(`Command ${data.co} acknowledged`, 'esp');
+                    }
+                }
+
+                if (data.ty === "sys") { // type → ty, system → sys
+                    if (data.st === "con") { // status → st, connected → con
                         setIsIdentified(true)
-                        setDeviceId(deviceIdToConnect)
+                        setDe(deToConnect) // deviceId → de
                         setEspConnected(true)
                     }
-                    addLog(`System: ${data.message}`, 'server')
-                } else if (data.type === "error") {
-                    addLog(`Error: ${data.message}`, 'error')
+                    addLog(`System: ${data.me}`, 'server') // message → me
+                } else if (data.ty === "err") { // type → ty, error → err
+                    addLog(`Error: ${data.me}`, 'error') // message → me
                     setIsIdentified(false)
-                } else if (data.type === "log") {
-                    addLog(`ESP: ${data.message}`, 'esp')
-                    if (data.message && data.message.includes("Heartbeat")) {
+                } else if (data.ty === "log") { // type → ty
+                    addLog(`ESP: ${data.me}`, 'esp') // message → me
+                    if (data.me && data.me.includes("Heartbeat")) { // message → me
                         setEspConnected(true)
                     }
-                } else if (data.type === "esp_status") {
-                    console.log(`Received ESP status: ${data.status}`)
-                    setEspConnected(data.status === "connected")
-                    addLog(`ESP ${data.status === "connected" ? "✅ Connected" : "❌ Disconnected"}${data.reason ? ` (${data.reason})` : ''}`,
-                        data.status === "connected" ? 'esp' : 'error')
-                } else if (data.type === "command_ack") {
+                } else if (data.ty === "est") { // type → ty, esp_status → est
+                    console.log(`Received ESP status: ${data.st}`) // status → st
+                    setEspConnected(data.st === "con") // status → st, connected → con
+                    addLog(`ESP ${data.st === "con" ? "✅ Connected" : "❌ Disconnected"}${data.re ? ` (${data.re})` : ''}`, // reason → re
+                        data.st === "con" ? 'esp' : 'error') // status → st, connected → con
+                } else if (data.ty === "ack") { // type → ty, acknowledge → ack
                     if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
-                    addLog(`ESP executed command: ${data.command}`, 'esp')
-                } else if (data.type === "command_status") {
-                    addLog(`Command ${data.command} delivered to ESP`, 'server')
+                    addLog(`ESP executed co: ${data.co}`, 'esp') // command → co
+                } else if (data.ty === "cst") { // type → ty, command_status → cst
+                    addLog(`Command ${data.co} delivered to ESP`, 'server') // command → co
                 }
             } catch (error) {
                 console.error("Error processing message:", error)
@@ -240,7 +242,7 @@ export default function SocketClient() {
                 addLog(`Attempting to reconnect in ${delay / 1000} seconds... (attempt ${reconnectAttemptRef.current})`, 'server')
 
                 reconnectTimerRef.current = setTimeout(() => {
-                    connectWebSocket(currentDeviceIdRef.current)
+                    connectWebSocket(currentDeRef.current) // deviceId → de
                 }, delay)
             } else {
                 addLog("Max reconnection attempts reached", 'error')
@@ -256,7 +258,7 @@ export default function SocketClient() {
 
     useEffect(() => {
         if (autoConnect && !isConnected) {
-            connectWebSocket(currentDeviceIdRef.current)
+            connectWebSocket(currentDeRef.current) // deviceId → de
         }
     }, [autoConnect, connectWebSocket, isConnected])
 
@@ -283,8 +285,8 @@ export default function SocketClient() {
     }, [addLog, cleanupWebSocket])
 
     const handleDeviceChange = useCallback(async (value: string) => {
-        setInputDeviceId(value)
-        currentDeviceIdRef.current = value
+        setInputDe(value) // deviceId → de
+        currentDeRef.current = value // deviceId → de
         localStorage.setItem('selectedDeviceId', value)
 
         if (autoReconnect) {
@@ -298,102 +300,99 @@ export default function SocketClient() {
         localStorage.setItem('autoReconnect', checked.toString())
     }, [])
 
-    const sendCommand = useCallback((command: string, params?: any) => {
+    const sendCommand = useCallback((co: string, pa?: any) => { // command → co, params → pa
         if (!isIdentified) {
-            addLog("Cannot send command: not identified", 'error')
+            addLog("Cannot send co: not identified", 'error') // command → co
             return
         }
 
         if (socketRef.current?.readyState === WebSocket.OPEN) {
             const msg = JSON.stringify({
-                command,
-                params,
-                deviceId,
-                timestamp: Date.now(),
+                co, // command → co
+                pa, // params → pa
+                de, // deviceId → de
+                ts: Date.now(), // timestamp → ts
                 expectAck: true
             })
 
             socketRef.current.send(msg)
-            addLog(`Sent command to ${deviceId}: ${command}`, 'client')
+            addLog(`Sent co to ${de}: ${co}`, 'client') // command → co, deviceId → de
 
             if (commandTimeoutRef.current) clearTimeout(commandTimeoutRef.current)
             commandTimeoutRef.current = setTimeout(() => {
                 if (espConnected) {
-                    addLog(`Command ${command} not acknowledged by ESP`, 'error')
+                    addLog(`Command ${co} not acknowledged by ESP`, 'error') // command → co
                     setEspConnected(false)
                 }
             }, 5000)
         } else {
             addLog("WebSocket not ready!", 'error')
         }
-    }, [addLog, deviceId, isIdentified, espConnected])
+    }, [addLog, de, isIdentified, espConnected])
 
-    const createMotorHandler = useCallback((motor: 'A' | 'B') => {
-        const lastCommandRef = motor === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
-        const throttleRef = motor === 'A' ? motorAThrottleRef : motorBThrottleRef
-        const setSpeed = motor === 'A' ? setMotorASpeed : setMotorBSpeed
-        const setDirection = motor === 'A' ? setMotorADirection : setMotorBDirection
+    const createMotorHandler = useCallback((mo: 'A' | 'B') => { // motor → mo
+        const lastCommandRef = mo === 'A' ? lastMotorACommandRef : lastMotorBCommandRef
+        const throttleRef = mo === 'A' ? motorAThrottleRef : motorBThrottleRef
+        const setSpeed = mo === 'A' ? setMotorASpeed : setMotorBSpeed
+        const setDirection = mo === 'A' ? setMotorADirection : setMotorBDirection
 
         return (value: number) => {
             let direction: 'forward' | 'backward' | 'stop' = 'stop'
-            let speed = 0
+            let sp = 0 // speed → sp
 
             if (value > 0) {
                 direction = 'forward'
-                speed = value
+                sp = value // speed → sp
             } else if (value < 0) {
                 direction = 'backward'
-                speed = -value
+                sp = -value // speed → sp
             }
 
-            setSpeed(speed)
+            setSpeed(sp) // speed → sp
             setDirection(direction)
 
-            const currentCommand = {speed, direction}
+            const currentCommand = {sp, direction} // speed → sp
             if (JSON.stringify(lastCommandRef.current) === JSON.stringify(currentCommand)) {
                 return
             }
 
             lastCommandRef.current = currentCommand
 
-            // Если скорость 0 - сразу отправляем команду остановки
-            if (speed === 0) {
+            if (sp === 0) { // speed → sp
                 if (throttleRef.current) {
                     clearTimeout(throttleRef.current)
                     throttleRef.current = null
                 }
-                sendCommand("set_speed", {motor, speed: 0})
-                sendCommand(`motor_${motor.toLowerCase()}_stop`)
+                sendCommand("SPD", {mo, sp: 0}) // set_speed → SPD, motor → mo, speed → sp
+                sendCommand(mo === 'A' ? "MSA" : "MSB")
                 return
             }
 
-            // Для ненулевой скорости используем троттлинг
             if (throttleRef.current) {
                 clearTimeout(throttleRef.current)
             }
 
             throttleRef.current = setTimeout(() => {
-                sendCommand("set_speed", {motor, speed})
+                sendCommand("SPD", {mo, sp}) // set_speed → SPD, motor → mo, speed → sp
                 sendCommand(direction === 'forward'
-                    ? `motor_${motor.toLowerCase()}_forward`
-                    : `motor_${motor.toLowerCase()}_backward`)
+                    ? `MF${mo}` // motor_a_forward → MFA, motor_b_forward → MFB
+                    : `MR${mo}`) // motor_a_backward → MRA, motor_b_backward → MRB
             }, 40)
         }
     }, [sendCommand])
 
-    // Функция для изменения угла сервопривода
     const adjustServoAngle = useCallback((delta: number) => {
         const newAngle = Math.max(0, Math.min(180, servoAngle + delta))
         setServoAngle(newAngle)
-        sendCommand("set_servo", {angle: newAngle})
+        sendCommand("SSR", {an: newAngle}) // set_servo → SSR, angle → an
     }, [servoAngle, sendCommand])
 
     const handleMotorAControl = createMotorHandler('A')
     const handleMotorBControl = createMotorHandler('B')
 
     const emergencyStop = useCallback(() => {
-        sendCommand("set_speed", {motor: 'A', speed: 0})
-        sendCommand("set_speed", {motor: 'B', speed: 0})
+        sendCommand("SPD", {mo: 'A', sp: 0}) // set_speed → SPD, motor → mo, speed → sp
+        sendCommand("SPD", {mo: 'B', sp: 0}) // set_speed → SPD, motor → mo, speed → sp
         setMotorASpeed(0)
         setMotorBSpeed(0)
         setMotorADirection('stop')
@@ -414,31 +413,27 @@ export default function SocketClient() {
 
     useEffect(() => {
         const interval = setInterval(() => {
-            if (isConnected && isIdentified) sendCommand("heartbeat2")
+            if (isConnected && isIdentified) sendCommand("HBT") // heartbeat2 → HBT
         }, 1000)
         return () => clearInterval(interval)
     }, [isConnected, isIdentified, sendCommand])
 
-    // Обработчик открытия моторных контролов
     const handleOpenControls = () => {
         setControlVisible(true)
-        setActiveTab(null) // Закрываем все вкладки при открытии контролов
+        setActiveTab(null)
     }
 
-    // Обработчик закрытия моторных контролов
     const handleCloseControls = () => {
         setControlVisible(false)
-        setActiveTab('esp') // Возвращаемся на вкладку ESP
+        setActiveTab('esp')
     }
 
     return (
         <div className="flex flex-col items-center min-h-screen p-4 bg-transparent mt-12">
-            {/* Основной контейнер с управлением */}
             {activeTab === 'esp' && (
                 <div
                     className="w-full max-w-md space-y-2 bg-transparent rounded-lg p-2 sm:p-2 border border-gray-200 backdrop-blur-sm"
                     style={{maxHeight: '90vh', overflowY: 'auto'}}>
-                    {/* Заголовок и статус */}
                     <div className="flex flex-col items-center space-y-2">
                         <div className="flex items-center space-x-2">
                             <div className={`w-3 h-3 sm:w-4 sm:h-4 rounded-full ${
@@ -458,7 +453,6 @@ export default function SocketClient() {
                         </div>
                     </div>
 
-                    {/* Кнопка открытия контролов */}
                     <Button
                         onClick={handleOpenControls}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 h-8 sm:h-10 text-xs sm:text-sm"
@@ -466,10 +460,9 @@ export default function SocketClient() {
                         Controls
                     </Button>
 
-                    {/* Выбор устройства */}
                     <div className="flex space-x-2">
                         <Select
-                            value={inputDeviceId}
+                            value={inputDe} // deviceId → de
                             onValueChange={handleDeviceChange}
                             disabled={isConnected && !autoReconnect}
                         >
@@ -483,36 +476,34 @@ export default function SocketClient() {
                                 ))}
                             </SelectContent>
                         </Select>
-                        {/* Кнопка удаления устройства */}
                         <Button
                             onClick={() => {
                                 if (!preventDeletion && confirm("Delete ?")) {
                                     const defaultDevice = '123';
                                     setDeviceList([defaultDevice]);
-                                    setInputDeviceId(defaultDevice);
+                                    setInputDe(defaultDevice); // deviceId → de
                                     localStorage.setItem('espDeviceList', JSON.stringify([defaultDevice]));
                                 }
                             }}
-                            disabled={preventDeletion} // Блокируем если запрещено удаление
+                            disabled={preventDeletion}
                             className="bg-red-600 hover:bg-red-700 h-8 sm:h-10 px-2 sm:px-4 text-xs sm:text-sm"
                         >
                             Del
                         </Button>
                     </div>
 
-                    {/* Добавление нового устройства */}
                     <div className="space-y-1 sm:space-y-2">
                         <Label className="block text-xs sm:text-sm font-medium text-gray-700">Add New Device</Label>
                         <div className="flex space-x-2">
                             <Input
-                                value={newDeviceId}
-                                onChange={(e) => setNewDeviceId(e.target.value)}
+                                value={newDe} // deviceId → de
+                                onChange={(e) => setNewDe(e.target.value)} // deviceId → de
                                 placeholder="Enter new device ID"
                                 className="flex-1 bg-transparent h-8 sm:h-10 text-xs sm:text-sm"
                             />
                             <Button
-                                onClick={saveNewDeviceId}
-                                disabled={!newDeviceId}
+                                onClick={saveNewDe} // deviceId → de
+                                disabled={!newDe} // deviceId → de
                                 className="bg-blue-600 hover:bg-blue-700 h-8 sm:h-10 px-2 sm:px-4 text-xs sm:text-sm"
                             >
                                 Add
@@ -520,10 +511,9 @@ export default function SocketClient() {
                         </div>
                     </div>
 
-                    {/* Управление подключением */}
                     <div className="flex space-x-2">
                         <Button
-                            onClick={() => connectWebSocket(currentDeviceIdRef.current)}
+                            onClick={() => connectWebSocket(currentDeRef.current)} // deviceId → de
                             disabled={isConnected}
                             className="flex-1 bg-green-600 hover:bg-green-700 h-8 sm:h-10 text-xs sm:text-sm"
                         >
@@ -538,7 +528,6 @@ export default function SocketClient() {
                         </Button>
                     </div>
 
-                    {/* Настройки */}
                     <div className="space-y-2 sm:space-y-3">
                         <div className="flex items-center space-x-2">
                             <Checkbox
@@ -575,7 +564,6 @@ export default function SocketClient() {
                         </div>
                     </div>
 
-                    {/* Логи */}
                     <Button
                         onClick={() => setLogVisible(!logVisible)}
                         variant="outline"
@@ -589,7 +577,6 @@ export default function SocketClient() {
                         {logVisible ? "Hide Logs" : "Show Logs"}
                     </Button>
 
-                    {/* Отображение логов */}
                     {logVisible && (
                         <div
                             className="border border-gray-200 rounded-md overflow-hidden bg-transparent backdrop-blur-sm">
@@ -601,13 +588,13 @@ export default function SocketClient() {
                                         <div
                                             key={index}
                                             className={`truncate py-1 ${
-                                                entry.type === 'client' ? 'text-blue-600' :
-                                                    entry.type === 'esp' ? 'text-green-600' :
-                                                        entry.type === 'server' ? 'text-purple-600' :
+                                                entry.ty === 'client' ? 'text-blue-600' : // type → ty
+                                                    entry.ty === 'esp' ? 'text-green-600' : // type → ty
+                                                        entry.ty === 'server' ? 'text-purple-600' : // type → ty
                                                             'text-red-600 font-semibold'
                                             }`}
                                         >
-                                            {entry.message}
+                                            {entry.me} // message → me
                                         </div>
                                     ))
                                 )}
@@ -617,25 +604,22 @@ export default function SocketClient() {
                 </div>
             )}
 
-            {/* Диалог моторных контролов */}
             {controlVisible && (
                 <div>
                     <Joystick
-                        motor="A"
+                        mo="A" // motor → mo
                         onChange={handleMotorAControl}
                         direction={motorADirection}
-                        speed={motorASpeed}
+                        sp={motorASpeed} // speed → sp
                     />
 
                     <Joystick
-                        motor="B"
+                        mo="B" // motor → mo
                         onChange={handleMotorBControl}
                         direction={motorBDirection}
-                        speed={motorBSpeed}
+                        sp={motorBSpeed} // speed → sp
                     />
 
-
-                    {/* Кнопки управления сервоприводом */}
                     <div className="fixed bottom-20 left-1/2 transform -translate-x-1/2 flex space-x-4 z-50">
                         <Button
                             onClick={() => adjustServoAngle(-180)}
@@ -644,7 +628,6 @@ export default function SocketClient() {
                             <ArrowLeft className="h-5 w-5"/>
                         </Button>
 
-                        {/* Кнопка увеличения угла (+5 градусов) */}
                         <Button
                             onClick={() => adjustServoAngle(15)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
@@ -652,7 +635,6 @@ export default function SocketClient() {
                             <ArrowDown className="h-5 w-5" />
                         </Button>
 
-                        {/* Кнопка уменьшения угла (-5 градусов) */}
                         <Button
                             onClick={() => adjustServoAngle(-15)}
                             className="bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 p-2 rounded-full transition-all"
@@ -668,7 +650,6 @@ export default function SocketClient() {
                         </Button>
                     </div>
 
-                    {/* Кнопка закрытия */}
                     <Button
                         onClick={handleCloseControls}
                         className="fixed bottom-4 left-1/2 transform -translate-x-1/2 bg-transparent hover:bg-gray-700/30 backdrop-blur-sm border border-gray-600 text-gray-600 px-4 py-1 sm:px-6 sm:py-2 rounded-full transition-all text-xs sm:text-sm"
