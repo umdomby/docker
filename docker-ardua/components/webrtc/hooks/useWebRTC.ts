@@ -163,29 +163,7 @@ export const useWebRTC = (
         }
     };
 
-// 3. Специальная нормализация SDP для Huawei
-    const normalizeSdpForHuawei = (sdp: string): string => {
-        const { isHuawei } = detectPlatform();
 
-        if (!isHuawei) return sdp;
-
-        return sdp
-            // Приоритет H.264 baseline profile
-            .replace(/a=rtpmap:(\d+) H264\/\d+/g,
-                'a=rtpmap:$1 H264/90000\r\n' +
-                'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n')
-            // Уменьшаем размер GOP
-            .replace(/a=fmtp:\d+/, '$&;sprop-parameter-sets=J0LgC5Q9QEQ=,KM4=;')
-            // Оптимизации буферизации и битрейта
-            .replace(/a=mid:video\r\n/g,
-                'a=mid:video\r\n' +
-                'b=AS:250\r\n' +  // Уменьшенный битрейт для Huawei
-                'b=TIAS:250000\r\n' +
-                'a=rtcp-fb:* ccm fir\r\n' +
-                'a=rtcp-fb:* nack\r\n' +
-                'a=rtcp-fb:* nack pli\r\n');
-
-    };
 
     // 4. Мониторинг производительности для Huawei
     const startHuaweiPerformanceMonitor = () => {
@@ -325,6 +303,31 @@ export const useWebRTC = (
             // Удаляем несовместимые параметры
             .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '')
             .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '');
+
+    };
+
+
+    // 3. Специальная нормализация SDP для Huawei
+    const normalizeSdpForHuawei = (sdp: string): string => {
+        const { isHuawei } = detectPlatform();
+
+        if (!isHuawei) return sdp;
+
+        return sdp
+            // Приоритет H.264 baseline profile
+            .replace(/a=rtpmap:(\d+) H264\/\d+/g,
+                'a=rtpmap:$1 H264/90000\r\n' +
+                'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n')
+            // Уменьшаем размер GOP
+            .replace(/a=fmtp:\d+/, '$&;sprop-parameter-sets=J0LgC5Q9QEQ=,KM4=;')
+            // Оптимизации буферизации и битрейта
+            .replace(/a=mid:video\r\n/g,
+                'a=mid:video\r\n' +
+                'b=AS:250\r\n' +  // Уменьшенный битрейт для Huawei
+                'b=TIAS:250000\r\n' +
+                'a=rtcp-fb:* ccm fir\r\n' +
+                'a=rtcp-fb:* nack\r\n' +
+                'a=rtcp-fb:* nack pli\r\n');
 
     };
 
@@ -845,26 +848,12 @@ export const useWebRTC = (
                 if (isHuawei) {
                     return candidate.candidate.includes('typ relay');
                 }
-                // Не отправляем пустые кандидаты
-                if (!candidate.candidate || candidate.candidate.length === 0) return false;
-
-                // Приоритет для relay-кандидатов
-                if (candidate.candidate.includes('typ relay')) return true;
-
-                // Игнорируем host-кандидаты после первого подключения
-                if (retryAttempts.current > 0 && candidate.candidate.includes('typ host')) {
-                    return false;
-                }
 
                 // Для iOS/Safari отправляем только relay-кандидаты и srflx
                 if (isIOS || isSafari) {
                     return candidate.candidate.includes('typ relay') ||
                         candidate.candidate.includes('typ srflx');
                 }
-
-                // Общие правила для других платформ
-                if (!candidate.candidate || candidate.candidate.length === 0) return false;
-                if (candidate.candidate.includes('typ relay')) return true;
 
                 return true;
             };
