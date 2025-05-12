@@ -49,40 +49,43 @@ func init() {
 func initializeMediaAPI() {
     mediaEngine := &webrtc.MediaEngine{}
 
-    // Регистрируем ТОЛЬКО H.264 видеокодек
-    h264Params := webrtc.RTPCodecParameters{
+    // Регистрируем только H.264 с конкретными параметрами
+    if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
             MimeType:    webrtc.MimeTypeH264,
-                ClockRate:   90000,
-                SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f", // Baseline Profile для совместимости
-                RTCPFeedback: []webrtc.RTCPFeedback{ // Используем строковые значения для типов
-                {Type: "nack", Parameter: ""},      // Generic NACK
-                {Type: "nack", Parameter: "pli"}, // NACK Picture Loss Indication
-                {Type: "ccm", Parameter: "fir"},  // Codec Control Message Full Intra Request
+            ClockRate:   90000,
+            SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+            RTCPFeedback: []webrtc.RTCPFeedback{
+                {Type: "nack"},
+                {Type: "nack", Parameter: "pli"},
+                {Type: "ccm", Parameter: "fir"},
+                {Type: "goog-remb"},
             },
         },
-        PayloadType: 96, // Типичный динамический PT
-    }
-    if err := mediaEngine.RegisterCodec(h264Params, webrtc.RTPCodecTypeVideo); err != nil {
-        panic(fmt.Sprintf("Ошибка регистрации кодека H264: %v", err))
+        PayloadType: 126,
+    }, webrtc.RTPCodecTypeVideo); err != nil {
+        panic(fmt.Sprintf("H264 codec registration error: %v", err))
     }
 
-    // Регистрируем аудиокодек Opus
-    opusParams := webrtc.RTPCodecParameters{
+    // Регистрируем Opus аудио
+    if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
-            MimeType:    webrtc.MimeTypeOpus,
-                ClockRate:   48000,
-                Channels:    2,
-                SDPFmtpLine: "minptime=10;useinbandfec=1",
+            MimeType:     webrtc.MimeTypeOpus,
+            ClockRate:    48000,
+            Channels:     2,
+            SDPFmtpLine:  "minptime=10;useinbandfec=1",
+            RTCPFeedback: []webrtc.RTCPFeedback{},
         },
-        PayloadType: 111, // Типичный динамический PT
-    }
-    if err := mediaEngine.RegisterCodec(opusParams, webrtc.RTPCodecTypeAudio); err != nil {
-        panic(fmt.Sprintf("Ошибка регистрации кодека Opus: %v", err))
+        PayloadType: 111,
+    }, webrtc.RTPCodecTypeAudio); err != nil {
+        panic(fmt.Sprintf("Opus codec registration error: %v", err))
     }
 
-    webrtcAPI = webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
-    log.Println("MediaEngine инициализирован с H.264 (видео) и Opus (аудио).")
+    // Создаем API с нашими настройками
+    webrtcAPI = webrtc.NewAPI(
+        webrtc.WithMediaEngine(mediaEngine),
+    )
+    log.Println("MediaEngine initialized with H.264 (video) and Opus (audio) only")
 }
 
 // getWebRTCConfig осталась вашей функцией
@@ -296,10 +299,32 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 
     peer := &Peer{
         conn:     conn,
-            pc:       peerConnection,
-            username: username,
-            room:     room,
-            isLeader: isLeader,
+        pc:       peerConnection,
+        username: username,
+        room:     room,
+        isLeader: isLeader,
+    }
+
+    if isLeader {
+        // Для лидера (Android) добавляем трансиверы
+        if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+            Direction: webrtc.RTPTransceiverDirectionSendonly,
+        }); err != nil {
+            log.Printf("Failed to add video transceiver for leader %s: %v", username, err)
+        }
+    } else {
+        // Для ведомого (браузера) добавляем приемный трансивер
+        if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+            Direction: webrtc.RTPTransceiverDirectionRecvonly,
+        }); err != nil {
+            log.Printf("Failed to add video transceiver for follower %s: %v", username, err)
+        }
+    }
+
+    if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
+        Direction: webrtc.RTPTransceiverDirectionSendrecv,
+    }); err != nil {
+        log.Printf("Failed to add audio transceiver for %s: %v", username, err)
     }
 
     // Настройка обработчиков ICE кандидатов и треков (ваша логика)
