@@ -338,6 +338,20 @@ export const useWebRTC = (
 
         let optimized = sdp;
 
+        // optimized = optimized.replace(/a=rtpmap:(\d+) rtx\/\d+\r\n/gm, (match, pt) => {
+        //     // Проверяем, есть ли соответствующий H264 кодек
+        //     if (optimized.includes(`a=fmtp:${pt} apt=`)) {
+        //         return match; // Оставляем RTX для H264
+        //     }
+        //     return ''; // Удаляем RTX для других кодеков
+        // });
+        //
+        // // 2. Форсируем H.264 параметры
+        // optimized = optimized.replace(
+        //     /a=rtpmap:(\d+) H264\/\d+\r\n/g,
+        //     'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1\r\n'
+        // );
+
         // Оптимизации только для Huawei
         if (isHuawei) {
             optimized = normalizeSdpForHuawei(optimized);
@@ -348,12 +362,15 @@ export const useWebRTC = (
             optimized = normalizeSdpForIOS(optimized);
         }
 
+
         // Общие оптимизации для всех устройств
         optimized = optimized
             .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:800\r\nb=TIAS:800000\r\n')
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
-            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '');
+            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
+            .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n');
+
 
         return optimized;
     };
@@ -712,19 +729,14 @@ export const useWebRTC = (
                 ],
                 bundlePolicy: 'max-bundle',
                 rtcpMuxPolicy: 'require',
-                // Специфичные настройки для iOS/Safari
-                ...(isIOS || isSafari ? {
-                    iceTransportPolicy: 'relay',
-                    iceCandidatePoolSize: 0,
-                    // Уменьшаем буферизацию для снижения задержки
-                    rtcpIceParameters: {
-                        iceLite: true
-                    },
-                    sdpSemantics: 'unified-plan'
-                } : {})
+                iceTransportPolicy: 'all',
+                iceCandidatePoolSize: 0,
+                // @ts-ignore - sdpSemantics is supported but not in TypeScript's types
+                sdpSemantics: 'unified-plan',
             };
 
             pc.current = new RTCPeerConnection(config);
+
 
             if (isIOS || isSafari) {
                 // iOS требует более агрессивного управления ICE
