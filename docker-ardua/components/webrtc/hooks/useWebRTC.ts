@@ -344,8 +344,6 @@ export const useWebRTC = (
             .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n')
             .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '') // Отключаем REMB
             .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '') // Отключаем transport-cc
-            //.replace(/a=rtpmap:\d+ (VP8|VP9|AV1)\/\d+\r\n/g, '')
-            //.replace(/a=(rtpmap|fmtp|rtcp-fb):\d+ (VP8|VP9|AV1).*\r\n/g, '')
             .replace(/^(m=video.*?)((?:\s+\d+)+)/gm, (match, prefix, payloads) => {
                 // Оставляем только payload types, которые есть в оставшемся SDP
                 const allowedPayloads = Array.from(new Set(sdp.match(/a=rtpmap:(\d+)/g) || []))
