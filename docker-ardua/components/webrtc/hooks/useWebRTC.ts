@@ -150,9 +150,10 @@ export const useWebRTC = (
             parameters.encodings[0] = {
                 ...parameters.encodings[0],
                 maxBitrate: 300000,    // 300 kbps
-                scaleResolutionDownBy: 1.5,
-                maxFramerate: 24,
-                priority: 'low'
+                scaleResolutionDownBy: 1,
+                maxFramerate: 15,
+                priority: 'high',
+                networkPriority: 'high'
             };
 
             try {
@@ -230,6 +231,8 @@ export const useWebRTC = (
                         maxBitrate: direction === 'higher' ? 300000 : 150000,
                         scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
                         maxFramerate: direction === 'higher' ? 15 : 10,
+                        priority: 'high',
+                        networkPriority: 'high'
                     };
                 } else {
                     // Для WiFi оставляем текущие настройки
@@ -238,6 +241,8 @@ export const useWebRTC = (
                         maxBitrate: direction === 'higher' ? 300000 : 150000,
                         scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
                         maxFramerate: direction === 'higher' ? 15 : 10,
+                        priority: 'high',
+                        networkPriority: 'high'
                     };
                 }
 
@@ -305,15 +310,15 @@ export const useWebRTC = (
 
         let optimized = sdp;
 
-        // optimized = optimized.replace(/a=rtpmap:(\d+) rtx\/\d+\r\n/gm, (match, pt) => {
-        //     // Проверяем, есть ли соответствующий H264 кодек
-        //     if (optimized.includes(`a=fmtp:${pt} apt=`)) {
-        //         return match; // Оставляем RTX для H264
-        //     }
-        //     return ''; // Удаляем RTX для других кодеков
-        // });
-        //
-        // // 2. Форсируем H.264 параметры
+        optimized = optimized.replace(/a=rtpmap:(\d+) rtx\/\d+\r\n/gm, (match, pt) => {
+            // Проверяем, есть ли соответствующий H264 кодек
+            if (optimized.includes(`a=fmtp:${pt} apt=`)) {
+                return match; // Оставляем RTX для H264
+            }
+            return ''; // Удаляем RTX для других кодеков
+        });
+
+        // 2. Форсируем H.264 параметры
         // optimized = optimized.replace(
         //     /a=rtpmap:(\d+) H264\/\d+\r\n/g,
         //     'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1\r\n'
@@ -332,11 +337,23 @@ export const useWebRTC = (
 
         // Общие оптимизации для всех устройств
         optimized = optimized
-            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:800\r\nb=TIAS:800000\r\n')
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:150\r\nb=TIAS:500000\r\n')
             .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
             .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
             .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
-            .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n');
+            .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n')
+            .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '') // Отключаем REMB
+            .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '') // Отключаем transport-cc
+            //.replace(/a=rtpmap:\d+ (VP8|VP9|AV1)\/\d+\r\n/g, '')
+            //.replace(/a=(rtpmap|fmtp|rtcp-fb):\d+ (VP8|VP9|AV1).*\r\n/g, '')
+            .replace(/^(m=video.*?)((?:\s+\d+)+)/gm, (match, prefix, payloads) => {
+                // Оставляем только payload types, которые есть в оставшемся SDP
+                const allowedPayloads = Array.from(new Set(sdp.match(/a=rtpmap:(\d+)/g) || []))
+                    .map(m => m.replace('a=rtpmap:', ''));
+                const filtered = payloads.split(' ').filter(pt => allowedPayloads.includes(pt));
+                return prefix + ' ' + filtered.join(' ');
+            })
+            .replace(/a=fmtp:\d+ .*\r\n/g, '');
 
 
         return optimized;
@@ -699,7 +716,7 @@ export const useWebRTC = (
                 iceTransportPolicy: 'all',
                 iceCandidatePoolSize: 0,
                 // @ts-ignore - sdpSemantics is supported but not in TypeScript's types
-                sdpSemantics: 'unified-plan',
+                sdpSemantics: 'unified-plan' as any,
             };
 
             pc.current = new RTCPeerConnection(config);
@@ -948,9 +965,11 @@ export const useWebRTC = (
 
                 parameters.encodings[0] = {
                     ...parameters.encodings[0],
-                    maxBitrate: direction === 'higher' ? 800000 : 400000,
+                    maxBitrate: direction === 'higher' ? 300000 : 150000,
                     scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
-                    maxFramerate: direction === 'higher' ? 25 : 15
+                    maxFramerate: direction === 'higher' ? 25 : 15,
+                    priority: 'high',
+                    networkPriority: 'high'
                 };
 
                 try {
