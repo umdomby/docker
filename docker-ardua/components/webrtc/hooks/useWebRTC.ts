@@ -82,7 +82,7 @@ export const useWebRTC = (
             return {
                 width: { ideal: 480, max: 640 },
                 height: { ideal: 360, max: 480 },
-                frameRate: { ideal: 20, max: 30 },
+                frameRate: { ideal: 20, max: 24 },
                 // Huawei лучше работает с этими параметрами
                 facingMode: 'environment',
                 resizeMode: 'crop-and-scale'
@@ -102,7 +102,7 @@ export const useWebRTC = (
                 ...baseConstraints,
                 width: { ideal: 480 },
                 height: { ideal: 360 },
-                frameRate: { ideal: 30 },
+                frameRate: { ideal: 24 },
                 advanced: [{ width: { max: 480 } }]
             };
         }
@@ -124,9 +124,9 @@ export const useWebRTC = (
         if (isSafari || isIOS) {
             return {
                 ...baseConstraints,
-                frameRate: { ideal: 30 }, // Чуть меньше FPS для стабильности
+                frameRate: { ideal: 24 }, // Чуть меньше FPS для стабильности
                 advanced: [
-                    { frameRate: { max: 30 } },
+                    { frameRate: { max: 24 } },
                     { width: { max: 640 }, height: { max: 480 } }
                 ]
             };
@@ -151,7 +151,7 @@ export const useWebRTC = (
                 ...parameters.encodings[0],
                 maxBitrate: 300000,    // 300 kbps
                 scaleResolutionDownBy: 1.5,
-                maxFramerate: 30,
+                maxFramerate: 24,
                 priority: 'low'
             };
 
@@ -206,9 +206,8 @@ export const useWebRTC = (
 
 // 5. Функция адаптации качества видео
     const adjustVideoQuality = (direction: 'higher' | 'lower') => {
+        const { isMobile } = detectPlatform();
         const senders = pc.current?.getSenders() || [];
-
-        const { isHuawei, isSafari, isIOS } = detectPlatform();
 
         senders.forEach(sender => {
             if (sender.track?.kind === 'video') {
@@ -224,60 +223,28 @@ export const useWebRTC = (
                     active: true,
                 };
 
-                // Специфичные настройки для Huawei
-                if (isHuawei) {
+                // Для мобильных сетей используем более низкие битрейты
+                if (isMobile) {
                     parameters.encodings[0] = {
                         ...baseEncoding,
                         maxBitrate: direction === 'higher' ? 300000 : 150000,
-                        scaleResolutionDownBy: direction === 'higher' ? undefined : 1.5,
-                        maxFramerate: direction === 'higher' ? 20 : 15,
-                        priority: direction === 'higher' ? 'medium' : 'low',
-                    };
-
-                    // Безопасная установка параметров кодека для Huawei
-                    if (parameters.codecs) {
-                        parameters.codecs = parameters.codecs.map(codec => {
-                            const customCodec = codec as CustomRTCRtpCodecParameters;
-                            if (customCodec.mimeType === 'video/H264') {
-                                return {
-                                    ...customCodec,
-                                    parameters: {
-                                        ...(customCodec.parameters || {}),
-                                        'level-asymmetry-allowed': 1,
-                                        'packetization-mode': 1,
-                                        'profile-level-id': '42e01f'
-                                    }
-                                };
-                            }
-                            return codec;
-                        });
-                    }
-                }
-                else if (isSafari || isIOS) {
-                    parameters.encodings[0] = {
-                        ...baseEncoding,
-                        maxBitrate: direction === 'higher' ? 600000 : 300000,
-                        scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.3,
-                        maxFramerate: direction === 'higher' ? 25 : 15,
-                    };
-                }
-                else {
-                    parameters.encodings[0] = {
-                        ...baseEncoding,
-                        maxBitrate: direction === 'higher' ? 800000 : 400000,
                         scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
-                        maxFramerate: direction === 'higher' ? 30 : 20,
+                        maxFramerate: direction === 'higher' ? 15 : 10,
+                    };
+                } else {
+                    // Для WiFi оставляем текущие настройки
+                    parameters.encodings[0] = {
+                        ...baseEncoding,
+                        maxBitrate: direction === 'higher' ? 300000 : 150000,
+                        scaleResolutionDownBy: direction === 'higher' ? 1.0 : 1.5,
+                        maxFramerate: direction === 'higher' ? 15 : 10,
                     };
                 }
 
                 try {
-                    sender.setParameters(parameters).then(() => {
-                        console.log(`Качество видео ${direction === 'higher' ? 'увеличено' : 'уменьшено'}`);
-                    }).catch(err => {
-                        console.error('Ошибка применения параметров:', err);
-                    });
+                    sender.setParameters(parameters);
                 } catch (err) {
-                    console.error('Критическая ошибка изменения параметров:', err);
+                    console.error('Ошибка изменения параметров:', err);
                 }
             }
         });
