@@ -49,48 +49,43 @@ func init() {
 func initializeMediaAPI() {
     mediaEngine := &webrtc.MediaEngine{}
 
-    // Только H.264 с конкретными параметрами для стабильности
+    // Регистрируем только H.264 с конкретными параметрами
     if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
             MimeType:    webrtc.MimeTypeH264,
             ClockRate:   90000,
-            SDPFmtpLine: "profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1",
+            SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
             RTCPFeedback: []webrtc.RTCPFeedback{
                 {Type: "nack"},
                 {Type: "nack", Parameter: "pli"},
                 {Type: "ccm", Parameter: "fir"},
+                {Type: "goog-remb"},
             },
         },
-        PayloadType: 126, // Стандартный PT для H.264
+        PayloadType: 126,
     }, webrtc.RTPCodecTypeVideo); err != nil {
         panic(fmt.Sprintf("H264 codec registration error: %v", err))
     }
 
-    // Аудио Opus с оптимальными настройками
+    // Регистрируем Opus аудио
     if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
             MimeType:     webrtc.MimeTypeOpus,
             ClockRate:    48000,
             Channels:     2,
             SDPFmtpLine:  "minptime=10;useinbandfec=1",
+            RTCPFeedback: []webrtc.RTCPFeedback{},
         },
         PayloadType: 111,
     }, webrtc.RTPCodecTypeAudio); err != nil {
         panic(fmt.Sprintf("Opus codec registration error: %v", err))
     }
 
-    // Отключаем все ненужные расширения
-    mediaEngine.RegisterHeaderExtension(
-        webrtc.RTPHeaderExtensionCapability{URI: "urn:ietf:params:rtp-hdrext:sdes:mid"},
-        webrtc.RTPHeaderExtensionDirectionUnspecified,
-    )
-
+    // Создаем API с нашими настройками
     webrtcAPI = webrtc.NewAPI(
         webrtc.WithMediaEngine(mediaEngine),
-        webrtc.WithSettingEngine(webrtc.SettingEngine{
-            DisableMediaEngineCopy: true, // Уменьшаем накладные расходы
-        }),
     )
+    log.Println("MediaEngine initialized with H.264 (video) and Opus (audio) only")
 }
 
 // getWebRTCConfig осталась вашей функцией
