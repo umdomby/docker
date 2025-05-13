@@ -303,101 +303,58 @@ export const useWebRTC = (
 
     };
 
-    const normalizeSdp = (sdp: string, preferredCodec: string): string => {
-        console.log(`Normalizing SDP with preferredCodec: ${preferredCodec}`);
-        console.log('Input SDP:', sdp);
-        let modifiedSdp = sdp;
+    const normalizeSdp = (sdp: string | undefined): string => {
+        if (!sdp) return '';
 
-        if (preferredCodec === 'VP8') {
-            // Находим VP8 payload type и его RTX
-            const vp8PayloadMatch = modifiedSdp.match(/a=rtpmap:(\d+) VP8\/90000\r\n/);
-            const vp8Payload = vp8PayloadMatch ? vp8PayloadMatch[1] : null;
-            const rtxPayloadMatch = modifiedSdp.match(new RegExp(`a=fmtp:(\\d+) apt=${vp8Payload}\\r\\n`));
-            const rtxPayload = rtxPayloadMatch ? rtxPayloadMatch[1] : null;
+        const { isHuawei, isSafari, isIOS } = detectPlatform();
 
-            if (!vp8Payload) {
-                console.warn('VP8 codec not found in SDP');
-                return modifiedSdp;
+        let optimized = sdp;
+
+        optimized = optimized.replace(/a=rtpmap:(\d+) rtx\/\d+\r\n/gm, (match, pt) => {
+            // Проверяем, есть ли соответствующий H264 кодек
+            if (optimized.includes(`a=fmtp:${pt} apt=`)) {
+                return match; // Оставляем RTX для H264
             }
+            return ''; // Удаляем RTX для других кодеков
+        });
 
-            console.log(`Found VP8 payload type: ${vp8Payload}, RTX payload type: ${rtxPayload}`);
+        // 2. Форсируем H.264 параметры
+        // optimized = optimized.replace(
+        //     /a=rtpmap:(\d+) H264\/\d+\r\n/g,
+        //     'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1\r\n'
+        // );
 
-            // Удаляем VP9, AV1 и их RTX
-            modifiedSdp = modifiedSdp.replace(/a=rtpmap:\d+ VP9\/90000\r\n/g, '');
-            modifiedSdp = modifiedSdp.replace(/a=rtpmap:\d+ AV1\/90000\r\n/g, '');
-            modifiedSdp = modifiedSdp.replace(/a=fmtp:\d+ profile-id=\d+\r\n/g, '');
-            modifiedSdp = modifiedSdp.replace(/a=fmtp:\d+ level-idx=\d+;profile=\d+;tier=\d+\r\n/g, '');
-            modifiedSdp = modifiedSdp.replace(new RegExp(`a=rtpmap:(\\d+) rtx/90000\\r\\n(?!a=fmtp:\\1 apt=${vp8Payload}\\r\\n)`, 'g'), '');
-            modifiedSdp = modifiedSdp.replace(new RegExp(`a=fmtp:(\\d+) apt=\\d+\\r\\n(?!a=fmtp:\\1 apt=${vp8Payload}\\r\\n)`, 'g'), '');
-
-            // Парсим SDP по строкам для точечного удаления rtcp-fb в видеосекции
-            const sdpLines = modifiedSdp.split('\r\n');
-            let videoSection = false;
-            const newSdpLines = [];
-            for (let i = 0; i < sdpLines.length; i++) {
-                const line = sdpLines[i];
-                if (line.startsWith('m=video')) {
-                    videoSection = true;
-                } else if (line.startsWith('m=') && !line.startsWith('m=video')) {
-                    videoSection = false;
-                }
-                // Пропускаем rtcp-fb только в видеосекции
-                if (videoSection && line.startsWith('a=rtcp-fb')) {
-                    continue;
-                }
-                newSdpLines.push(line);
-            }
-
-            // Формируем rtcp-fb только для VP8 и RTX
-            const payloadsToKeep = [vp8Payload, rtxPayload].filter(Boolean);
-            const rtcpFbLines = payloadsToKeep.flatMap(pt => [
-                `a=rtcp-fb:${pt} ccm fir`,
-                `a=rtcp-fb:${pt} nack`,
-                `a=rtcp-fb:${pt} nack pli`
-            ]);
-            // Добавляем red и ulpfec без rtcp-fb
-            payloadsToKeep.push('106', '108');
-
-            // Обновляем m=video и добавляем rtcp-fb
-            for (let i = 0; i < newSdpLines.length; i++) {
-                if (newSdpLines[i].startsWith('m=video')) {
-                    newSdpLines[i] = `m=video 9 UDP/TLS/RTP/SAVPF ${payloadsToKeep.join(' ')}`;
-                    // Вставляем rtcp-fb после a=rtcp-rsize
-                    const insertIndex = newSdpLines.indexOf('a=rtcp-rsize', i);
-                    if (insertIndex !== -1) {
-                        newSdpLines.splice(insertIndex + 1, 0, ...rtcpFbLines);
-                    } else {
-                        newSdpLines.splice(i + 1, 0, ...rtcpFbLines);
-                    }
-                    break;
-                }
-            }
-
-            // Устанавливаем recvonly для видео
-            for (let i = 0; i < newSdpLines.length; i++) {
-                if (newSdpLines[i].startsWith('m=video')) {
-                    // Удаляем старые направления
-                    let j = i + 1;
-                    while (newSdpLines[j] && (newSdpLines[j].startsWith('a=sendrecv') || newSdpLines[j].startsWith('a=sendonly') || newSdpLines[j].startsWith('a=recvonly'))) {
-                        newSdpLines.splice(j, 1);
-                    }
-                    newSdpLines.splice(i + 1, 0, 'a=recvonly');
-                    break;
-                }
-            }
-
-            modifiedSdp = newSdpLines.join('\r\n');
-            console.log(`Reordered m=video payloads to: ${payloadsToKeep.join(' ')}`);
-            console.log('Set video direction to recvonly');
+        // Оптимизации только для Huawei
+        if (isHuawei) {
+            optimized = normalizeSdpForHuawei(optimized);
         }
 
-        if (modifiedSdp.trim() === '') {
-            console.error('Normalized SDP is empty, returning original SDP');
-            return sdp;
+        // Специальные оптимизации для iOS/Safari
+        if (isIOS || isSafari) {
+            optimized = normalizeSdpForIOS(optimized);
         }
 
-        console.log('Normalized SDP:', modifiedSdp);
-        return modifiedSdp;
+
+        // Общие оптимизации для всех устройств
+        optimized = optimized
+            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:150\r\nb=TIAS:500000\r\n')
+            .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
+            .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
+            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
+            .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n')
+            .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '') // Отключаем REMB
+            .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '') // Отключаем transport-cc
+            .replace(/^(m=video.*?)((?:\s+\d+)+)/gm, (match, prefix, payloads) => {
+                // Оставляем только payload types, которые есть в оставшемся SDP
+                const allowedPayloads = Array.from(new Set(sdp.match(/a=rtpmap:(\d+)/g) || []))
+                    .map(m => m.replace('a=rtpmap:', ''));
+                const filtered = payloads.split(' ').filter(pt => allowedPayloads.includes(pt));
+                return prefix + ' ' + filtered.join(' ');
+            })
+            .replace(/a=fmtp:\d+ .*\r\n/g, '');
+
+
+        return optimized;
     };
 
     let cleanup = () => {
@@ -576,133 +533,157 @@ export const useWebRTC = (
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
 
-                // Определяем preferredCodec, если он не хранится в состоянии
-                const { isHuawei, isSafari, isIOS, isChrome } = detectPlatform();
-                const preferredCodec = isHuawei || isSafari || isIOS ? 'H264' : 'VP8';
+                // Устанавливаем isLeader при получении room_info
+                if (data.type === 'room_info') {
+                    const roomInfo = (data as RoomInfoMessage).data;
+                    if (roomInfo) {
+                        setIsLeader(roomInfo.leader === username);
+                        setUsers(roomInfo.users || []);
+                    }
+                }
 
-                switch (data.type) {
-                    case 'room_info':
-                        console.log('Room info received:', data);
-                        const users = data.username ? [data.username] : [];
-                        setUsers(users);
-                        setIsLeader(data.isLeader === true && data.username === username);
-                        break;
+                // Добавляем обработку switch_camera
+                if (data.type === 'switch_camera_ack') {
+                    console.log('Камера на Android успешно переключена');
+                    // Можно показать уведомление пользователю
+                }
 
-                    case 'switch_camera_ack':
-                        console.log('Камера на Android успешно переключена');
-                        break;
+                // Добавляем обработку reconnect_request
+                if (data.type === 'reconnect_request') {
+                    console.log('Server requested reconnect');
+                    setTimeout(() => {
+                        resetConnection();
+                    }, 1000);
+                    return;
+                }
 
-                    case 'reconnect_request':
-                        console.log('Server requested reconnect');
-                        setTimeout(() => resetConnection(), 1000);
-                        break;
+                if (data.type === 'force_disconnect') {
+                    // Обработка принудительного отключения
+                    console.log('Получена команда принудительного отключения');
+                    setError('Вы были отключены, так как подключился другой зритель');
 
-                    case 'force_disconnect':
-                        console.log('Получена команда принудительного отключения');
-                        setError('Вы были отключены, так как подключился другой зритель');
-                        if (remoteStream) remoteStream.getTracks().forEach(track => track.stop());
-                        if (pc.current) {
-                            pc.current.close();
-                            pc.current = null;
-                        }
-                        leaveRoom();
-                        setRemoteStream(null);
-                        setIsCallActive(false);
-                        setIsInRoom(false);
-                        break;
+                    // Останавливаем все медиапотоки
+                    if (remoteStream) {
+                        remoteStream.getTracks().forEach(track => track.stop());
+                    }
 
-                    case 'offer':
-                        console.log('Received offer:', JSON.stringify(data, null, 2));
-                        if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
-                            try {
-                                if (isNegotiating.current) {
-                                    console.log('Уже в процессе переговоров, игнорируем оффер');
-                                    return;
-                                }
-                                isNegotiating.current = true;
-                                console.log('Setting remote description:', data.sdp);
-                                await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
-                                const answer = await pc.current.createAnswer({
-                                    offerToReceiveAudio: true,
-                                    offerToReceiveVideo: true
-                                });
-                                console.log('Created answer:', answer);
-                                const modifiedSdp = answer.sdp
-                                    ? answer.sdp.replace('a=sendrecv\r\n', 'a=recvonly\r\n')
-                                    : answer.sdp || '';
-                                const normalizedAnswer = { ...answer, sdp: normalizeSdp(modifiedSdp, preferredCodec) };
-                                console.log('Normalized answer SDP:', normalizedAnswer.sdp);
-                                await pc.current.setLocalDescription(normalizedAnswer);
-                                console.log('Sending answer:', JSON.stringify(normalizedAnswer, null, 2));
-                                ws.current.send(JSON.stringify({
-                                    type: 'answer',
-                                    sdp: normalizedAnswer,
-                                    room: roomId,
-                                    username
-                                }));
-                                setIsCallActive(true);
-                                isNegotiating.current = false;
-                            } catch (err) {
-                                console.error('Ошибка обработки оффера:', err);
-                                setError('Ошибка обработки предложения соединения');
-                                isNegotiating.current = false;
+                    // Закрываем PeerConnection
+                    if (pc.current) {
+                        pc.current.close();
+                        pc.current = null;
+                    }
+                    leaveRoom();
+                    // Очищаем состояние
+                    setRemoteStream(null);
+                    setIsCallActive(false);
+                    setIsInRoom(false);
+
+                    return;
+                }
+
+
+                if (data.type === 'room_info') {
+                    setUsers(data.data.users || []);
+                }
+                else if (data.type === 'error') {
+                    setError(data.data);
+                }
+                if (data.type === 'offer') {
+                    if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
+                        try {
+                            if (isNegotiating.current) {
+                                console.log('Уже в процессе переговоров, игнорируем оффер');
+                                return;
                             }
-                        } else {
-                            console.warn('Cannot process offer: PeerConnection or WebSocket not ready, or no SDP');
-                        }
-                        break;
 
-                    case 'answer':
-                        console.log('Received answer:', data);
-                        if (pc.current && data.sdp) {
-                            try {
-                                if (pc.current.signalingState !== 'have-local-offer') {
-                                    console.log('Не в состоянии have-local-offer, игнорируем ответ');
-                                    return;
-                                }
-                                const answerDescription: RTCSessionDescriptionInit = {
-                                    type: 'answer',
-                                    sdp: normalizeSdp(data.sdp.sdp, preferredCodec)
-                                };
-                                await pc.current.setRemoteDescription(new RTCSessionDescription(answerDescription));
-                                setIsCallActive(true);
-                                startVideoCheckTimer();
-                                while (pendingIceCandidates.current.length > 0) {
-                                    const candidate = pendingIceCandidates.current.shift();
-                                    if (candidate) await pc.current.addIceCandidate(candidate).catch(err =>
-                                        console.error('Ошибка добавления отложенного ICE кандидата:', err));
-                                }
-                            } catch (err) {
-                                console.error('Ошибка установки ответа:', err);
-                                setError(`Ошибка установки ответа: ${err instanceof Error ? err.message : String(err)}`);
+                            isNegotiating.current = true;
+                            await pc.current.setRemoteDescription(
+                                new RTCSessionDescription(data.sdp)
+                            );
+
+                            const answer = await pc.current.createAnswer({
+                                offerToReceiveAudio: true,
+                                offerToReceiveVideo: true
+                            });
+
+                            const normalizedAnswer = {
+                                ...answer,
+                                sdp: normalizeSdp(answer.sdp)
+                            };
+
+                            await pc.current.setLocalDescription(normalizedAnswer);
+
+                            ws.current.send(JSON.stringify({
+                                type: 'answer',
+                                sdp: normalizedAnswer,
+                                room: roomId,
+                                username
+                            }));
+
+                            setIsCallActive(true);
+                            isNegotiating.current = false;
+                        } catch (err) {
+                            console.error('Ошибка обработки оффера:', err);
+                            setError('Ошибка обработки предложения соединения');
+                            isNegotiating.current = false;
+                        }
+                    }
+                }
+                else if (data.type === 'answer') {
+                    if (pc.current && data.sdp) {
+                        try {
+                            if (pc.current.signalingState !== 'have-local-offer') {
+                                console.log('Не в состоянии have-local-offer, игнорируем ответ');
+                                return;
                             }
-                        }
-                        break;
 
-                    case 'ice_candidate':
-                        console.log('Received ICE candidate:', data);
-                        if (data.ice) {
-                            try {
-                                const candidate = new RTCIceCandidate(data.ice);
-                                if (pc.current && pc.current.remoteDescription) {
-                                    await pc.current.addIceCandidate(candidate);
-                                } else {
-                                    pendingIceCandidates.current.push(candidate);
+                            const answerDescription: RTCSessionDescriptionInit = {
+                                type: 'answer',
+                                sdp: normalizeSdp(data.sdp.sdp)
+                            };
+
+                            console.log('Устанавливаем удаленное описание с ответом');
+                            await pc.current.setRemoteDescription(
+                                new RTCSessionDescription(answerDescription)
+                            );
+
+                            setIsCallActive(true);
+
+                            // Запускаем проверку получения видео
+                            startVideoCheckTimer();
+
+                            // Обрабатываем ожидающие кандидаты
+                            while (pendingIceCandidates.current.length > 0) {
+                                const candidate = pendingIceCandidates.current.shift();
+                                if (candidate) {
+                                    try {
+                                        await pc.current.addIceCandidate(candidate);
+                                    } catch (err) {
+                                        console.error('Ошибка добавления отложенного ICE кандидата:', err);
+                                    }
                                 }
-                            } catch (err) {
-                                console.error('Ошибка добавления ICE-кандидата:', err);
-                                setError('Ошибка добавления ICE-кандидата');
                             }
+                        } catch (err) {
+                            console.error('Ошибка установки ответа:', err);
+                            setError(`Ошибка установки ответа: ${err instanceof Error ? err.message : String(err)}`);
                         }
-                        break;
+                    }
+                }
+                else if (data.type === 'ice_candidate') {
+                    if (data.ice) {
+                        try {
+                            const candidate = new RTCIceCandidate(data.ice);
 
-                    case 'error':
-                        console.error('Server error:', data.data);
-                        setError(data.data || 'Ошибка от сервера');
-                        break;
-
-                    default:
-                        console.log('Unhandled message type:', data.type);
+                            if (pc.current && pc.current.remoteDescription) {
+                                await pc.current.addIceCandidate(candidate);
+                            } else {
+                                pendingIceCandidates.current.push(candidate);
+                            }
+                        } catch (err) {
+                            console.error('Ошибка добавления ICE-кандидата:', err);
+                            setError('Ошибка добавления ICE-кандидата');
+                        }
+                    }
                 }
             } catch (err) {
                 console.error('Ошибка обработки сообщения:', err);
@@ -1140,24 +1121,9 @@ export const useWebRTC = (
         setError(null);
         setIsInRoom(false);
         setIsConnected(false);
-        setIsLeader(false);
+        setIsLeader(false); // Сбрасываем состояние при подключении
 
         try {
-            // Определяем платформу и выбираем предпочтительный кодек
-            const { isHuawei, isSafari, isIOS, isChrome } = detectPlatform();
-            let preferredCodec: string;
-
-            if (isHuawei) {
-                preferredCodec = 'H264'; // Huawei всегда использует H.264
-            } else if (isSafari || isIOS) {
-                preferredCodec = 'H264'; // Safari/iOS используют H.264
-            } else if (isChrome) {
-                preferredCodec = 'VP8';  // Chrome использует VP8
-            } else {
-                preferredCodec = 'H264'; // По умолчанию H.264
-            }
-            console.log("Selected preferredCodec:", preferredCodec);
-
             // 1. Подключаем WebSocket
             if (!(await connectWebSocket())) {
                 throw new Error('Не удалось подключиться к WebSocket');
@@ -1180,20 +1146,14 @@ export const useWebRTC = (
                 const onMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log("Received WebSocket message:", data);
                         if (data.type === 'room_info') {
-                            console.log("Room info received:", data);
                             cleanupEvents();
                             resolve();
                         } else if (data.type === 'error') {
-                            console.error("Server error:", data.data);
                             cleanupEvents();
                             reject(new Error(data.data || 'Ошибка входа в комнату'));
-                        } else {
-                            console.log("Unhandled message type:", data.type);
                         }
                     } catch (err) {
-                        console.error("Error parsing WebSocket message:", err);
                         cleanupEvents();
                         reject(err);
                     }
@@ -1209,25 +1169,22 @@ export const useWebRTC = (
                 connectionTimeout.current = setTimeout(() => {
                     cleanupEvents();
                     console.log('Таймаут ожидания ответа от сервера');
-                    reject(new Error('Таймаут ожидания ответа от сервера'));
                 }, 10000);
 
                 ws.current.addEventListener('message', onMessage);
 
-                const joinMessage = {
+                // Отправляем запрос на подключение с указанием роли
+                ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
-                    isLeader: false,
-                    preferredCodec
-                };
-                console.log("Sending join message:", joinMessage);
-                ws.current.send(JSON.stringify(joinMessage));
+                    isLeader: false // Браузер всегда ведомый
+                }));
             });
 
             // 4. Успешное подключение
             setIsInRoom(true);
-            shouldCreateOffer.current = false;
+            shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
             // 5. Запускаем таймер проверки видео
             startVideoCheckTimer();
@@ -1236,17 +1193,18 @@ export const useWebRTC = (
             console.error('Ошибка входа в комнату:', err);
             setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
 
+            // Полная очистка при ошибке
             cleanup();
             if (ws.current) {
                 ws.current.close();
                 ws.current = null;
             }
 
+            // Автоматическая повторная попытка
             if (retryAttempts.current < MAX_RETRIES) {
-                retryAttempts.current += 1;
                 setTimeout(() => {
                     joinRoom(uniqueUsername).catch(console.error);
-                }, 2000 * retryAttempts.current);
+                }, 2000 * (retryAttempts.current + 1));
             }
         }
     };
