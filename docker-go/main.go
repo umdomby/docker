@@ -51,7 +51,7 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
         log.Printf("Invalid codec %s, defaulting to H264", preferredCodec)
     }
 
-    // Найти payload types для targetCodec
+    // Найти payload types для целевого кодека
     codecRegex := regexp.MustCompile(fmt.Sprintf(`a=rtpmap:(\d+) %s/\d+`, targetCodec))
     for _, line := range lines {
         matches := codecRegex.FindStringSubmatch(line)
@@ -61,9 +61,32 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
         }
     }
 
-    if len(targetPayloadTypes) == 0 {
-        log.Printf("No payload types found for %s, returning original SDP", targetCodec)
-        return sdp
+    // Добавить H.264, если отсутствует
+    if len(targetPayloadTypes) == 0 && targetCodec == "H264" {
+        log.Printf("No H264 payload types found, adding manually")
+        targetPayloadTypes = []string{"126"}
+        h264Lines := []string{
+            "a=rtpmap:126 H264/90000",
+            "a=fmtp:126 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1",
+            "a=rtcp-fb:126 ccm fir",
+            "a=rtcp-fb:126 nack",
+            "a=rtcp-fb:126 nack pli",
+        }
+        videoSectionFound := false
+        for i, line := range lines {
+            if strings.HasPrefix(line, "m=video") {
+                videoSectionFound = true
+                newLines = append(lines[:i+1], append(h264Lines, lines[i+1:]...)...)
+                newLines[i] = "m=video 9 UDP/TLS/RTP/SAVPF 126"
+                break
+            }
+        }
+        if !videoSectionFound {
+            log.Printf("No m=video section found, returning original SDP")
+            return sdp
+        }
+    } else {
+        newLines = lines
     }
 
     // Удалить другие кодеки
@@ -71,62 +94,28 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
     if targetCodec == "VP8" {
         otherCodecs = []string{"H264", "VP9", "AV1"}
     }
-    for _, line := range lines {
+    filteredLines := []string{}
+    for _, line := range newLines {
         skip := false
         for _, codec := range otherCodecs {
             codecRegex := regexp.MustCompile(fmt.Sprintf(`a=rtpmap:(\d+) %s/\d+`, codec))
-            if codecRegex.MatchString(line) {
+            if codecRegex.MatchString(line) || strings.Contains(line, fmt.Sprintf("apt=%s", codec)) {
                 log.Printf("Skipping line with codec %s: %s", codec, line)
-                skip = true
-                break
-            }
-            if strings.Contains(line, "a=fmtp:") && strings.Contains(line, codec) {
-                log.Printf("Skipping fmtp line for %s: %s", codec, line)
-                skip = true
-                break
-            }
-            if strings.Contains(line, "a=rtcp-fb:") && strings.Contains(line, codec) {
-                log.Printf("Skipping rtcp-fb line for %s: %s", codec, line)
                 skip = true
                 break
             }
         }
         if !skip {
-            newLines = append(newLines, line)
+            filteredLines = append(filteredLines, line)
         }
     }
+    newLines = filteredLines
 
-    // Переупорядочить m=video
+    // Убедиться, что m=video содержит только целевой payload type
     for i, line := range newLines {
         if strings.HasPrefix(line, "m=video") {
-            parts := strings.Split(line, " ")
-            if len(parts) < 4 {
-                log.Printf("Invalid m=video line: %s", line)
-                return sdp
-            }
-            currentPayloads := parts[3:]
-            filteredPayloads := []string{}
-            for _, pt := range currentPayloads {
-                for _, line := range newLines {
-                    if strings.Contains(line, fmt.Sprintf("a=rtpmap:%s ", pt)) {
-                        filteredPayloads = append(filteredPayloads, pt)
-                        break
-                    }
-                }
-            }
-            preferredPayloads := []string{}
-            for _, pt := range targetPayloadTypes {
-                if contains(filteredPayloads, pt) {
-                    preferredPayloads = append(preferredPayloads, pt)
-                }
-            }
-            if len(preferredPayloads) == 0 {
-                log.Printf("No valid %s payload types found in m=video, keeping original", targetCodec)
-                return sdp
-            }
-            parts = append(parts[:3], preferredPayloads...)
-            newLines[i] = strings.Join(parts, " ")
-            log.Printf("Reordered m=video payloads: %v", parts[3:])
+            newLines[i] = fmt.Sprintf("m=video 9 UDP/TLS/RTP/SAVPF %s", targetPayloadTypes[0])
+            log.Printf("Updated m=video to use only %s payload type: %s", targetCodec, targetPayloadTypes[0])
             break
         }
     }
@@ -134,7 +123,7 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
     // Установить битрейт
     for i, line := range newLines {
         if strings.HasPrefix(line, "a=mid:video") {
-            newLines = append(newLines[:i+1], append([]string{fmt.Sprintf("b=AS:%d", 500)}, newLines[i+1:]...)...)
+            newLines = append(newLines[:i+1], append([]string{"b=AS:300"}, newLines[i+1:]...)...)
             break
         }
     }

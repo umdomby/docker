@@ -308,56 +308,111 @@ export const useWebRTC = (
     };
 
     const normalizeSdp = (sdp: string | undefined): string => {
-        if (!sdp) return '';
+        if (!sdp) {
+            console.warn('No SDP provided for normalization');
+            return '';
+        }
 
         const { isHuawei, isSafari, isIOS } = detectPlatform();
-
         let optimized = sdp;
 
-        optimized = optimized.replace(/a=rtpmap:(\d+) rtx\/\d+\r\n/gm, (match, pt) => {
-            // Проверяем, есть ли соответствующий H264 кодек
-            if (optimized.includes(`a=fmtp:${pt} apt=`)) {
-                return match; // Оставляем RTX для H264
+        // Найти payload types для видео
+        let videoPayloadTypes: string[] = [];
+        const lines = sdp.split('\n');
+        for (const line of lines) {
+            if (line.startsWith('m=video')) {
+                const parts = line.split(' ');
+                if (parts.length >= 4) {
+                    videoPayloadTypes = parts.slice(3);
+                    console.log(`Original m=video payload types: ${videoPayloadTypes.join(', ')}`);
+                }
+                break;
             }
-            return ''; // Удаляем RTX для других кодеков
-        });
-
-        // 2. Форсируем H.264 параметры
-        // optimized = optimized.replace(
-        //     /a=rtpmap:(\d+) H264\/\d+\r\n/g,
-        //     'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1\r\n'
-        // );
-
-        // Оптимизации только для Huawei
-        if (isHuawei) {
-            optimized = normalizeSdpForHuawei(optimized);
         }
 
-        // Специальные оптимизации для iOS/Safari
+        // Проверить наличие H.264
+        let h264PayloadType: string | null = null;
+        for (const pt of videoPayloadTypes) {
+            if (optimized.includes(`a=rtpmap:${pt} H264`)) {
+                h264PayloadType = pt;
+                break;
+            }
+        }
+
+        // Если H.264 отсутствует и preferredCodec === 'H264', добавить его
+        if (!h264PayloadType && preferredCodec === 'H264') {
+            console.log('H.264 not found in SDP, adding manually');
+            h264PayloadType = '126';
+            const h264Lines = [
+                `a=rtpmap:126 H264/90000`,
+                `a=fmtp:126 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1`,
+                `a=rtcp-fb:126 ccm fir`,
+                `a=rtcp-fb:126 nack`,
+                `a=rtcp-fb:126 nack pli`
+            ].join('\r\n') + '\r\n';
+
+            let newLines: string[] = [];
+            let videoSectionFound = false;
+            for (const line of lines) {
+                newLines.push(line);
+                if (line.startsWith('m=video') && !videoSectionFound) {
+                    videoSectionFound = true;
+                    newLines[newLines.length - 1] = line.replace(
+                        /(m=video\s+\d+\s+UDP\/TLS\/RTP\/SAVPF\s+)(.*)/,
+                        `$1${h264PayloadType} $2`
+                    );
+                    newLines.push(h264Lines);
+                }
+            }
+            optimized = newLines.join('\r\n');
+        }
+
+        // Приоритизировать H.264, если он есть
+        if (h264PayloadType && preferredCodec === 'H264') {
+            optimized = optimized.replace(
+                /^(m=video\s+\d+\s+UDP\/TLS\/RTP\/SAVPF\s+)(.*)$/gm,
+                (match, prefix, payloads) => {
+                    const payloadList = payloads.split(' ').filter((pt: string) =>
+                        pt === h264PayloadType ||
+                        (!optimized.includes(`a=rtpmap:${pt} VP8`) &&
+                            !optimized.includes(`a=rtpmap:${pt} VP9`) &&
+                            !optimized.includes(`a=rtpmap:${pt} AV1`))
+                    );
+                    return `${prefix}${payloadList.join(' ')}`;
+                }
+            );
+            console.log(`Reordered m=video to prioritize H.264 payload type: ${h264PayloadType}`);
+        } else if (!h264PayloadType && preferredCodec === 'H264') {
+            console.warn('H.264 not supported, falling back to VP8');
+            setError('H.264 не поддерживается, используется VP8');
+        }
+
+        // Применить оптимизации для iOS/Safari
         if (isIOS || isSafari) {
-            optimized = normalizeSdpForIOS(optimized);
+            optimized = optimized
+                .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
+                .replace(/a=ice-options:trickle\r\n/g, '')
+                .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '')
+                .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '')
+                .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:300\r\n');
         }
 
+        // Применить оптимизации для Huawei
+        if (isHuawei) {
+            optimized = optimized
+                .replace(/a=rtpmap:(\d+) H264\/\d+/g,
+                    'a=rtpmap:$1 H264/90000\r\n' +
+                    'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n')
+                .replace(/a=mid:video\r\n/g,
+                    'a=mid:video\r\n' +
+                    'b=AS:250\r\n' +
+                    'b=TIAS:250000\r\n' +
+                    'a=rtcp-fb:* ccm fir\r\n' +
+                    'a=rtcp-fb:* nack\r\n' +
+                    'a=rtcp-fb:* nack pli\r\n');
+        }
 
-        // Общие оптимизации для всех устройств
-        optimized = optimized
-            .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:150\r\nb=TIAS:500000\r\n')
-            .replace(/a=rtpmap:(\d+) H264\/\d+/g, 'a=rtpmap:$1 H264/90000\r\na=fmtp:$1 profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1')
-            .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
-            .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
-            .replace(/(a=fmtp:\d+ .*profile-level-id=.*\r\n)/g, 'a=fmtp:126 profile-level-id=42e01f\r\n')
-            .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '') // Отключаем REMB
-            .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '') // Отключаем transport-cc
-            .replace(/^(m=video.*?)((?:\s+\d+)+)/gm, (match, prefix, payloads) => {
-                // Оставляем только payload types, которые есть в оставшемся SDP
-                const allowedPayloads = Array.from(new Set(sdp.match(/a=rtpmap:(\d+)/g) || []))
-                    .map(m => m.replace('a=rtpmap:', ''));
-                const filtered = payloads.split(' ').filter((pt: string) => allowedPayloads.includes(pt));
-                return prefix + ' ' + filtered.join(' ');
-            })
-            .replace(/a=fmtp:\d+ .*\r\n/g, '');
-
-
+        console.log('Normalized SDP:\n', optimized);
         return optimized;
     };
 
@@ -545,7 +600,10 @@ export const useWebRTC = (
 
     // Функция для извлечения видеокодека из SDP
     const getVideoCodecFromSdp = (sdp: string | undefined): string | null => {
-        if (!sdp) return null;
+        if (!sdp) {
+            console.warn('No SDP provided');
+            return null;
+        }
         const lines = sdp.split('\n');
         let videoPayloadTypes: string[] = [];
 
@@ -554,7 +612,8 @@ export const useWebRTC = (
             if (line.startsWith('m=video')) {
                 const parts = line.split(' ');
                 if (parts.length >= 4) {
-                    videoPayloadTypes = parts.slice(3); // Payload types начинаются с 4-го элемента
+                    videoPayloadTypes = parts.slice(3);
+                    console.log(`Found m=video payload types: ${videoPayloadTypes.join(', ')}`);
                 }
                 break;
             }
@@ -658,10 +717,15 @@ export const useWebRTC = (
                             const codec = getVideoCodecFromSdp(normalizedAnswer.sdp);
                             if (codec) {
                                 console.log(`Кодек трансляции: ${codec}`);
-                                setActiveCodec(codec); // Update active codec
+                                setActiveCodec(codec);
+                                if (codec !== preferredCodec) {
+                                    console.warn(`Using codec ${codec} instead of preferred ${preferredCodec}`);
+                                    setError(`Используется кодек ${codec} вместо выбранного ${preferredCodec}`);
+                                }
                             } else {
                                 console.warn('Кодек не найден в SDP ответа');
                                 setActiveCodec(null);
+                                setError('Не удалось определить кодек трансляции');
                             }
 
                             ws.current.send(JSON.stringify({
