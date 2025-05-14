@@ -48,7 +48,7 @@ initializeMediaAPI() // Инициализируем MediaEngine при стар
 func initializeMediaAPI() {
     mediaEngine := &webrtc.MediaEngine{}
 
-    // Регистрируем H.264 с конкретными параметрами
+    // Регистрируем H.264
     if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
             MimeType:    webrtc.MimeTypeH264,
@@ -101,7 +101,7 @@ func initializeMediaAPI() {
     webrtcAPI = webrtc.NewAPI(
         webrtc.WithMediaEngine(mediaEngine),
     )
-    log.Println("MediaEngine initialized with H.264, VP8 (video) and Opus (audio)")
+    log.Println("MediaEngine initialized with H.264 (PT: 126), VP8 (PT: 96) for video and Opus (PT: 111) for audio")
 }
 
 // getWebRTCConfig осталась вашей функцией
@@ -210,6 +210,7 @@ peer.mu.Lock() // Блокируем конкретного пира
 }
 
 // handlePeerJoin осталась вашей функцией с изменениями для создания PeerConnection через webrtcAPI
+// handlePeerJoin обрабатывает присоединение пира к комнате
 func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn, preferredCodec string) (*Peer, error) {
     mu.Lock() // Блокируем для работы с глобальными комнатами
 
@@ -247,7 +248,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         if codec == "" {
             codec = "H264"
         }
-        log.Printf("Follower %s prefers codec: %s", username, codec)
+        log.Printf("Follower %s prefers codec: %s in room %s", username, codec, room)
 
         for _, p := range roomPeers {
             if !p.isLeader { // Ищем существующего ведомого
@@ -268,7 +269,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
             }
             mu.Unlock()
             // Отправляем команду на отключение и закрываем ресурсы старого ведомого
-            existingFollower.mu.Lock()
+            existingFollower.mu.Lock() // Исправлено: Latck → Lock
             if existingFollower.conn != nil {
                 _ = existingFollower.conn.WriteJSON(map[string]interface{}{
                     "type": "force_disconnect",
@@ -303,6 +304,8 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
                 mu.Lock()
                 if err != nil {
                     log.Printf("Error sending rejoin_and_offer command to leader %s: %v", leaderPeer.username, err)
+                } else {
+                    log.Printf("Successfully sent rejoin_and_offer with codec %s to leader %s", codec, leaderPeer.username)
                 }
             } else {
                 log.Printf("Leader %s has no active WebSocket connection to send rejoin_and_offer.", leaderPeer.username)
