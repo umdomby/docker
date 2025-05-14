@@ -46,9 +46,9 @@ initializeMediaAPI() // Инициализируем MediaEngine при стар
 
 // initializeMediaAPI настраивает MediaEngine только с H.264 и Opus
 func initializeMediaAPI() {
-mediaEngine := &webrtc.MediaEngine{}
+    mediaEngine := &webrtc.MediaEngine{}
 
-    // Регистрируем только H.264 с конкретными параметрами
+    // Регистрируем H.264 с конкретными параметрами
     if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
         RTPCodecCapability: webrtc.RTPCodecCapability{
             MimeType:    webrtc.MimeTypeH264,
@@ -64,6 +64,23 @@ mediaEngine := &webrtc.MediaEngine{}
         PayloadType: 126,
     }, webrtc.RTPCodecTypeVideo); err != nil {
         panic(fmt.Sprintf("H264 codec registration error: %v", err))
+    }
+
+    // Регистрируем VP8
+    if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+        RTPCodecCapability: webrtc.RTPCodecCapability{
+            MimeType:    webrtc.MimeTypeVP8,
+            ClockRate:   90000,
+            RTCPFeedback: []webrtc.RTCPFeedback{
+                {Type: "nack"},
+                {Type: "nack", Parameter: "pli"},
+                {Type: "ccm", Parameter: "fir"},
+                {Type: "goog-remb"},
+            },
+        },
+        PayloadType: 96,
+    }, webrtc.RTPCodecTypeVideo); err != nil {
+        panic(fmt.Sprintf("VP8 codec registration error: %v", err))
     }
 
     // Регистрируем Opus аудио
@@ -84,7 +101,7 @@ mediaEngine := &webrtc.MediaEngine{}
     webrtcAPI = webrtc.NewAPI(
         webrtc.WithMediaEngine(mediaEngine),
     )
-    log.Println("MediaEngine initialized with H.264 (video) and Opus (audio) only")
+    log.Println("MediaEngine initialized with H.264, VP8 (video) and Opus (audio)")
 }
 
 // getWebRTCConfig осталась вашей функцией
@@ -193,8 +210,8 @@ peer.mu.Lock() // Блокируем конкретного пира
 }
 
 // handlePeerJoin осталась вашей функцией с изменениями для создания PeerConnection через webrtcAPI
-func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn) (*Peer, error) {
-mu.Lock() // Блокируем для работы с глобальными комнатами
+func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn, preferredCodec string) (*Peer, error) {
+    mu.Lock() // Блокируем для работы с глобальными комнатами
 
     if _, exists := rooms[room]; !exists {
         if !isLeader {
@@ -208,7 +225,7 @@ mu.Lock() // Блокируем для работы с глобальными к
 
     roomPeers := rooms[room] // Получаем ссылку на мапу пиров комнаты
 
-    // Логика замены ведомого (ваша логика)
+    // Логика замены ведомого
     if !isLeader {
         hasLeader := false
         for _, p := range roomPeers {
@@ -225,6 +242,13 @@ mu.Lock() // Блокируем для работы с глобальными к
         }
 
         var existingFollower *Peer
+        // Используем переданный preferredCodec, по умолчанию H.264
+        codec := preferredCodec
+        if codec == "" {
+            codec = "H264"
+        }
+        log.Printf("Follower %s prefers codec: %s", username, codec)
+
         for _, p := range roomPeers {
             if !p.isLeader { // Ищем существующего ведомого
                 existingFollower = p
@@ -242,21 +266,18 @@ mu.Lock() // Блокируем для работы с глобальными к
                     break
                 }
             }
-            // Важно: разблокировать глобальный мьютекс перед тем, как делать что-то с existingFollower.conn,
-            // чтобы избежать дедлока, если existingFollower.mu попытается заблокироваться,
-            // а другой поток держит глобальный mu и ждет existingFollower.mu
             mu.Unlock()
             // Отправляем команду на отключение и закрываем ресурсы старого ведомого
             existingFollower.mu.Lock()
             if existingFollower.conn != nil {
                 _ = existingFollower.conn.WriteJSON(map[string]interface{}{
                     "type": "force_disconnect",
-                        "data": "You have been replaced by another viewer",
+                    "data": "You have been replaced by another viewer",
                 })
             }
             existingFollower.mu.Unlock()
             go closePeerResources(existingFollower, "Replaced by new follower")
-            mu.Lock() // Снова блокируем для дальнейшей работы
+            mu.Lock()
         }
 
         var leaderPeer *Peer
@@ -267,16 +288,19 @@ mu.Lock() // Блокируем для работы с глобальными к
             }
         }
         if leaderPeer != nil {
-            log.Printf("Sending rejoin_and_offer command to leader %s for new follower %s", leaderPeer.username, username)
-            leaderPeer.mu.Lock() // Блокируем лидера для безопасного доступа к его conn
+            log.Printf("Sending rejoin_and_offer command to leader %s for new follower %s with codec %s", leaderPeer.username, username, codec)
+            leaderPeer.mu.Lock()
             leaderWsConn := leaderPeer.conn
-            leaderPeer.mu.Unlock() // Разблокируем лидера
+            leaderPeer.mu.Unlock()
 
             if leaderWsConn != nil {
-                // Разблокируем глобальный мьютекс перед отправкой по WebSocket
                 mu.Unlock()
-                err := leaderWsConn.WriteJSON(map[string]interface{}{"type": "rejoin_and_offer", "room": room})
-                mu.Lock() // Снова блокируем
+                err := leaderWsConn.WriteJSON(map[string]interface{}{
+                    "type":           "rejoin_and_offer",
+                    "room":           room,
+                    "preferredCodec": codec,
+                })
+                mu.Lock()
                 if err != nil {
                     log.Printf("Error sending rejoin_and_offer command to leader %s: %v", leaderPeer.username, err)
                 }
@@ -288,13 +312,13 @@ mu.Lock() // Блокируем для работы с глобальными к
         }
     }
 
-    // ИСПОЛЬЗУЕМ webrtcAPI для создания PeerConnection
+    // Создаем PeerConnection с поддержкой обоих кодеков
     peerConnection, err := webrtcAPI.NewPeerConnection(getWebRTCConfig())
     if err != nil {
         mu.Unlock()
         return nil, fmt.Errorf("failed to create PeerConnection: %w", err)
     }
-    log.Printf("PeerConnection created for %s using H.264/Opus MediaEngine.", username)
+    log.Printf("PeerConnection created for %s using H.264/VP8 MediaEngine.", username)
 
     peer := &Peer{
         conn:     conn,
@@ -326,7 +350,7 @@ mu.Lock() // Блокируем для работы с глобальными к
         log.Printf("Failed to add audio transceiver for %s: %v", username, err)
     }
 
-    // Настройка обработчиков ICE кандидатов и треков (ваша логика)
+    // Настройка обработчиков ICE кандидатов и треков
     peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
         if c == nil {
             return
@@ -334,7 +358,6 @@ mu.Lock() // Блокируем для работы с глобальными к
         peer.mu.Lock()
         defer peer.mu.Unlock()
         if peer.conn != nil {
-            // log.Printf("Sending ICE candidate from %s: %s", peer.username, c.ToJSON().Candidate)
             err := peer.conn.WriteJSON(map[string]interface{}{"type": "ice_candidate", "ice": c.ToJSON()})
             if err != nil {
                 log.Printf("Error sending ICE candidate to %s: %v", peer.username, err)
@@ -342,33 +365,32 @@ mu.Lock() // Блокируем для работы с глобальными к
         }
     })
 
-    // OnTrack обычно для отвечающей стороны (ведомого), чтобы получать треки.
-    // Лидер (Android) сам добавляет треки, серверу их слушать не обязательно, если он просто ретранслятор.
     if !isLeader {
         peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
             log.Printf("Track received for follower %s in room %s: Codec %s",
                 peer.username, peer.room, track.Codec().MimeType)
-            // Для простого ретранслятора этот трек не нужно обрабатывать на сервере,
-            // Pion автоматически перенаправит его другому пиру, если настроены трансиверы.
-            // В вашем случае, браузер (ведомый) будет получать трек от Android (лидера).
-            // Этот колбек полезен для отладки.
-            // Чтобы избежать утечек, можно запустить "пожиратель" данных трека, если трек не используется:
-            // go func() {
-            // 	buffer := make([]byte, 1500)
-            // 	for {
-            // 		_, _, readErr := track.Read(buffer)
-            // 		if readErr != nil {
-            // 			return
-            // 		}
-            // 	}
-            // }()
         })
     }
 
     rooms[room][username] = peer
     peers[conn.RemoteAddr().String()] = peer
-    mu.Unlock() // Разблокируем глобальный мьютекс
 
+    // Отправляем room_info клиенту
+    err = conn.WriteJSON(map[string]interface{}{
+        "type": "room_info",
+        "data": map[string]interface{}{
+            "room":     room,
+            "username": username,
+            "isLeader": isLeader,
+        },
+    })
+    if err != nil {
+        log.Printf("Error sending room_info to %s: %v", username, err)
+    } else {
+        log.Printf("Sent room_info to %s", username)
+    }
+
+    mu.Unlock()
     return peer, nil
 }
 
@@ -395,18 +417,19 @@ func main() {
 
 // handleWebSocket осталась вашей функцией с минимальными изменениями для очистки
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-conn, err := upgrader.Upgrade(w, r, nil)
-if err != nil {
-log.Println("WebSocket upgrade error:", err)
-return
-}
-remoteAddr := conn.RemoteAddr().String()
-log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
+    conn, err := upgrader.Upgrade(w, r, nil)
+    if err != nil {
+        log.Println("WebSocket upgrade error:", err)
+        return
+    }
+    remoteAddr := conn.RemoteAddr().String()
+    log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
 
     var initData struct {
-        Room     string `json:"room"`
-        Username string `json:"username"`
-        IsLeader bool   `json:"isLeader"`
+        Room           string `json:"room"`
+        Username       string `json:"username"`
+        IsLeader       bool   `json:"isLeader"`
+        PreferredCodec string `json:"preferredCodec"` // Добавляем поле для кодека
     }
     conn.SetReadDeadline(time.Now().Add(10 * time.Second))
     err = conn.ReadJSON(&initData)
@@ -424,9 +447,10 @@ log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
         return
     }
 
-    log.Printf("User '%s' (isLeader: %v) attempting to join room '%s' from %s", initData.Username, initData.IsLeader, initData.Room, remoteAddr)
+    log.Printf("User '%s' (isLeader: %v, preferredCodec: %s) attempting to join room '%s' from %s",
+        initData.Username, initData.IsLeader, initData.PreferredCodec, initData.Room, remoteAddr)
 
-    currentPeer, err := handlePeerJoin(initData.Room, initData.Username, initData.IsLeader, conn)
+    currentPeer, err := handlePeerJoin(initData.Room, initData.Username, initData.IsLeader, conn, initData.PreferredCodec)
     if err != nil {
         log.Printf("Error handling peer join for %s: %v", initData.Username, err)
         return
@@ -440,13 +464,13 @@ log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
     logStatus()
     sendRoomInfo(currentPeer.room)
 
-    // Цикл чтения сообщений от клиента (ваша логика)
+    // Цикл чтения сообщений от клиента (без изменений)
     for {
-        msgType, msgBytes, err := conn.ReadMessage() // Читаем как байты, чтобы пересылать без изменений
+        msgType, msgBytes, err := conn.ReadMessage()
         if err != nil {
             if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived) {
                 log.Printf("Unexpected WebSocket close error for %s (%s): %v", currentPeer.username, remoteAddr, err)
-            } else { // Более общее логгирование для остальных ошибок/закрытий
+            } else {
                 log.Printf("WebSocket connection closed/read error for %s (%s): %v", currentPeer.username, remoteAddr, err)
             }
             break
@@ -457,19 +481,14 @@ log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
             continue
         }
         if len(msgBytes) == 0 {
-            // log.Printf("Empty message from %s", currentPeer.username) // Могут быть keep-alive пинги
             continue
         }
 
-        // Парсим JSON только для определения типа и логгирования, но пересылаем исходные байты
         var data map[string]interface{}
-        // Необязательно анмаршалить, если мы просто пересылаем. Но для логгирования типа это полезно.
         if err := json.Unmarshal(msgBytes, &data); err != nil {
             log.Printf("JSON unmarshal error (for logging type) from %s: %v. Message: %s. Forwarding raw.", currentPeer.username, err, string(msgBytes))
-            // Все равно пытаемся переслать, если это критичное сообщение
         }
         dataType, _ := data["type"].(string)
-
 
         mu.Lock()
         roomPeers := rooms[currentPeer.room]
@@ -485,89 +504,88 @@ log.Printf("New WebSocket connection attempt from: %s", remoteAddr)
         mu.Unlock()
 
         if targetPeer == nil && (dataType == "offer" || dataType == "answer" || dataType == "ice_candidate") {
-            // log.Printf("No target peer in room %s for signaling message '%s' from %s. Ignoring.", currentPeer.room, dataType, currentPeer.username)
             continue
         }
 
-        // Логика пересылки сообщений (ваша логика)
-        // Важно: пересылаем исходные msgBytes, а не перекодированный data
         switch dataType {
-            case "offer":
-                // log.Printf("Received offer from %s: %s", currentPeer.username, string(msgBytes)) // Лог SDP может быть большим
-                if currentPeer.isLeader && targetPeer != nil && !targetPeer.isLeader {
-                    // log.Printf(">>> Forwarding Offer from %s to %s", currentPeer.username, targetPeer.username)
-                    targetPeer.mu.Lock()
-                    targetWsConn := targetPeer.conn
-                    targetPeer.mu.Unlock()
-                    if targetWsConn != nil {
-                        if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
-                            log.Printf("!!! Error forwarding offer to %s: %v", targetPeer.username, err)
-                        }
-                    }
-                } // else { log.Printf("WARN: Received 'offer' from non-leader or no target.")}
-
-            case "answer":
-                if targetPeer != nil && !currentPeer.isLeader && targetPeer.isLeader {
-                    // log.Printf("<<< Forwarding Answer from %s to %s", currentPeer.username, targetPeer.username)
-                    targetPeer.mu.Lock()
-                    targetWsConn := targetPeer.conn
-                    targetPeer.mu.Unlock()
-                    if targetWsConn != nil {
-                        if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
-                            log.Printf("!!! Error forwarding answer to %s: %v", targetPeer.username, err)
-                        }
-                    }
-                } // else { log.Printf("WARN: Received 'answer' from non-follower or no target leader.")}
-
-            case "ice_candidate":
-                if targetPeer != nil {
-                    // log.Printf("... Forwarding ICE candidate from %s to %s", currentPeer.username, targetPeer.username)
-                    targetPeer.mu.Lock()
-                    targetWsConn := targetPeer.conn
-                    targetPeer.mu.Unlock()
-                    if targetWsConn != nil {
-                        if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
-                            // log.Printf("!!! Error forwarding ICE candidate to %s: %v", targetPeer.username, err)
-                        }
+        case "offer":
+            log.Printf("Received offer from %s: %s", currentPeer.username, string(msgBytes))
+            if currentPeer.isLeader && targetPeer != nil && !targetPeer.isLeader {
+                log.Printf(">>> Forwarding Offer from %s to %s", currentPeer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                targetWsConn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if targetWsConn != nil {
+                    if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+                        log.Printf("!!! Error forwarding offer to %s: %v", targetPeer.username, err)
                     }
                 }
+            } else {
+                log.Printf("WARN: Received 'offer' from non-leader or no target.")
+            }
 
-            case "switch_camera": // Ваше пользовательское сообщение
-                if targetPeer != nil {
-                    log.Printf("Forwarding '%s' message from %s to %s", dataType, currentPeer.username, targetPeer.username)
-                    targetPeer.mu.Lock()
-                    targetWsConn := targetPeer.conn
-                    targetPeer.mu.Unlock()
-                    if targetWsConn != nil {
-                        if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
-                            log.Printf("Error forwarding '%s' to %s: %v", dataType, targetPeer.username, err)
-                        }
+        case "answer":
+            if targetPeer != nil && !currentPeer.isLeader && targetPeer.isLeader {
+                log.Printf("<<< Forwarding Answer from %s to %s", currentPeer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                targetWsConn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if targetWsConn != nil {
+                    if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+                        log.Printf("!!! Error forwarding answer to %s: %v", targetPeer.username, err)
                     }
                 }
-            default:
-            // log.Printf("Ignoring message with type '%s' from %s", dataType, currentPeer.username)
+            } else {
+                log.Printf("WARN: Received 'answer' from non-follower or no target leader.")
+            }
+
+        case "ice_candidate":
+            if targetPeer != nil {
+                log.Printf("... Forwarding ICE candidate from %s to %s", currentPeer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                targetWsConn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if targetWsConn != nil {
+                    if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+                    }
+                }
+            }
+
+        case "switch_camera":
+            if targetPeer != nil {
+                log.Printf("Forwarding '%s' message from %s to %s", dataType, currentPeer.username, targetPeer.username)
+                targetPeer.mu.Lock()
+                targetWsConn := targetPeer.conn
+                targetPeer.mu.Unlock()
+                if targetWsConn != nil {
+                    if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+                        log.Printf("Error forwarding '%s' to %s: %v", dataType, targetPeer.username, err)
+                    }
+                }
+            }
+        default:
+            log.Printf("Ignoring message with type '%s' from %s", dataType, currentPeer.username)
         }
     }
 
-    // Очистка после завершения цикла чтения
     log.Printf("Cleaning up for %s (Addr: %s) in room %s after WebSocket loop ended.", currentPeer.username, remoteAddr, currentPeer.room)
-    go closePeerResources(currentPeer, "WebSocket read loop ended") // Используем унифицированную функцию
+    go closePeerResources(currentPeer, "WebSocket read loop ended")
 
     mu.Lock()
-    roomName := currentPeer.room // Сохраняем имя комнаты для sendRoomInfo
+    roomName := currentPeer.room
     if currentRoomPeers, roomExists := rooms[roomName]; roomExists {
         delete(currentRoomPeers, currentPeer.username)
         if len(currentRoomPeers) == 0 {
             delete(rooms, roomName)
             log.Printf("Room %s is now empty and has been deleted.", roomName)
-            roomName = "" // Устанавливаем в "", чтобы не вызывать sendRoomInfo для удаленной комнаты
+            roomName = ""
         }
     }
-    delete(peers, remoteAddr) // Удаляем из глобального списка
+    delete(peers, remoteAddr)
     mu.Unlock()
 
     logStatus()
-    if roomName != "" { // Отправляем room_info, только если комната еще существует
+    if roomName != "" {
         sendRoomInfo(roomName)
     }
     log.Printf("Cleanup complete for WebSocket connection %s (User: %s)", remoteAddr, currentPeer.username)

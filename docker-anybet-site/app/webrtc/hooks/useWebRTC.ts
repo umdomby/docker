@@ -249,12 +249,14 @@ export const useWebRTC = (
         if (!(await initializeWebRTC())) {
             return;
         }
-
+        const preferredCodec = 'H264'; // Всегда H.264
         if (ws.current?.readyState === WebSocket.OPEN) {
             ws.current.send(JSON.stringify({
                 action: "join",
                 room: roomId,
-                username: uniqueUsername
+                username: uniqueUsername,
+                isLeader: false,
+                preferredCodec // VP8 для Chrome, H264 для остальных
             }));
             setIsInRoom(true);
 
@@ -269,7 +271,9 @@ export const useWebRTC = (
                     type: "offer",
                     sdp: offer,
                     room: roomId,
-                    username: uniqueUsername
+                    username: uniqueUsername,
+                    isLeader: false,
+                    preferredCodec
                 }));
                 setIsCallActive(true);
             }

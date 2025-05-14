@@ -1136,7 +1136,11 @@ export const useWebRTC = (
                 throw new Error('Не удалось инициализировать WebRTC');
             }
 
-            // 3. Отправляем запрос на присоединение к комнате
+            // 3. Определяем предпочтительный кодек в зависимости от устройства
+            const { isChrome } = detectPlatform();
+            const preferredCodec = isChrome ? 'VP8' : 'H264'; // VP8 для Chrome, H264 для остальных
+
+            // 4. Отправляем запрос на присоединение к комнате с указанием кодека
             await new Promise<void>((resolve, reject) => {
                 if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
                     reject(new Error('WebSocket не подключен'));
@@ -1171,22 +1175,25 @@ export const useWebRTC = (
                     console.log('Таймаут ожидания ответа от сервера');
                 }, 10000);
 
-                ws.current.addEventListener('message', onMessage);
+                ws.current.addEventListener('message', (event) => {
+                    console.log('WebSocket message received:', event.data);
+                });
 
-                // Отправляем запрос на подключение с указанием роли
+                // Отправляем запрос на подключение с указанием роли и кодека
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
-                    isLeader: false // Браузер всегда ведомый
+                    isLeader: false, // Браузер всегда ведомый
+                    preferredCodec // Добавляем предпочтительный кодек
                 }));
             });
 
-            // 4. Успешное подключение
+            // 5. Успешное подключение
             setIsInRoom(true);
             shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
-            // 5. Запускаем таймер проверки видео
+            // 6. Запускаем таймер проверки видео
             startVideoCheckTimer();
 
         } catch (err) {
