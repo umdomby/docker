@@ -1,15 +1,16 @@
 package main
 import (
 "encoding/json"
-"errors"
-"fmt"
-"log"
-"net/http"
-"sync"
-"time"
-
-"github.com/gorilla/websocket"
-"github.com/pion/webrtc/v3"
+    "errors"
+    "fmt"
+    "log"
+    "net/http"
+    "regexp" // Добавлено для normalizeSdpForCodec
+    "strings" // Добавлено для normalizeSdpForCodec
+    "sync"
+    "time"
+    "github.com/gorilla/websocket"
+    "github.com/pion/webrtc/v3"
 )
 
 var upgrader = websocket.Upgrader{
@@ -39,48 +40,178 @@ mu        sync.Mutex
 webrtcAPI *webrtc.API // Глобальный API с настроенным MediaEngine
 )
 
-func init() {
-// rand.Seed(time.Now().UnixNano()) // Закомментировано, т.к. randSeq не используется. Если будете использовать math/rand, раскомментируйте.
-initializeMediaAPI() // Инициализируем MediaEngine при старте
-}
-
-// initializeMediaAPI настраивает MediaEngine только с H.264 и Opus
-func initializeMediaAPI() {
-    mediaEngine := &webrtc.MediaEngine{}
-
-    // Регистрируем H.264
-    if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
-        RTPCodecCapability: webrtc.RTPCodecCapability{
-            MimeType:    webrtc.MimeTypeH264,
-            ClockRate:   90000,
-            SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
-            RTCPFeedback: []webrtc.RTCPFeedback{
-                {Type: "nack"},
-                {Type: "nack", Parameter: "pli"},
-                {Type: "ccm", Parameter: "fir"},
-                {Type: "goog-remb"},
-            },
-        },
-        PayloadType: 126,
-    }, webrtc.RTPCodecTypeVideo); err != nil {
-        panic(fmt.Sprintf("H264 codec registration error: %v", err))
+func normalizeSdpForCodec(sdp, preferredCodec string) string {
+    log.Printf("Normalizing SDP for codec: %s", preferredCodec)
+    lines := strings.Split(sdp, "\r\n")
+    var newLines []string
+    targetPayloadTypes := []string{}
+    targetCodec := preferredCodec
+    if targetCodec != "H264" && targetCodec != "VP8" {
+        targetCodec = "H264"
+        log.Printf("Invalid codec %s, defaulting to H264", preferredCodec)
     }
 
-    // Регистрируем VP8
-    if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
-        RTPCodecCapability: webrtc.RTPCodecCapability{
-            MimeType:    webrtc.MimeTypeVP8,
-            ClockRate:   90000,
-            RTCPFeedback: []webrtc.RTCPFeedback{
-                {Type: "nack"},
-                {Type: "nack", Parameter: "pli"},
-                {Type: "ccm", Parameter: "fir"},
-                {Type: "goog-remb"},
+    // Найти payload types для targetCodec
+    codecRegex := regexp.MustCompile(fmt.Sprintf(`a=rtpmap:(\d+) %s/\d+`, targetCodec))
+    for _, line := range lines {
+        matches := codecRegex.FindStringSubmatch(line)
+        if matches != nil {
+            targetPayloadTypes = append(targetPayloadTypes, matches[1])
+        }
+    }
+
+    if len(targetPayloadTypes) == 0 {
+        log.Printf("No payload types found for %s, returning original SDP", targetCodec)
+        return sdp
+    }
+
+    // Удалить другие кодеки
+    otherCodecs := []string{"VP8", "VP9", "AV1"}
+    if targetCodec == "VP8" {
+        otherCodecs = []string{"H264", "VP9", "AV1"}
+    }
+    for _, line := range lines {
+        skip := false
+        for _, codec := range otherCodecs {
+            if strings.Contains(line, fmt.Sprintf("a=rtpmap:%%d %s/", codec)) {
+                skip = true
+                break
+            }
+            if strings.Contains(line, "a=fmtp:") && strings.Contains(line, codec) {
+                skip = true
+                break
+            }
+            if strings.Contains(line, "a=rtcp-fb:") && strings.Contains(line, codec) {
+                skip = true
+                break
+            }
+        }
+        if !skip {
+            newLines = append(newLines, line)
+        }
+    }
+
+    // Переупорядочить m=video
+    for i, line := range newLines {
+        if strings.HasPrefix(line, "m=video") {
+            parts := strings.Split(line, " ")
+            if len(parts) < 4 {
+                log.Printf("Invalid m=video line: %s", line)
+                return sdp
+            }
+            currentPayloads := parts[3:]
+            filteredPayloads := []string{}
+            for _, pt := range currentPayloads {
+                for _, line := range newLines {
+                    if strings.Contains(line, fmt.Sprintf("a=rtpmap:%s ", pt)) {
+                        filteredPayloads = append(filteredPayloads, pt)
+                        break
+                    }
+                }
+            }
+            preferredPayloads := []string{}
+            for _, pt := range targetPayloadTypes {
+                if contains(filteredPayloads, pt) {
+                    preferredPayloads = append(preferredPayloads, pt)
+                }
+            }
+            otherPayloads := []string{}
+            for _, pt := range filteredPayloads {
+                if !contains(targetPayloadTypes, pt) {
+                    otherPayloads = append(otherPayloads, pt)
+                }
+            }
+            parts = append(parts[:3], append(preferredPayloads, otherPayloads...)...)
+            newLines[i] = strings.Join(parts, " ")
+            log.Printf("Reordered m=video payloads: %v", parts[3:])
+            break
+        }
+    }
+
+    // Установить битрейт
+    for i, line := range newLines {
+        if strings.HasPrefix(line, "a=mid:video") {
+            newLines = append(newLines[:i+1], append([]string{fmt.Sprintf("b=AS:%d", 500)}, newLines[i+1:]...)...)
+            break
+        }
+    }
+
+    newSdp := strings.Join(newLines, "\r\n")
+    log.Printf("Normalized SDP:\n%s", newSdp)
+    return newSdp
+}
+
+// contains проверяет, есть ли элемент в срезе
+func contains(slice []string, item string) bool {
+    for _, s := range slice {
+        if s == item {
+            return true
+        }
+    }
+    return false
+}
+
+
+// createMediaEngine создает MediaEngine с учетом preferredCodec
+func createMediaEngine(preferredCodec string) *webrtc.MediaEngine {
+    mediaEngine := &webrtc.MediaEngine{}
+
+    if preferredCodec == "H264" {
+        // Регистрируем только H.264
+        if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+            RTPCodecCapability: webrtc.RTPCodecCapability{
+                MimeType:    webrtc.MimeTypeH264,
+                ClockRate:   90000,
+                SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+                RTCPFeedback: []webrtc.RTCPFeedback{
+                    {Type: "nack"},
+                    {Type: "nack", Parameter: "pli"},
+                    {Type: "ccm", Parameter: "fir"},
+                    {Type: "goog-remb"},
+                },
             },
-        },
-        PayloadType: 96,
-    }, webrtc.RTPCodecTypeVideo); err != nil {
-        panic(fmt.Sprintf("VP8 codec registration error: %v", err))
+            PayloadType: 126,
+        }, webrtc.RTPCodecTypeVideo); err != nil {
+            log.Printf("H264 codec registration error: %v", err)
+        }
+        log.Printf("MediaEngine configured with H.264 (PT: 126) only")
+    } else if preferredCodec == "VP8" {
+        // Регистрируем только VP8
+        if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+            RTPCodecCapability: webrtc.RTPCodecCapability{
+                MimeType:    webrtc.MimeTypeVP8,
+                ClockRate:   90000,
+                RTCPFeedback: []webrtc.RTCPFeedback{
+                    {Type: "nack"},
+                    {Type: "nack", Parameter: "pli"},
+                    {Type: "ccm", Parameter: "fir"},
+                    {Type: "goog-remb"},
+                },
+            },
+            PayloadType: 96,
+        }, webrtc.RTPCodecTypeVideo); err != nil {
+            log.Printf("VP8 codec registration error: %v", err)
+        }
+        log.Printf("MediaEngine configured with VP8 (PT: 96) only")
+    } else {
+        // По умолчанию H.264
+        if err := mediaEngine.RegisterCodec(webrtc.RTPCodecParameters{
+            RTPCodecCapability: webrtc.RTPCodecCapability{
+                MimeType:    webrtc.MimeTypeH264,
+                ClockRate:   90000,
+                SDPFmtpLine: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+                RTCPFeedback: []webrtc.RTCPFeedback{
+                    {Type: "nack"},
+                    {Type: "nack", Parameter: "pli"},
+                    {Type: "ccm", Parameter: "fir"},
+                    {Type: "goog-remb"},
+                },
+            },
+            PayloadType: 126,
+        }, webrtc.RTPCodecTypeVideo); err != nil {
+            log.Printf("H264 codec registration error: %v", err)
+        }
+        log.Printf("MediaEngine configured with default H.264 (PT: 126)")
     }
 
     // Регистрируем Opus аудио
@@ -94,14 +225,24 @@ func initializeMediaAPI() {
         },
         PayloadType: 111,
     }, webrtc.RTPCodecTypeAudio); err != nil {
-        panic(fmt.Sprintf("Opus codec registration error: %v", err))
+        log.Printf("Opus codec registration error: %v", err)
     }
 
-    // Создаем API с нашими настройками
+    return mediaEngine
+}
+
+func init() {
+    // rand.Seed(time.Now().UnixNano()) // Закомментировано, т.к. randSeq не используется. Если будете использовать math/rand, раскомментируйте.
+    initializeMediaAPI() // Инициализируем MediaEngine при старте
+}
+
+// initializeMediaAPI настраивает MediaEngine только с H.264 и Opus
+func initializeMediaAPI() {
+    mediaEngine := createMediaEngine("H264")
     webrtcAPI = webrtc.NewAPI(
         webrtc.WithMediaEngine(mediaEngine),
     )
-    log.Println("MediaEngine initialized with H.264 (PT: 126), VP8 (PT: 96) for video and Opus (PT: 111) for audio")
+    log.Println("Global MediaEngine initialized with H.264 (PT: 126) and Opus (PT: 111)")
 }
 
 // getWebRTCConfig осталась вашей функцией
@@ -269,7 +410,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
             }
             mu.Unlock()
             // Отправляем команду на отключение и закрываем ресурсы старого ведомого
-            existingFollower.mu.Lock() // Исправлено: Latck → Lock
+            existingFollower.mu.Lock()
             if existingFollower.conn != nil {
                 _ = existingFollower.conn.WriteJSON(map[string]interface{}{
                     "type": "force_disconnect",
@@ -315,13 +456,15 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         }
     }
 
-    // Создаем PeerConnection с поддержкой обоих кодеков
-    peerConnection, err := webrtcAPI.NewPeerConnection(getWebRTCConfig())
+    // Создаем PeerConnection с учетом preferredCodec
+    mediaEngine := createMediaEngine(preferredCodec)
+    peerAPI := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
+    peerConnection, err := peerAPI.NewPeerConnection(getWebRTCConfig())
     if err != nil {
         mu.Unlock()
         return nil, fmt.Errorf("failed to create PeerConnection: %w", err)
     }
-    log.Printf("PeerConnection created for %s using H.264/VP8 MediaEngine.", username)
+    log.Printf("PeerConnection created for %s with preferred codec %s", username, preferredCodec)
 
     peer := &Peer{
         conn:     conn,
@@ -432,7 +575,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
         Room           string `json:"room"`
         Username       string `json:"username"`
         IsLeader       bool   `json:"isLeader"`
-        PreferredCodec string `json:"preferredCodec"` // Добавляем поле для кодека
+        PreferredCodec string `json:"preferredCodec"`
     }
     conn.SetReadDeadline(time.Now().Add(10 * time.Second))
     err = conn.ReadJSON(&initData)
@@ -467,7 +610,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
     logStatus()
     sendRoomInfo(currentPeer.room)
 
-    // Цикл чтения сообщений от клиента (без изменений)
+    // Цикл чтения сообщений от клиента
     for {
         msgType, msgBytes, err := conn.ReadMessage()
         if err != nil {
@@ -515,6 +658,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
             log.Printf("Received offer from %s: %s", currentPeer.username, string(msgBytes))
             if currentPeer.isLeader && targetPeer != nil && !targetPeer.isLeader {
                 log.Printf(">>> Forwarding Offer from %s to %s", currentPeer.username, targetPeer.username)
+                // Нормализуем SDP
+                preferredCodec, _ := data["preferredCodec"].(string)
+                if preferredCodec == "" {
+                    preferredCodec = initData.PreferredCodec
+                    if preferredCodec == "" {
+                        preferredCodec = "H264"
+                    }
+                }
+                if sdp, ok := data["sdp"].(string); ok {
+                    data["sdp"] = normalizeSdpForCodec(sdp, preferredCodec)
+                    msgBytes, _ = json.Marshal(data)
+                }
                 targetPeer.mu.Lock()
                 targetWsConn := targetPeer.conn
                 targetPeer.mu.Unlock()
@@ -530,6 +685,18 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
         case "answer":
             if targetPeer != nil && !currentPeer.isLeader && targetPeer.isLeader {
                 log.Printf("<<< Forwarding Answer from %s to %s", currentPeer.username, targetPeer.username)
+                // Нормализуем SDP
+                preferredCodec, _ := data["preferredCodec"].(string)
+                if preferredCodec == "" {
+                    preferredCodec = initData.PreferredCodec
+                    if preferredCodec == "" {
+                        preferredCodec = "H264"
+                    }
+                }
+                if sdp, ok := data["sdp"].(string); ok {
+                    data["sdp"] = normalizeSdpForCodec(sdp, preferredCodec)
+                    msgBytes, _ = json.Marshal(data)
+                }
                 targetPeer.mu.Lock()
                 targetWsConn := targetPeer.conn
                 targetPeer.mu.Unlock()
@@ -550,6 +717,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
                 targetPeer.mu.Unlock()
                 if targetWsConn != nil {
                     if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+                        log.Printf("Error forwarding ICE candidate to %s: %v", targetPeer.username, err)
                     }
                 }
             }
