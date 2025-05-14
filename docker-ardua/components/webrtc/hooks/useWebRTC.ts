@@ -55,6 +55,8 @@ export const useWebRTC = (
     const videoCheckTimeout = useRef<NodeJS.Timeout | null>(null);
     const retryAttempts = useRef(0);
 
+    const [activeCodec, setActiveCodec] = useState<string | null>(null);
+
     // Добавляем функцию для определения платформы
     const detectPlatform = () => {
         const ua = navigator.userAgent;
@@ -634,12 +636,14 @@ export const useWebRTC = (
 
                             await pc.current.setLocalDescription(normalizedAnswer);
 
-                            // Логируем кодек из SDP ответа
+                            // Extract codec from the answer SDP
                             const codec = getVideoCodecFromSdp(normalizedAnswer.sdp);
                             if (codec) {
                                 console.log(`Кодек трансляции: ${codec}`);
+                                setActiveCodec(codec); // Update active codec
                             } else {
                                 console.warn('Кодек не найден в SDP ответа');
+                                setActiveCodec(null);
                             }
 
                             ws.current.send(JSON.stringify({
@@ -675,6 +679,16 @@ export const useWebRTC = (
                             await pc.current.setRemoteDescription(
                                 new RTCSessionDescription(answerDescription)
                             );
+
+                            // Extract codec from the answer SDP
+                            const codec = getVideoCodecFromSdp(answerDescription.sdp);
+                            if (codec) {
+                                console.log(`Кодек трансляции: ${codec}`);
+                                setActiveCodec(codec); // Update active codec
+                            } else {
+                                console.warn('Кодек не найден в SDP ответа');
+                                setActiveCodec(null);
+                            }
 
                             setIsCallActive(true);
 
@@ -1265,5 +1279,6 @@ export const useWebRTC = (
         restartMediaDevices,
         setError,
         ws: ws.current, // Возвращаем текущее соединение
+        activeCodec,
     };
 };

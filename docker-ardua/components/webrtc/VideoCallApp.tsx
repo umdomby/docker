@@ -77,8 +77,9 @@ export const VideoCallApp = () => {
         isInRoom,
         error,
         setError,
-        ws
-    } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, ''), selectedCodec) // Передаём selectedCodec
+        ws,
+        activeCodec, // Add activeCodec to destructured hook return
+    } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, ''), selectedCodec);
 
     useEffect(() => {
         console.log('Состояния:', { isConnected, isInRoom, isCallActive, error })
@@ -478,6 +479,8 @@ export const VideoCallApp = () => {
                 )}
             </div>
 
+
+
             {showLocalVideo && (
                 <div className={styles.localVideoContainer}>
                     <VideoPlayer
@@ -518,6 +521,7 @@ export const VideoCallApp = () => {
                         <div className={styles.connectionStatus}>
                             Статус: {isConnected ? (isInRoom ? `В комнате ${roomId}` : 'Подключено') : 'Отключено'}
                             {isCallActive && ' (Звонок активен)'}
+                            {activeCodec && ` [Кодек: ${activeCodec}]`} {/* Display active codec */}
                             {users.length > 0 && (
                                 <div>
                                     Роль: "Ведомый"
