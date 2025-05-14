@@ -436,9 +436,10 @@ export const useWebRTC = (
                 ws.current.send(JSON.stringify({
                     type: 'leave',
                     room: roomId,
-                    username
+                    username,
+                    preferredCodec
                 }));
-                console.log('Отправлено сообщение leave:', { type: 'leave', room: roomId, username });
+                console.log('Отправлено сообщение leave:', { type: 'leave', room: roomId, username, preferredCodec });
             } catch (e) {
                 console.error('Ошибка отправки сообщения leave:', e);
             }
@@ -543,25 +544,42 @@ export const useWebRTC = (
     };
 
     // Функция для извлечения видеокодека из SDP
-    const getVideoCodecFromSdp = (sdp: string): string | null => {
+    const getVideoCodecFromSdp = (sdp: string | undefined): string | null => {
+        if (!sdp) return null;
         const lines = sdp.split('\n');
-        let videoSection = false;
+        let videoPayloadTypes: string[] = [];
 
+        // Найти строку m=video и извлечь payload types
         for (const line of lines) {
             if (line.startsWith('m=video')) {
-                videoSection = true;
-                continue;
-            }
-            if (videoSection && line.startsWith('a=rtpmap')) {
-                const match = line.match(/a=rtpmap:\d+ ([A-Za-z0-9]+)/);
-                if (match) {
-                    return match[1]; // Например, VP8 или H264
+                const parts = line.split(' ');
+                if (parts.length >= 4) {
+                    videoPayloadTypes = parts.slice(3); // Payload types начинаются с 4-го элемента
                 }
-            }
-            if (line.startsWith('m=') && !line.startsWith('m=video')) {
-                videoSection = false;
+                break;
             }
         }
+
+        if (videoPayloadTypes.length === 0) {
+            console.warn('No video payload types found in SDP');
+            return null;
+        }
+
+        // Найти первый подходящий кодек по payload type
+        for (const pt of videoPayloadTypes) {
+            for (const line of lines) {
+                if (line.includes(`a=rtpmap:${pt} H264`)) {
+                    console.log(`Found H264 for payload type ${pt}`);
+                    return 'H264';
+                }
+                if (line.includes(`a=rtpmap:${pt} VP8`)) {
+                    console.log(`Found VP8 for payload type ${pt}`);
+                    return 'VP8';
+                }
+            }
+        }
+
+        console.warn('No matching codec found for payload types:', videoPayloadTypes);
         return null;
     };
 
@@ -650,7 +668,8 @@ export const useWebRTC = (
                                 type: 'answer',
                                 sdp: normalizedAnswer,
                                 room: roomId,
-                                username
+                                username,
+                                preferredCodec
                             }));
                             console.log('Отправлен answer:', normalizedAnswer);
 
@@ -869,6 +888,7 @@ export const useWebRTC = (
                                 type: 'ice_candidate',
                                 ice: event.candidate.toJSON(),
                                 room: roomId,
+                                preferredCodec,
                                 username
                             }));
                         }

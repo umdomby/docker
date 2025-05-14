@@ -57,6 +57,7 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
         matches := codecRegex.FindStringSubmatch(line)
         if matches != nil {
             targetPayloadTypes = append(targetPayloadTypes, matches[1])
+            log.Printf("Found %s payload type: %s", targetCodec, matches[1])
         }
     }
 
@@ -73,15 +74,19 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
     for _, line := range lines {
         skip := false
         for _, codec := range otherCodecs {
-            if strings.Contains(line, fmt.Sprintf("a=rtpmap:%%d %s/", codec)) {
+            codecRegex := regexp.MustCompile(fmt.Sprintf(`a=rtpmap:(\d+) %s/\d+`, codec))
+            if codecRegex.MatchString(line) {
+                log.Printf("Skipping line with codec %s: %s", codec, line)
                 skip = true
                 break
             }
             if strings.Contains(line, "a=fmtp:") && strings.Contains(line, codec) {
+                log.Printf("Skipping fmtp line for %s: %s", codec, line)
                 skip = true
                 break
             }
             if strings.Contains(line, "a=rtcp-fb:") && strings.Contains(line, codec) {
+                log.Printf("Skipping rtcp-fb line for %s: %s", codec, line)
                 skip = true
                 break
             }
@@ -115,13 +120,11 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
                     preferredPayloads = append(preferredPayloads, pt)
                 }
             }
-            otherPayloads := []string{}
-            for _, pt := range filteredPayloads {
-                if !contains(targetPayloadTypes, pt) {
-                    otherPayloads = append(otherPayloads, pt)
-                }
+            if len(preferredPayloads) == 0 {
+                log.Printf("No valid %s payload types found in m=video, keeping original", targetCodec)
+                return sdp
             }
-            parts = append(parts[:3], append(preferredPayloads, otherPayloads...)...)
+            parts = append(parts[:3], preferredPayloads...)
             newLines[i] = strings.Join(parts, " ")
             log.Printf("Reordered m=video payloads: %v", parts[3:])
             break
@@ -137,7 +140,7 @@ func normalizeSdpForCodec(sdp, preferredCodec string) string {
     }
 
     newSdp := strings.Join(newLines, "\r\n")
-    log.Printf("Normalized SDP:\n%s", newSdp)
+    log.Printf("Normalized SDP for %s:\n%s", targetCodec, newSdp)
     return newSdp
 }
 
