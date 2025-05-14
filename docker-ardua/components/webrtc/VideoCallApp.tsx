@@ -75,8 +75,13 @@ export const VideoCallApp = () => {
         isConnected,
         isInRoom,
         error,
+        setError,
         ws
     } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, '')) // Удаляем тире при передаче в useWebRTC
+
+    useEffect(() => {
+        console.log('Состояния:', { isConnected, isInRoom, isCallActive, error });
+    }, [isConnected, isInRoom, isCallActive, error]);
 
     // Загрузка сохраненных комнат и настроек из localStorage
     useEffect(() => {
@@ -358,20 +363,27 @@ export const VideoCallApp = () => {
     }
 
     const handleJoinRoom = async () => {
-        if (!isRoomIdComplete) return
+        if (!isRoomIdComplete) {
+            console.warn('ID комнаты не полный, подключение невозможно');
+            return;
+        }
 
-        setIsJoining(true)
+        setIsJoining(true);
+        console.log('Попытка подключения к комнате:', roomId);
         try {
             // Устанавливаем выбранную комнату как дефолтную
-            setDefaultRoom(roomId.replace(/-/g, ''))
+            setDefaultRoom(roomId.replace(/-/g, ''));
 
-            await joinRoom(username)
+            await joinRoom(username);
+            console.log('Успешно подключено к комнате:', roomId);
         } catch (error) {
-            console.error('Error joining room:', error)
+            console.error('Ошибка подключения к комнате:', error);
+            setError('Ошибка подключения к комнате'); // Теперь setError должен быть доступен
         } finally {
-            setIsJoining(false)
+            setIsJoining(false);
+            console.log('Состояние isJoining сброшено');
         }
-    }
+    };
 
     const toggleFullscreen = async () => {
         if (!videoContainerRef.current) return
@@ -505,11 +517,12 @@ export const VideoCallApp = () => {
                             {isCallActive && ' (Звонок активен)'}
                             {users.length > 0 && (
                                 <div>
-                                    {/*Роль: {users[0] === username ? "Ведущий" : "Ведомый"}*/}
                                     Роль: "Ведомый"
                                 </div>
                             )}
                         </div>
+
+                        {error && <div className={styles.error}>{error}</div>}
 
                         <div className={styles.inputGroup}>
                             <div className="flex items-center space-x-2">
@@ -518,8 +531,8 @@ export const VideoCallApp = () => {
                                     checked={autoJoin}
                                     disabled={!isRoomIdComplete}
                                     onCheckedChange={(checked) => {
-                                        setAutoJoin(!!checked)
-                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false')
+                                        setAutoJoin(!!checked);
+                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false');
                                     }}
                                     suppressHydrationWarning
                                 />
@@ -559,7 +572,11 @@ export const VideoCallApp = () => {
                                 {isJoining ? 'Подключение...' : 'Войти в комнату'}
                             </Button>
                         ) : (
-                            <Button onClick={leaveRoom} className={styles.button}>
+                            <Button
+                                onClick={leaveRoom}
+                                disabled={!isConnected || !isInRoom}
+                                className={styles.button}
+                            >
                                 Покинуть комнату
                             </Button>
                         )}
@@ -633,7 +650,7 @@ export const VideoCallApp = () => {
 
             {showControls && (
                 <div className={styles.tabContent}>
-                    <div className={styles.videoControlsTab}>
+                <div className={styles.videoControlsTab}>
                         <div className={styles.controlButtons}>
                             <button
                                 onClick={toggleCamera}

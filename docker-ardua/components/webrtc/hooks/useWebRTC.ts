@@ -348,7 +348,7 @@ export const useWebRTC = (
                 // Оставляем только payload types, которые есть в оставшемся SDP
                 const allowedPayloads = Array.from(new Set(sdp.match(/a=rtpmap:(\d+)/g) || []))
                     .map(m => m.replace('a=rtpmap:', ''));
-                const filtered = payloads.split(' ').filter(pt => allowedPayloads.includes(pt));
+                const filtered = payloads.split(' ').filter((pt: string) => allowedPayloads.includes(pt));
                 return prefix + ' ' + filtered.join(' ');
             })
             .replace(/a=fmtp:\d+ .*\r\n/g, '');
@@ -420,12 +420,13 @@ export const useWebRTC = (
         isNegotiating.current = false;
         shouldCreateOffer.current = false;
         setIsCallActive(false);
-
+        setIsInRoom(false); // Сбрасываем isInRoom
         console.log('Очистка завершена');
     };
 
 
     const leaveRoom = () => {
+        console.log('Выполняется leaveRoom');
         if (ws.current?.readyState === WebSocket.OPEN) {
             try {
                 ws.current.send(JSON.stringify({
@@ -433,16 +434,30 @@ export const useWebRTC = (
                     room: roomId,
                     username
                 }));
+                console.log('Отправлено сообщение leave:', { type: 'leave', room: roomId, username });
             } catch (e) {
-                console.error('Error sending leave message:', e);
+                console.error('Ошибка отправки сообщения leave:', e);
             }
         }
+
+        // Очищаем ресурсы
         cleanup();
+
+        // Закрываем WebSocket
+        if (ws.current) {
+            ws.current.close();
+            ws.current = null;
+        }
+
+        // Сбрасываем состояния
         setUsers([]);
         setIsInRoom(false);
-        ws.current?.close();
-        ws.current = null;
+        setIsConnected(false);
+        setIsCallActive(false);
+        setIsLeader(false);
         setRetryCount(0);
+        setError(null);
+        console.log('Состояния сброшены после leaveRoom');
     };
 
     const startVideoCheckTimer = () => {
@@ -482,7 +497,7 @@ export const useWebRTC = (
                 const onError = (event: Event) => {
                     cleanupEvents();
                     console.error('Ошибка WebSocket:', event);
-                    setError('Ошибка подключения');
+                    setError('Ошибка подключения к WebSocket');
                     setIsConnected(false);
                     resolve(false);
                 };
@@ -523,6 +538,28 @@ export const useWebRTC = (
         });
     };
 
+    // Функция для извлечения видеокодека из SDP
+    const getVideoCodecFromSdp = (sdp: string): string | null => {
+        const lines = sdp.split('\n');
+        let videoSection = false;
+
+        for (const line of lines) {
+            if (line.startsWith('m=video')) {
+                videoSection = true;
+                continue;
+            }
+            if (videoSection && line.startsWith('a=rtpmap')) {
+                const match = line.match(/a=rtpmap:\d+ ([A-Za-z0-9]+)/);
+                if (match) {
+                    return match[1]; // Например, VP8 или H264
+                }
+            }
+            if (line.startsWith('m=') && !line.startsWith('m=video')) {
+                videoSection = false;
+            }
+        }
+        return null;
+    };
 
 
     const setupWebSocketListeners = () => {
@@ -533,24 +570,25 @@ export const useWebRTC = (
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
 
-                // Устанавливаем isLeader при получении room_info
+                // Устанавливаем isLeader и users при получении room_info
                 if (data.type === 'room_info') {
                     const roomInfo = (data as RoomInfoMessage).data;
+                    console.log('Обработка room_info:', roomInfo);
                     if (roomInfo) {
                         setIsLeader(roomInfo.leader === username);
                         setUsers(roomInfo.users || []);
+                        setIsInRoom(true);
                     }
                 }
 
-                // Добавляем обработку switch_camera
+                // Обработка switch_camera
                 if (data.type === 'switch_camera_ack') {
                     console.log('Камера на Android успешно переключена');
-                    // Можно показать уведомление пользователю
                 }
 
-                // Добавляем обработку reconnect_request
+                // Обработка reconnect_request
                 if (data.type === 'reconnect_request') {
-                    console.log('Server requested reconnect');
+                    console.log('Сервер запросил переподключение');
                     setTimeout(() => {
                         resetConnection();
                     }, 1000);
@@ -558,36 +596,17 @@ export const useWebRTC = (
                 }
 
                 if (data.type === 'force_disconnect') {
-                    // Обработка принудительного отключения
                     console.log('Получена команда принудительного отключения');
                     setError('Вы были отключены, так как подключился другой зритель');
-
-                    // Останавливаем все медиапотоки
-                    if (remoteStream) {
-                        remoteStream.getTracks().forEach(track => track.stop());
-                    }
-
-                    // Закрываем PeerConnection
-                    if (pc.current) {
-                        pc.current.close();
-                        pc.current = null;
-                    }
                     leaveRoom();
-                    // Очищаем состояние
-                    setRemoteStream(null);
-                    setIsCallActive(false);
-                    setIsInRoom(false);
-
                     return;
                 }
 
+                if (data.type === 'error') {
+                    setError(data.data || 'Ошибка от сервера');
+                    console.error('Ошибка от сервера:', data.data);
+                }
 
-                if (data.type === 'room_info') {
-                    setUsers(data.data.users || []);
-                }
-                else if (data.type === 'error') {
-                    setError(data.data);
-                }
                 if (data.type === 'offer') {
                     if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
                         try {
@@ -613,12 +632,21 @@ export const useWebRTC = (
 
                             await pc.current.setLocalDescription(normalizedAnswer);
 
+                            // Логируем кодек из SDP ответа
+                            const codec = getVideoCodecFromSdp(normalizedAnswer.sdp);
+                            if (codec) {
+                                console.log(`Кодек трансляции: ${codec}`);
+                            } else {
+                                console.warn('Кодек не найден в SDP ответа');
+                            }
+
                             ws.current.send(JSON.stringify({
                                 type: 'answer',
                                 sdp: normalizedAnswer,
                                 room: roomId,
                                 username
                             }));
+                            console.log('Отправлен answer:', normalizedAnswer);
 
                             setIsCallActive(true);
                             isNegotiating.current = false;
@@ -628,8 +656,7 @@ export const useWebRTC = (
                             isNegotiating.current = false;
                         }
                     }
-                }
-                else if (data.type === 'answer') {
+                } else if (data.type === 'answer') {
                     if (pc.current && data.sdp) {
                         try {
                             if (pc.current.signalingState !== 'have-local-offer') {
@@ -668,16 +695,17 @@ export const useWebRTC = (
                             setError(`Ошибка установки ответа: ${err instanceof Error ? err.message : String(err)}`);
                         }
                     }
-                }
-                else if (data.type === 'ice_candidate') {
+                } else if (data.type === 'ice_candidate') {
                     if (data.ice) {
                         try {
                             const candidate = new RTCIceCandidate(data.ice);
 
                             if (pc.current && pc.current.remoteDescription) {
                                 await pc.current.addIceCandidate(candidate);
+                                console.log('Добавлен ICE кандидат:', candidate);
                             } else {
                                 pendingIceCandidates.current.push(candidate);
+                                console.log('ICE кандидат добавлен в очередь:', candidate);
                             }
                         } catch (err) {
                             console.error('Ошибка добавления ICE-кандидата:', err);
@@ -1150,14 +1178,20 @@ export const useWebRTC = (
                 const onMessage = (event: MessageEvent) => {
                     try {
                         const data = JSON.parse(event.data);
+                        console.log('Получено сообщение в joinRoom:', data);
                         if (data.type === 'room_info') {
+                            console.log('Получено room_info, очищаем таймер');
                             cleanupEvents();
+                            setIsInRoom(true); // Устанавливаем isInRoom
+                            setUsers(data.data?.users || []);
                             resolve();
                         } else if (data.type === 'error') {
+                            console.error('Ошибка от сервера:', data.data);
                             cleanupEvents();
                             reject(new Error(data.data || 'Ошибка входа в комнату'));
                         }
                     } catch (err) {
+                        console.error('Ошибка обработки сообщения:', err);
                         cleanupEvents();
                         reject(err);
                     }
@@ -1167,17 +1201,18 @@ export const useWebRTC = (
                     ws.current?.removeEventListener('message', onMessage);
                     if (connectionTimeout.current) {
                         clearTimeout(connectionTimeout.current);
+                        connectionTimeout.current = null;
                     }
                 };
 
                 connectionTimeout.current = setTimeout(() => {
                     cleanupEvents();
-                    console.log('Таймаут ожидания ответа от сервера');
-                }, 10000);
+                    console.error('Таймаут ожидания ответа от сервера');
+                    setError('Таймаут ожидания ответа от сервера');
+                    reject(new Error('Таймаут ожидания ответа от сервера'));
+                }, 15000); // Увеличиваем до 15 секунд
 
-                ws.current.addEventListener('message', (event) => {
-                    console.log('WebSocket message received:', event.data);
-                });
+                ws.current.addEventListener('message', onMessage);
 
                 // Отправляем запрос на подключение с указанием роли и кодека
                 ws.current.send(JSON.stringify({
@@ -1187,10 +1222,10 @@ export const useWebRTC = (
                     isLeader: false, // Браузер всегда ведомый
                     preferredCodec // Добавляем предпочтительный кодек
                 }));
+                console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec });
             });
 
             // 5. Успешное подключение
-            setIsInRoom(true);
             shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
 
             // 6. Запускаем таймер проверки видео
@@ -1236,6 +1271,7 @@ export const useWebRTC = (
         retryCount,
         resetConnection,
         restartMediaDevices,
+        setError,
         ws: ws.current, // Возвращаем текущее соединение
     };
 };
