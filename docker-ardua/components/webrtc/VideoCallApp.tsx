@@ -34,7 +34,7 @@ export const VideoCallApp = () => {
     })
     const [showLocalVideo, setShowLocalVideo] = useState(true)
     const [videoTransform, setVideoTransform] = useState('')
-    const [roomId, setRoomId] = useState('') // С тире (XXXX-XXXX-XXXX-XXXX)
+    const [roomId, setRoomId] = useState('')
     const [username, setUsername] = useState('user_' + Math.floor(Math.random() * 1000))
     const [hasPermission, setHasPermission] = useState(false)
     const [devicesLoaded, setDevicesLoaded] = useState(false)
@@ -51,13 +51,14 @@ export const VideoCallApp = () => {
     const [muteRemoteAudio, setMuteRemoteAudio] = useState(false)
     const videoContainerRef = useRef<HTMLDivElement>(null)
     const [isFullscreen, setIsFullscreen] = useState(false)
-    const remoteVideoRef = useRef<HTMLVideoElement>(null);
+    const remoteVideoRef = useRef<HTMLVideoElement>(null)
     const localAudioTracks = useRef<MediaStreamTrack[]>([])
     const [useBackCamera, setUseBackCamera] = useState(false)
     const [savedRooms, setSavedRooms] = useState<SavedRoom[]>([])
     const [showDeleteDialog, setShowDeleteDialog] = useState(false)
     const [roomToDelete, setRoomToDelete] = useState<string | null>(null)
-
+    // Новое состояние для кодека
+    const [selectedCodec, setSelectedCodec] = useState<'VP8' | 'H264'>('VP8')
 
     const [isClient, setIsClient] = useState(false)
 
@@ -77,13 +78,13 @@ export const VideoCallApp = () => {
         error,
         setError,
         ws
-    } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, '')) // Удаляем тире при передаче в useWebRTC
+    } = useWebRTC(selectedDevices, username, roomId.replace(/-/g, ''), selectedCodec) // Передаём selectedCodec
 
     useEffect(() => {
-        console.log('Состояния:', { isConnected, isInRoom, isCallActive, error });
-    }, [isConnected, isInRoom, isCallActive, error]);
+        console.log('Состояния:', { isConnected, isInRoom, isCallActive, error })
+    }, [isConnected, isInRoom, isCallActive, error])
 
-    // Загрузка сохраненных комнат и настроек из localStorage
+    // Загрузка сохранённых настроек
     useEffect(() => {
         const loadSettings = () => {
             try {
@@ -104,11 +105,8 @@ export const VideoCallApp = () => {
                 if (saved) {
                     const rooms: SavedRoom[] = JSON.parse(saved)
                     setSavedRooms(rooms)
-
-                    // Находим комнату по умолчанию
                     const defaultRoom = rooms.find(r => r.isDefault)
                     if (defaultRoom) {
-                        // Форматируем ID с тире для отображения
                         setRoomId(formatRoomId(defaultRoom.id))
                     }
                 }
@@ -140,10 +138,22 @@ export const VideoCallApp = () => {
         const savedAutoJoin = localStorage.getItem('autoJoin') === 'true'
         setAutoJoin(savedAutoJoin)
 
+        // Загрузка сохранённого кодека
+        const savedCodec = localStorage.getItem('selectedCodec')
+        if (savedCodec === 'VP8' || savedCodec === 'H264') {
+            setSelectedCodec(savedCodec)
+        }
+
         loadSettings()
         loadSavedRooms()
         loadDevices()
     }, [])
+
+    const handleCodecChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+        const codec = e.target.value as 'VP8' | 'H264'
+        setSelectedCodec(codec)
+        localStorage.setItem('selectedCodec', codec)
+    }
 
     // Форматирование ID комнаты с тире (XXXX-XXXX-XXXX-XXXX)
     const formatRoomId = (id: string): string => {
@@ -456,16 +466,9 @@ export const VideoCallApp = () => {
     }
 
     return (
-        <div
-            className={styles.container}
-            suppressHydrationWarning // Добавляем это для игнорирования различий в атрибутах
-        >
-            <div
-                ref={videoContainerRef}
-                className={styles.remoteVideoContainer}
-                suppressHydrationWarning
-            >
-                {isClient && ( // Оборачиваем в проверку isClient для клиент-сайд рендеринга
+        <div className={styles.container} suppressHydrationWarning>
+            <div ref={videoContainerRef} className={styles.remoteVideoContainer} suppressHydrationWarning>
+                {isClient && (
                     <VideoPlayer
                         stream={remoteStream}
                         className={styles.remoteVideo}
@@ -531,8 +534,8 @@ export const VideoCallApp = () => {
                                     checked={autoJoin}
                                     disabled={!isRoomIdComplete}
                                     onCheckedChange={(checked) => {
-                                        setAutoJoin(!!checked);
-                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false');
+                                        setAutoJoin(!!checked)
+                                        localStorage.setItem('autoJoin', checked ? 'true' : 'false')
                                     }}
                                     suppressHydrationWarning
                                 />
@@ -613,6 +616,20 @@ export const VideoCallApp = () => {
                                         </li>
                                     ))}
                                 </ul>
+                                {/* Новый выбор кодека */}
+                                <div className={styles.inputGroup}>
+                                    <Label htmlFor="codec">Кодек трансляции</Label>
+                                    <select
+                                        id="codec"
+                                        value={selectedCodec}
+                                        onChange={handleCodecChange}
+                                        disabled={isInRoom}
+                                        className={styles.codecSelect}
+                                    >
+                                        <option value="VP8">VP8</option>
+                                        <option value="H264">H264</option>
+                                    </select>
+                                </div>
                             </div>
                         )}
 
@@ -650,7 +667,7 @@ export const VideoCallApp = () => {
 
             {showControls && (
                 <div className={styles.tabContent}>
-                <div className={styles.videoControlsTab}>
+                    <div className={styles.videoControlsTab}>
                         <div className={styles.controlButtons}>
                             <button
                                 onClick={toggleCamera}
@@ -741,7 +758,6 @@ export const VideoCallApp = () => {
                 </div>
             )}
 
-            {/* Диалог подтверждения удаления комнаты */}
             <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
                 <DialogContent>
                     <DialogHeader>

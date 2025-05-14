@@ -1,3 +1,4 @@
+// file: docker-ardua/components/webrtc/hooks/useWebRTC.ts
 import { useEffect, useRef, useState } from 'react';
 import {RoomInfo} from "@/components/webrtc/types";
 
@@ -32,7 +33,8 @@ interface CustomRTCRtpCodecParameters extends RTCRtpCodecParameters {
 export const useWebRTC = (
     deviceIds: { video: string; audio: string },
     username: string,
-    roomId: string
+    roomId: string,
+    preferredCodec: 'VP8' | 'H264' // Новый параметр
 ) => {
     const [localStream, setLocalStream] = useState<MediaStream | null>(null);
     const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -1146,116 +1148,106 @@ export const useWebRTC = (
     };
 
     const joinRoom = async (uniqueUsername: string) => {
-        setError(null);
-        setIsInRoom(false);
-        setIsConnected(false);
-        setIsLeader(false); // Сбрасываем состояние при подключении
+        setError(null)
+        setIsInRoom(false)
+        setIsConnected(false)
+        setIsLeader(false)
 
         try {
-            // 1. Подключаем WebSocket
             if (!(await connectWebSocket())) {
-                throw new Error('Не удалось подключиться к WebSocket');
+                throw new Error('Не удалось подключиться к WebSocket')
             }
 
-            setupWebSocketListeners();
+            setupWebSocketListeners()
 
-            // 2. Инициализируем WebRTC
             if (!(await initializeWebRTC())) {
-                throw new Error('Не удалось инициализировать WebRTC');
+                throw new Error('Не удалось инициализировать WebRTC')
             }
 
-            // 3. Определяем предпочтительный кодек в зависимости от устройства
-            const { isChrome } = detectPlatform();
-            const preferredCodec = isChrome ? 'VP8' : 'H264'; // VP8 для Chrome, H264 для остальных
+            // Используем переданный preferredCodec вместо определения по платформе
+            // const { isChrome } = detectPlatform()
+            // const preferredCodec = isChrome ? 'VP8' : 'H264'
 
-            // 4. Отправляем запрос на присоединение к комнате с указанием кодека
             await new Promise<void>((resolve, reject) => {
                 if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-                    reject(new Error('WebSocket не подключен'));
-                    return;
+                    reject(new Error('WebSocket не подключен'))
+                    return
                 }
 
                 const onMessage = (event: MessageEvent) => {
                     try {
-                        const data = JSON.parse(event.data);
-                        console.log('Получено сообщение в joinRoom:', data);
+                        const data = JSON.parse(event.data)
+                        console.log('Получено сообщение в joinRoom:', data)
                         if (data.type === 'room_info') {
-                            console.log('Получено room_info, очищаем таймер');
-                            cleanupEvents();
-                            setIsInRoom(true); // Устанавливаем isInRoom
-                            setUsers(data.data?.users || []);
-                            resolve();
+                            console.log('Получено room_info, очищаем таймер')
+                            cleanupEvents()
+                            setIsInRoom(true)
+                            setUsers(data.data?.users || [])
+                            resolve()
                         } else if (data.type === 'error') {
-                            console.error('Ошибка от сервера:', data.data);
-                            cleanupEvents();
-                            reject(new Error(data.data || 'Ошибка входа в комнату'));
+                            console.error('Ошибка от сервера:', data.data)
+                            cleanupEvents()
+                            reject(new Error(data.data || 'Ошибка входа в комнату'))
                         }
                     } catch (err) {
-                        console.error('Ошибка обработки сообщения:', err);
-                        cleanupEvents();
-                        reject(err);
+                        console.error('Ошибка обработки сообщения:', err)
+                        cleanupEvents()
+                        reject(err)
                     }
-                };
+                }
 
                 const cleanupEvents = () => {
-                    ws.current?.removeEventListener('message', onMessage);
+                    ws.current?.removeEventListener('message', onMessage)
                     if (connectionTimeout.current) {
-                        clearTimeout(connectionTimeout.current);
-                        connectionTimeout.current = null;
+                        clearTimeout(connectionTimeout.current)
+                        connectionTimeout.current = null
                     }
-                };
+                }
 
                 connectionTimeout.current = setTimeout(() => {
-                    cleanupEvents();
-                    console.error('Таймаут ожидания ответа от сервера');
-                    setError('Таймаут ожидания ответа от сервера');
-                    reject(new Error('Таймаут ожидания ответа от сервера'));
-                }, 15000); // Увеличиваем до 15 секунд
+                    cleanupEvents()
+                    console.error('Таймаут ожидания ответа от сервера')
+                    setError('Таймаут ожидания ответа от сервера')
+                    reject(new Error('Таймаут ожидания ответа от сервера'))
+                }, 15000)
 
-                ws.current.addEventListener('message', onMessage);
+                ws.current.addEventListener('message', onMessage)
 
-                // Отправляем запрос на подключение с указанием роли и кодека
                 ws.current.send(JSON.stringify({
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
-                    isLeader: false, // Браузер всегда ведомый
-                    preferredCodec // Добавляем предпочтительный кодек
-                }));
-                console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec });
-            });
+                    isLeader: false,
+                    preferredCodec // Используем переданный кодек
+                }))
+                console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec })
+            })
 
-            // 5. Успешное подключение
-            shouldCreateOffer.current = false; // Ведомый никогда не должен создавать оффер
-
-            // 6. Запускаем таймер проверки видео
-            startVideoCheckTimer();
-
+            shouldCreateOffer.current = false
+            startVideoCheckTimer()
         } catch (err) {
-            console.error('Ошибка входа в комнату:', err);
-            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
+            console.error('Ошибка входа в комнату:', err)
+            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`)
 
-            // Полная очистка при ошибке
-            cleanup();
+            cleanup()
             if (ws.current) {
-                ws.current.close();
-                ws.current = null;
+                ws.current.close()
+                ws.current = null
             }
 
-            // Автоматическая повторная попытка
             if (retryAttempts.current < MAX_RETRIES) {
                 setTimeout(() => {
-                    joinRoom(uniqueUsername).catch(console.error);
-                }, 2000 * (retryAttempts.current + 1));
+                    joinRoom(uniqueUsername).catch(console.error)
+                }, 2000 * (retryAttempts.current + 1))
             }
         }
-    };
+    }
 
     useEffect(() => {
         return () => {
-            leaveRoom();
-        };
-    }, []);
+            leaveRoom()
+        }
+    }, [])
 
     return {
         localStream,

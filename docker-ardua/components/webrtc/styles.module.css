@@ -526,3 +526,17 @@
 .deleteRoomButton:hover {
     background-color: rgba(255, 99, 71, 0.3);
 }
+
+.codecSelect {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+    font-size: 14px;
+}
+
+.codecSelect:disabled {
+    background-color: #f0f0f0;
+    cursor: not-allowed;
+}
