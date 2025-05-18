@@ -3,7 +3,7 @@ import type { Metadata } from 'next';
 import React, { Suspense } from 'react';
 
 export const metadata: Metadata = {
-    title: 'HEROES 3',
+    title: 'ARduA',
 };
 
 export const dynamic = 'force-dynamic'; // Отключаем SSG
