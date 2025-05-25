@@ -841,7 +841,7 @@ export const useWebRTC = (
         ws.current.onmessage = handleMessage;
     };
 
-    const initializeWebRTC = async () => {
+    const initializeWebRTC = async (): Promise<MediaStream | null> => {
         try {
             cleanup();
 
@@ -1086,12 +1086,12 @@ export const useWebRTC = (
             // Запускаем мониторинг соединения
             startConnectionMonitoring();
 
-            return true;
+            return stream; // Возвращаем MediaStream
         } catch (err) {
             console.error('Ошибка инициализации WebRTC:', err);
             setError(`Не удалось инициализировать WebRTC: ${err instanceof Error ? err.message : String(err)}`);
             cleanup();
-            return false;
+            return null; // Возвращаем null при ошибке
         }
     };
 
@@ -1347,11 +1347,11 @@ export const useWebRTC = (
                 ws.current.addEventListener('message', onMessage)
 
                 sendWebSocketMessage({
-                    action: "join",
+                    type: "join",
                     room: roomId,
                     username: uniqueUsername,
                     isLeader: false,
-                    preferredCodec // Используем переданный кодек
+                    preferredCodec
                 })
                 console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec })
             })
