@@ -5,15 +5,17 @@ import {RoomInfo} from "@/components/webrtc/types";
 interface WebSocketMessage {
     type: string;
     data?: any;
-    sdp?: {
-        type: RTCSdpType;
-        sdp: string;
-    };
+    // sdp?: {
+    //     type: RTCSdpType;
+    //     sdp: string;
+    // };
+    sdp?: RTCSessionDescriptionInit;
     ice?: RTCIceCandidateInit;
     room?: string;
     username?: string;
     isLeader?: boolean;
     force_disconnect?: boolean;
+    preferredCodec?: string;
 }
 
 interface RoomInfoMessage extends WebSocketMessage {
@@ -57,7 +59,7 @@ export const useWebRTC = (
 
     const [activeCodec, setActiveCodec] = useState<string | null>(null);
 
-
+    const [roomInfo, setRoomInfo] = useState<any>({});
     const [stream, setStream] = useState<MediaStream | null>(null);
 
 
@@ -728,6 +730,11 @@ export const useWebRTC = (
 
                     case 'offer':
                         if (!isLeader && pc.current) {
+                            if (!data.sdp) {
+                                console.error('Получен offer без SDP');
+                                setError('Недействительное предложение от сервера');
+                                return;
+                            }
                             console.log('Получен offer:', data.sdp);
                             await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
                             console.log('Состояние сигнализации изменилось: have-remote-offer');
@@ -750,6 +757,11 @@ export const useWebRTC = (
 
                     case 'answer':
                         if (isLeader && pc.current) {
+                            if (!data.sdp) {
+                                console.error('Получен answer без SDP');
+                                setError('Недействительный ответ от сервера');
+                                return;
+                            }
                             console.log('Получен answer:', data.sdp);
                             await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
                             console.log('Состояние сигнализации изменилось: stable');
@@ -809,7 +821,7 @@ export const useWebRTC = (
             iceTransportPolicy: 'all',
         });
 
-        // Обработка ICE-событий
+        // ICE-обработчики
         pc.current.oniceconnectionstatechange = () => {
             if (!pc.current) return;
             console.log('ICE connection state:', pc.current.iceConnectionState);
