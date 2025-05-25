@@ -537,11 +537,14 @@ export const useWebRTC = (
                 firstTrackEnabled: remoteStream?.getVideoTracks()[0]?.enabled,
                 firstTrackReadyState: remoteStream?.getVideoTracks()[0]?.readyState
             });
+            const videoElement = document.querySelector('video');
+            const hasVideoContent = videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0;
             if (!remoteStream ||
                 remoteStream.getVideoTracks().length === 0 ||
                 !remoteStream.getVideoTracks()[0]?.enabled ||
-                remoteStream.getVideoTracks()[0]?.readyState !== 'live') {
-                console.log(`Удаленное видео не получено в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, перезапускаем соединение...`);
+                remoteStream.getVideoTracks()[0]?.readyState !== 'live' ||
+                !hasVideoContent) {
+                console.log(`Удаленное видео не получено или пустое в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, перезапускаем соединение...`);
                 resetConnection();
             } else {
                 console.log('Видео активно, переподключение не требуется');

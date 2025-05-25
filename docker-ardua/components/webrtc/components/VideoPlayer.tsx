@@ -72,11 +72,21 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
             console.error('Ошибка видеоэлемента:', video.error)
         }
 
+        const handleLoadedMetadata = () => {
+            console.log('Метаданные видео загружены:', {
+                videoWidth: video.videoWidth,
+                videoHeight: video.videoHeight
+            })
+        }
+
         video.addEventListener('canplay', handleCanPlay)
         video.addEventListener('error', handleError)
+        video.addEventListener('loadedmetadata', handleLoadedMetadata)
 
         if (stream) {
             video.srcObject = stream
+            // Принудительно запускаем воспроизведение для мобильных
+            video.play().catch(e => console.error('Initial play failed:', e))
         } else {
             video.srcObject = null
         }
@@ -84,6 +94,7 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
         return () => {
             video.removeEventListener('canplay', handleCanPlay)
             video.removeEventListener('error', handleError)
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata)
             video.srcObject = null
         }
     }, [stream, actualVideoRef])
@@ -100,7 +111,8 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
                 transformOrigin: 'center center',
                 // width: '100%',
                 // height: 'auto',
-                background: 'black' // Для видимости пустого видео
+                background: 'black',
+                objectFit: 'contain' // Для корректного отображения на мобильных
             }}
         />
     )
