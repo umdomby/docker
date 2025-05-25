@@ -241,6 +241,7 @@ func initializeMediaAPI() {
 func getWebRTCConfig() webrtc.Configuration {
 return webrtc.Configuration{
 ICEServers: []webrtc.ICEServer{
+{URLs: []string{"stun:stun.l.google.com:19302"}},
 {URLs: []string{"stun:ardua.site:3478"}},
 {URLs: []string{"turn:ardua.site:3478"}, Username: "user1", Credential: "pass1"},
 },

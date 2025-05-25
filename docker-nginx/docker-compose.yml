@@ -61,7 +61,7 @@ services:
       - TURN_PASSWORD=pass1
       - TURN_SECRET=your_strong_secret_32chars
     sysctls:
-      - net.core.somaxconn=65535
+      - net.core.somaxconn=50100
     ulimits:
       nofile:
         soft: 100000

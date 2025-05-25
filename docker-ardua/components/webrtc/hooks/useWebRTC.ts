@@ -829,6 +829,7 @@ export const useWebRTC = (
 
             const config: RTCConfiguration = {
                 iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
                     { urls: 'stun:ardua.site:3478' },
                     {
                         urls: 'turn:ardua.site:3478',
