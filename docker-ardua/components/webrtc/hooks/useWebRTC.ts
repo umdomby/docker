@@ -524,26 +524,24 @@ export const useWebRTC = (
     };
 
     const startVideoCheckTimer = () => {
-        // Очищаем предыдущий таймер
         if (videoCheckTimeout.current) {
             clearTimeout(videoCheckTimeout.current);
             videoCheckTimeout.current = null;
             console.log('Очищен предыдущий таймер проверки видео');
         }
-
-        // Устанавливаем новый таймер
-        console.log('Запуск таймера проверки видео на', VIDEO_CHECK_TIMEOUT / 1000, 'секунд');
+        console.log('Запуск таймера проверки видео на 4 секунды');
         videoCheckTimeout.current = setTimeout(() => {
-            console.log('Проверка видео: remoteStream=', !!remoteStream,
-                'videoTracks=', remoteStream?.getVideoTracks().length || 0,
-                'firstTrackEnabled=', remoteStream?.getVideoTracks()[0]?.enabled,
-                'firstTrackReadyState=', remoteStream?.getVideoTracks()[0]?.readyState);
-
+            console.log('Проверка видео:', {
+                remoteStream: !!remoteStream,
+                videoTracks: remoteStream?.getVideoTracks().length || 0,
+                firstTrackEnabled: remoteStream?.getVideoTracks()[0]?.enabled,
+                firstTrackReadyState: remoteStream?.getVideoTracks()[0]?.readyState
+            });
             if (!remoteStream ||
                 remoteStream.getVideoTracks().length === 0 ||
                 !remoteStream.getVideoTracks()[0]?.enabled ||
                 remoteStream.getVideoTracks()[0]?.readyState !== 'live') {
-                console.log(`Удаленное видео не получено в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, инициируем переподключение...`);
+                console.log(`Удаленное видео не получено в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, перезапускаем соединение...`);
                 resetConnection();
             } else {
                 console.log('Видео активно, переподключение не требуется');
@@ -665,6 +663,36 @@ export const useWebRTC = (
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
+
+                if (data.type === 'rejoin_and_offer' && isLeader) {
+                    console.log('Получена команда rejoin_and_offer для лидера');
+                    if (pc.current && ws.current?.readyState === WebSocket.OPEN) {
+                        try {
+                            const offer = await pc.current.createOffer({
+                                offerToReceiveAudio: true,
+                                offerToReceiveVideo: false
+                            });
+                            const normalizedOffer = {
+                                ...offer,
+                                sdp: normalizeSdp(offer.sdp)
+                            };
+                            await pc.current.setLocalDescription(normalizedOffer);
+                            ws.current.send(JSON.stringify({
+                                type: 'offer',
+                                sdp: normalizedOffer,
+                                room: roomId,
+                                username,
+                                preferredCodec
+                            }));
+                            console.log('Отправлен новый offer:', normalizedOffer);
+                            startVideoCheckTimer();
+                        } catch (err) {
+                            console.error('Ошибка создания нового offer:', err);
+                            setError('Ошибка при создании нового предложения');
+                        }
+                    }
+                    return;
+                }
 
                 // Устанавливаем isLeader и users при получении room_info
                 if (data.type === 'room_info') {
@@ -1000,15 +1028,15 @@ export const useWebRTC = (
             pc.current.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     const stream = event.streams[0];
-                    const videoTrack = stream.getVideoTracks()[0];
-
                     console.log('Получен поток в ontrack:', {
                         streamId: stream.id,
                         videoTracks: stream.getVideoTracks().length,
-                        videoTrackEnabled: videoTrack?.enabled,
-                        videoTrackReadyState: videoTrack?.readyState
+                        audioTracks: stream.getAudioTracks().length,
+                        videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
+                        videoTrackReadyState: stream.getVideoTracks()[0]?.readyState
                     });
 
+                    const videoTrack = stream.getVideoTracks()[0];
                     if (videoTrack && videoTrack.enabled && videoTrack.readyState === 'live') {
                         console.log('Получен активный видеотрек:', videoTrack.id);
                         const newRemoteStream = new MediaStream();
@@ -1016,22 +1044,19 @@ export const useWebRTC = (
                             newRemoteStream.addTrack(track);
                             console.log(`Добавлен ${track.kind} трек в remoteStream`);
                         });
-
                         setRemoteStream(newRemoteStream);
                         setIsCallActive(true);
-
-                        // Очищаем таймер только при получении активного видео
                         if (videoCheckTimeout.current) {
                             clearTimeout(videoCheckTimeout.current);
                             videoCheckTimeout.current = null;
                             console.log('Таймер проверки видео очищен: получен активный видеотрек');
                         }
                     } else {
-                        console.warn('Входящий поток не содержит активного видео, продолжаем проверку');
+                        console.warn('Входящий поток не содержит активного видеотрека');
                         startVideoCheckTimer();
                     }
                 } else {
-                    console.warn('Получен пустой поток в ontrack, запускаем проверку видео');
+                    console.warn('Получен пустой поток в ontrack');
                     startVideoCheckTimer();
                 }
             };

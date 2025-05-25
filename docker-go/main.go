@@ -467,21 +467,37 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         isLeader: isLeader,
     }
 
-    if isLeader {
-        // Для лидера (Android) добавляем трансиверы
-        if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
-            Direction: webrtc.RTPTransceiverDirectionSendonly,
-        }); err != nil {
-            log.Printf("Failed to add video transceiver for leader %s: %v", username, err)
-        }
-    } else {
-        // Для ведомого (браузера) добавляем приемный трансивер
-        if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
-            Direction: webrtc.RTPTransceiverDirectionRecvonly,
-        }); err != nil {
-            log.Printf("Failed to add video transceiver for follower %s: %v", username, err)
-        }
+if isLeader {
+    videoTransceiver, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+        Direction: webrtc.RTPTransceiverDirectionSendonly,
+    })
+    if err != nil {
+        log.Printf("Failed to add video transceiver for leader %s: %v", username, err)
+        mu.Unlock()
+        conn.WriteJSON(map[string]interface{}{
+            "type": "error",
+            "data": "Failed to add video transceiver",
+        })
+        conn.Close()
+        return nil, fmt.Errorf("failed to add video transceiver: %w", err)
     }
+    go func() {
+        time.Sleep(5 * time.Second)
+        peer.mu.Lock()
+        defer peer.mu.Unlock()
+        if videoTransceiver.Sender() == nil || videoTransceiver.Sender().Track() == nil {
+            log.Printf("No video track added by leader %s in room %s", username, room)
+            if peer.conn != nil {
+                peer.conn.WriteJSON(map[string]interface{}{
+                    "type": "error",
+                    "data": "No video track detected. Please ensure camera is active.",
+                })
+            }
+        } else {
+            log.Printf("Video track confirmed for leader %s in room %s", username, room)
+        }
+    }()
+}
 
     if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
         Direction: webrtc.RTPTransceiverDirectionSendrecv,
