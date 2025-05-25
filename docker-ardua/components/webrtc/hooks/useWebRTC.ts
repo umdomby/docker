@@ -81,7 +81,7 @@ export const useWebRTC = (
 
     // Максимальное количество попыток переподключения
     const MAX_RETRIES = 10;
-    const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
+    const VIDEO_CHECK_TIMEOUT = 8000; // 4 секунд для проверки видео
 
 
 
@@ -270,54 +270,6 @@ export const useWebRTC = (
             }
         });
     };
-
-    // const normalizeSdpForIOS = (sdp: string): string => {
-    //     return sdp
-    //         // Удаляем лишние RTX кодеки
-    //         .replace(/a=rtpmap:\d+ rtx\/\d+\r\n/g, '')
-    //         .replace(/a=fmtp:\d+ apt=\d+\r\n/g, '')
-    //         // Упрощаем параметры
-    //         .replace(/a=extmap:\d+ .*\r\n/g, '')
-    //         // Форсируем низкую задержку
-    //         .replace(/a=mid:video\r\n/g, 'a=mid:video\r\na=x-google-flag:conference\r\n')
-    //         // Упрощаем SDP для лучшей совместимости с iOS
-    //         .replace(/a=setup:actpass\r\n/g, 'a=setup:active\r\n')
-    //         // Удаляем ICE options, которые могут мешать
-    //         .replace(/a=ice-options:trickle\r\n/g, '')
-    //         // Устанавливаем низкий битрейт для iOS
-    //         .replace(/a=mid:video\r\n/g, 'a=mid:video\r\nb=AS:300\r\n')
-    //         // Форсируем H.264
-    //         .replace(/a=rtpmap:\d+ H264\/\d+/g, 'a=rtpmap:$& profile-level-id=42e01f;packetization-mode=1')
-    //         // Удаляем несовместимые параметры
-    //         .replace(/a=rtcp-fb:\d+ goog-remb\r\n/g, '')
-    //         .replace(/a=rtcp-fb:\d+ transport-cc\r\n/g, '');
-    //
-    // };
-    //
-    //
-    // // 3. Специальная нормализация SDP для Huawei
-    // const normalizeSdpForHuawei = (sdp: string): string => {
-    //     const { isHuawei } = detectPlatform();
-    //
-    //     if (!isHuawei) return sdp;
-    //
-    //     return sdp
-    //         // Приоритет H.264 baseline profile
-    //         .replace(/a=rtpmap:(\d+) H264\/\d+/g,
-    //             'a=rtpmap:$1 H264/90000\r\n' +
-    //             'a=fmtp:$1 profile-level-id=42e01f;packetization-mode=1;level-asymmetry-allowed=1\r\n')
-    //         // Уменьшаем размер GOP
-    //         .replace(/a=fmtp:\d+/, '$&;sprop-parameter-sets=J0LgC5Q9QEQ=,KM4=;')
-    //         // Оптимизации буферизации и битрейта
-    //         .replace(/a=mid:video\r\n/g,
-    //             'a=mid:video\r\n' +
-    //             'b=AS:250\r\n' +  // Уменьшенный битрейт для Huawei
-    //             'b=TIAS:250000\r\n' +
-    //             'a=rtcp-fb:* ccm fir\r\n' +
-    //             'a=rtcp-fb:* nack\r\n' +
-    //             'a=rtcp-fb:* nack pli\r\n');
-    //
-    // };
 
     const normalizeSdp = (sdp: string | undefined): string => {
         if (!sdp) {
@@ -632,6 +584,7 @@ export const useWebRTC = (
             console.warn('No SDP provided');
             return null;
         }
+        console.log('Full SDP:\n', sdp); // Логируем полный SDP
         const lines = sdp.split('\n');
         let videoPayloadTypes: string[] = [];
 
@@ -678,6 +631,7 @@ export const useWebRTC = (
             try {
                 const data: WebSocketMessage = JSON.parse(event.data);
                 console.log('Получено сообщение:', data);
+                console.log('Получено сообщение:', JSON.stringify(data, null, 2))
 
                 if (data.type === 'rejoin_and_offer' && isLeader) {
                     console.log('Получена команда rejoin_and_offer для лидера');
@@ -734,6 +688,7 @@ export const useWebRTC = (
                         break;
 
                     case 'offer':
+                        console.log('Получен offer SDP:\n', data.sdp?.sdp);
                         if (!isLeader && pc.current && data.sdp) {
                             if (!data.sdp) {
                                 console.error('Получен offer без SDP');
@@ -1308,25 +1263,25 @@ export const useWebRTC = (
 
                 const onMessage = (event: MessageEvent) => {
                     try {
-                        const data = JSON.parse(event.data)
-                        console.log('Получено сообщение в joinRoom:', data)
+                        const data = JSON.parse(event.data);
+                        console.log('Получено сообщение в joinRoom:', JSON.stringify(data, null, 2));
                         if (data.type === 'room_info') {
-                            console.log('Получено room_info, очищаем таймер')
-                            cleanupEvents()
-                            setIsInRoom(true)
-                            setUsers(data.data?.users || [])
-                            resolve()
+                            console.log('Получено room_info, очищаем таймер');
+                            cleanupEvents();
+                            setIsInRoom(true);
+                            setUsers(data.data?.users || []);
+                            resolve();
                         } else if (data.type === 'error') {
-                            console.error('Ошибка от сервера:', data.data)
-                            cleanupEvents()
-                            reject(new Error(data.data || 'Ошибка входа в комнату'))
+                            console.error('Ошибка от сервера:', data.data);
+                            cleanupEvents();
+                            reject(new Error(data.data || 'Ошибка входа в комнату'));
                         }
                     } catch (err) {
-                        console.error('Ошибка обработки сообщения:', err)
-                        cleanupEvents()
-                        reject(err)
+                        console.error('Ошибка обработки сообщения:', err);
+                        cleanupEvents();
+                        reject(err);
                     }
-                }
+                };
 
                 const cleanupEvents = () => {
                     ws.current?.removeEventListener('message', onMessage)

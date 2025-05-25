@@ -631,7 +631,9 @@ export const VideoCallApp = () => {
                                         className={styles.codecSelect}
                                     >
                                         <option value="VP8">VP8</option>
-                                        <option value="H264">H264</option>
+                                        <option value="AV1" disabled>AV1 - в разработке</option>
+                                        <option value="H264" disabled>H264 - в разработке</option>
+                                        <option value="VP9" disabled>VP9 - в разработке</option>
                                     </select>
                                 </div>
                             </div>
