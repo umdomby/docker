@@ -19,14 +19,11 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
     const [computedTransform, setComputedTransform] = useState<string>('')
     const [isRotated, setIsRotated] = useState(false)
 
-    // Use the provided ref or the internal one
     const actualVideoRef = videoRef || internalVideoRef
 
     useEffect(() => {
-        // Apply transformations and detect rotation
         if (typeof transform === 'string') {
             setComputedTransform(transform)
-            // Check if transform includes 90 or 270 degree rotation
             setIsRotated(transform.includes('rotate(90deg') || transform.includes('rotate(270deg)'))
         } else {
             try {
@@ -54,7 +51,16 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
         const video = actualVideoRef.current
         if (!video) return
 
+        console.log('Привязка потока к видеоэлементу:', {
+            streamId: stream?.id,
+            videoTracks: stream?.getVideoTracks().length,
+            audioTracks: stream?.getAudioTracks().length,
+            videoTrackEnabled: stream?.getVideoTracks()[0]?.enabled,
+            videoTrackReadyState: stream?.getVideoTracks()[0]?.readyState
+        })
+
         const handleCanPlay = () => {
+            console.log('Видео готово к воспроизведению')
             video.play().catch(e => {
                 console.error('Playback failed:', e)
                 video.muted = true
@@ -62,7 +68,12 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
             })
         }
 
+        const handleError = () => {
+            console.error('Ошибка видеоэлемента:', video.error)
+        }
+
         video.addEventListener('canplay', handleCanPlay)
+        video.addEventListener('error', handleError)
 
         if (stream) {
             video.srcObject = stream
@@ -72,6 +83,7 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
 
         return () => {
             video.removeEventListener('canplay', handleCanPlay)
+            video.removeEventListener('error', handleError)
             video.srcObject = null
         }
     }, [stream, actualVideoRef])
@@ -82,10 +94,13 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
             autoPlay
             playsInline
             muted={muted}
-            className={`${className} ${isRotated ? 'rotated' : ''}`}
+            className={`${className || ''} ${isRotated ? 'rotated' : ''}`}
             style={{
                 transform: computedTransform,
                 transformOrigin: 'center center',
+                // width: '100%',
+                // height: 'auto',
+                background: 'black' // Для видимости пустого видео
             }}
         />
     )

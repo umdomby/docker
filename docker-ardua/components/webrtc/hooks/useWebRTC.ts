@@ -491,12 +491,12 @@ export const useWebRTC = (
         console.log('Выполняется leaveRoom');
         if (ws.current?.readyState === WebSocket.OPEN) {
             try {
-                ws.current.send(JSON.stringify({
+                sendWebSocketMessage({
                     type: 'leave',
                     room: roomId,
                     username,
                     preferredCodec
-                }));
+                });
                 console.log('Отправлено сообщение leave:', { type: 'leave', room: roomId, username, preferredCodec });
             } catch (e) {
                 console.error('Ошибка отправки сообщения leave:', e);
@@ -771,13 +771,13 @@ export const useWebRTC = (
                                 setError('Не удалось определить кодек трансляции');
                             }
 
-                            ws.current.send(JSON.stringify({
+                            sendWebSocketMessage({
                                 type: 'answer',
                                 sdp: normalizedAnswer,
                                 room: roomId,
                                 username,
                                 preferredCodec
-                            }));
+                            });
                             console.log('Отправлен answer:', normalizedAnswer);
 
                             setIsCallActive(true);
@@ -890,7 +890,6 @@ export const useWebRTC = (
 
             pc.current = new RTCPeerConnection(config);
 
-
             if (isIOS || isSafari) {
                 // iOS требует более агрессивного управления ICE
                 pc.current.oniceconnectionstatechange = () => {
@@ -915,8 +914,7 @@ export const useWebRTC = (
 
             pc.current.addEventListener('icecandidate', event => {
                 if (event.candidate) {
-                    console.log('Using candidate type:',
-                        event.candidate.candidate.split(' ')[7]);
+                    console.log('Using candidate type:', event.candidate.candidate.split(' ')[7]);
                 }
             });
 
@@ -963,7 +961,6 @@ export const useWebRTC = (
                     ...getVideoConstraints(),
                     ...(isIOS && !deviceIds.video ? { facingMode: 'user' } : {})
                 } : getVideoConstraints(),
-                ...(isIOS && !deviceIds.video ? { facingMode: 'user' } : {}),
                 audio: deviceIds.audio ? {
                     deviceId: { exact: deviceIds.audio },
                     echoCancellation: true,
@@ -972,17 +969,31 @@ export const useWebRTC = (
                 } : true
             });
 
+            // Логируем состояние медиапотока
+            console.log('Получен медиапоток:', {
+                videoTracks: stream.getVideoTracks().length,
+                audioTracks: stream.getAudioTracks().length,
+                videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
+                videoTrackReadyState: stream.getVideoTracks()[0]?.readyState,
+                videoTrackLabel: stream.getVideoTracks()[0]?.label
+            });
+
+            // Проверяем наличие видеотрека для лидера
+            if (isLeader && stream.getVideoTracks().length === 0) {
+                throw new Error('Видеотрек не получен для лидера');
+            }
+
             // Применяем настройки для Huawei
             pc.current.getSenders().forEach(configureVideoSender);
 
-            // Проверяем наличие видеотрека
-            const videoTracks = stream.getVideoTracks();
-            if (videoTracks.length === 0) {
-                throw new Error('Не удалось получить видеопоток с устройства');
-            }
-
             setLocalStream(stream);
             stream.getTracks().forEach(track => {
+                console.log(`Добавление ${track.kind} трека в PeerConnection:`, {
+                    trackId: track.id,
+                    enabled: track.enabled,
+                    readyState: track.readyState,
+                    label: track.label
+                });
                 pc.current?.addTrack(track, stream);
             });
 
@@ -992,13 +1003,13 @@ export const useWebRTC = (
                     try {
                         // Фильтруем нежелательные кандидаты
                         if (shouldSendIceCandidate(event.candidate)) {
-                            ws.current.send(JSON.stringify({
+                            sendWebSocketMessage({
                                 type: 'ice_candidate',
                                 ice: event.candidate.toJSON(),
                                 room: roomId,
                                 preferredCodec,
                                 username
-                            }));
+                            });
                         }
                     } catch (err) {
                         console.error('Ошибка отправки ICE кандидата:', err);
@@ -1007,7 +1018,6 @@ export const useWebRTC = (
             };
 
             const shouldSendIceCandidate = (candidate: RTCIceCandidate) => {
-
                 const { isIOS, isSafari, isHuawei } = detectPlatform();
 
                 // Для Huawei отправляем только relay-кандидаты
@@ -1033,23 +1043,28 @@ export const useWebRTC = (
                         videoTracks: stream.getVideoTracks().length,
                         audioTracks: stream.getAudioTracks().length,
                         videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
-                        videoTrackReadyState: stream.getVideoTracks()[0]?.readyState
+                        videoTrackReadyState: stream.getVideoTracks()[0]?.readyState,
+                        videoTrackId: stream.getVideoTracks()[0]?.id
                     });
 
                     const videoTrack = stream.getVideoTracks()[0];
                     if (videoTrack && videoTrack.enabled && videoTrack.readyState === 'live') {
                         console.log('Получен активный видеотрек:', videoTrack.id);
-                        const newRemoteStream = new MediaStream();
-                        stream.getTracks().forEach(track => {
-                            newRemoteStream.addTrack(track);
-                            console.log(`Добавлен ${track.kind} трек в remoteStream`);
-                        });
-                        setRemoteStream(newRemoteStream);
-                        setIsCallActive(true);
-                        if (videoCheckTimeout.current) {
-                            clearTimeout(videoCheckTimeout.current);
-                            videoCheckTimeout.current = null;
-                            console.log('Таймер проверки видео очищен: получен активный видеотрек');
+                        if (!remoteStream || remoteStream.id !== stream.id) {
+                            const newRemoteStream = new MediaStream();
+                            stream.getTracks().forEach(track => {
+                                newRemoteStream.addTrack(track);
+                                console.log(`Добавлен ${track.kind} трек в remoteStream:`, track.id);
+                            });
+                            setRemoteStream(newRemoteStream);
+                            setIsCallActive(true);
+                            if (videoCheckTimeout.current) {
+                                clearTimeout(videoCheckTimeout.current);
+                                videoCheckTimeout.current = null;
+                                console.log('Таймер проверки видео очищен: получен активный видеотрек');
+                            }
+                        } else {
+                            console.log('Поток уже установлен, игнорируем дубликат');
                         }
                     } else {
                         console.warn('Входящий поток не содержит активного видеотрека');
@@ -1303,6 +1318,16 @@ export const useWebRTC = (
         }
     };
 
+
+    const sendWebSocketMessage = (message: any) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+            console.log('Отправка WebSocket-сообщения:', message);
+            ws.current.send(JSON.stringify(message));
+        } else {
+            console.error('WebSocket не открыт для отправки:', message);
+        }
+    };
+
     const joinRoom = async (uniqueUsername: string) => {
         setError(null)
         setIsInRoom(false)
@@ -1367,15 +1392,16 @@ export const useWebRTC = (
                     reject(new Error('Таймаут ожидания ответа от сервера'))
                 }, 15000)
 
+
                 ws.current.addEventListener('message', onMessage)
 
-                ws.current.send(JSON.stringify({
+                sendWebSocketMessage({
                     action: "join",
                     room: roomId,
                     username: uniqueUsername,
                     isLeader: false,
                     preferredCodec // Используем переданный кодек
-                }))
+                })
                 console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec })
             })
 
