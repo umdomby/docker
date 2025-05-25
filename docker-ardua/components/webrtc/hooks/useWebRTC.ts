@@ -74,7 +74,7 @@ export const useWebRTC = (
 
     // Максимальное количество попыток переподключения
     const MAX_RETRIES = 10;
-    const VIDEO_CHECK_TIMEOUT = 7000; // 4 секунд для проверки видео
+    const VIDEO_CHECK_TIMEOUT = 4000; // 4 секунд для проверки видео
 
 
 
@@ -185,11 +185,16 @@ export const useWebRTC = (
                 let connectionStats: any = null;
 
                 stats.forEach(report => {
-                    if (report.type === 'outbound-rtp' && report.kind === 'video') {
-                        videoStats = report;
-                    }
-                    if (report.type === 'candidate-pair' && report.selected) {
-                        connectionStats = report;
+                    if (report.type === 'inbound-rtp' && report.kind === 'video') {
+                        console.log('Статистика видео:', {
+                            bytesReceived: report.bytesReceived,
+                            packetsLost: report.packetsLost,
+                            jitter: report.jitter
+                        });
+                        if (report.bytesReceived === 0 && isCallActive) {
+                            console.warn('Видео не передается (bytesReceived=0), инициируем переподключение');
+                            resetConnection();
+                        }
                     }
                 });
 
@@ -416,6 +421,7 @@ export const useWebRTC = (
         return optimized;
     };
 
+// Добавляем очистку таймера в cleanup
     let cleanup = () => {
         console.log('Выполняется полная очистка ресурсов');
 
@@ -430,7 +436,6 @@ export const useWebRTC = (
         // Полная очистка PeerConnection
         if (pc.current) {
             console.log('Закрытие PeerConnection');
-            // Отключаем все обработчики событий
             pc.current.onicecandidate = null;
             pc.current.ontrack = null;
             pc.current.onnegotiationneeded = null;
@@ -439,7 +444,6 @@ export const useWebRTC = (
             pc.current.onsignalingstatechange = null;
             pc.current.onconnectionstatechange = null;
 
-            // Закрываем все трансцепторы
             pc.current.getTransceivers().forEach(transceiver => {
                 try {
                     transceiver.stop();
@@ -448,7 +452,6 @@ export const useWebRTC = (
                 }
             });
 
-            // Закрываем соединение
             try {
                 pc.current.close();
             } catch (err) {
@@ -479,7 +482,7 @@ export const useWebRTC = (
         isNegotiating.current = false;
         shouldCreateOffer.current = false;
         setIsCallActive(false);
-        setIsInRoom(false); // Сбрасываем isInRoom
+        setIsInRoom(false);
         console.log('Очистка завершена');
     };
 
@@ -521,17 +524,29 @@ export const useWebRTC = (
     };
 
     const startVideoCheckTimer = () => {
-        // Очищаем предыдущий таймер, если он есть
+        // Очищаем предыдущий таймер
         if (videoCheckTimeout.current) {
             clearTimeout(videoCheckTimeout.current);
+            videoCheckTimeout.current = null;
+            console.log('Очищен предыдущий таймер проверки видео');
         }
 
         // Устанавливаем новый таймер
+        console.log('Запуск таймера проверки видео на', VIDEO_CHECK_TIMEOUT / 1000, 'секунд');
         videoCheckTimeout.current = setTimeout(() => {
-            if (!remoteStream || remoteStream.getVideoTracks().length === 0 ||
-                !remoteStream.getVideoTracks()[0].readyState) {
-                console.log('Удаленное видео не получено в течение .. секунд, перезапускаем соединение...');
+            console.log('Проверка видео: remoteStream=', !!remoteStream,
+                'videoTracks=', remoteStream?.getVideoTracks().length || 0,
+                'firstTrackEnabled=', remoteStream?.getVideoTracks()[0]?.enabled,
+                'firstTrackReadyState=', remoteStream?.getVideoTracks()[0]?.readyState);
+
+            if (!remoteStream ||
+                remoteStream.getVideoTracks().length === 0 ||
+                !remoteStream.getVideoTracks()[0]?.enabled ||
+                remoteStream.getVideoTracks()[0]?.readyState !== 'live') {
+                console.log(`Удаленное видео не получено в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, инициируем переподключение...`);
                 resetConnection();
+            } else {
+                console.log('Видео активно, переподключение не требуется');
             }
         }, VIDEO_CHECK_TIMEOUT);
     };
@@ -985,13 +1000,17 @@ export const useWebRTC = (
             pc.current.ontrack = (event) => {
                 if (event.streams && event.streams[0]) {
                     const stream = event.streams[0];
-
-                    // Проверяем наличие видео трека
                     const videoTrack = stream.getVideoTracks()[0];
-                    if (videoTrack) {
-                        console.log('Получен видеотрек:', videoTrack.id);
 
-                        // Создаем новый MediaStream только с нужными треками
+                    console.log('Получен поток в ontrack:', {
+                        streamId: stream.id,
+                        videoTracks: stream.getVideoTracks().length,
+                        videoTrackEnabled: videoTrack?.enabled,
+                        videoTrackReadyState: videoTrack?.readyState
+                    });
+
+                    if (videoTrack && videoTrack.enabled && videoTrack.readyState === 'live') {
+                        console.log('Получен активный видеотрек:', videoTrack.id);
                         const newRemoteStream = new MediaStream();
                         stream.getTracks().forEach(track => {
                             newRemoteStream.addTrack(track);
@@ -1001,15 +1020,19 @@ export const useWebRTC = (
                         setRemoteStream(newRemoteStream);
                         setIsCallActive(true);
 
-                        // Очищаем таймер проверки видео
+                        // Очищаем таймер только при получении активного видео
                         if (videoCheckTimeout.current) {
                             clearTimeout(videoCheckTimeout.current);
                             videoCheckTimeout.current = null;
+                            console.log('Таймер проверки видео очищен: получен активный видеотрек');
                         }
                     } else {
-                        console.warn('Входящий поток не содержит видео');
+                        console.warn('Входящий поток не содержит активного видео, продолжаем проверку');
                         startVideoCheckTimer();
                     }
+                } else {
+                    console.warn('Получен пустой поток в ontrack, запускаем проверку видео');
+                    startVideoCheckTimer();
                 }
             };
 
@@ -1169,31 +1192,40 @@ export const useWebRTC = (
 
 // Модифицируем функцию resetConnection
     const resetConnection = async () => {
+        console.log(`Запуск resetConnection, попытка #${retryAttempts.current + 1}`);
+
         if (retryAttempts.current >= MAX_RETRIES) {
+            console.error('Достигнуто максимальное количество попыток переподключения:', MAX_RETRIES);
             setError('Не удалось восстановить соединение после нескольких попыток');
             leaveRoom();
             return;
         }
 
-        // Увеличиваем таймаут с каждой попыткой, особенно для мобильных
         const { isIOS, isSafari } = detectPlatform();
-        const baseDelay = isIOS || isSafari ? 5000 : 2000; // Больше времени для iOS
+        const baseDelay = isIOS || isSafari ? 5000 : 2000;
         const retryDelay = Math.min(baseDelay * (retryAttempts.current + 1), 15000);
 
-        console.log(`Попытка переподключения #${retryAttempts.current + 1}, задержка: ${retryDelay}ms`);
-
+        console.log(`Ожидание перед переподключением: ${retryDelay}ms`);
         cleanup();
         retryAttempts.current += 1;
         setRetryCount(retryAttempts.current);
 
         setTimeout(async () => {
             try {
+                console.log('Попытка повторного входа в комнату');
                 await joinRoom(username);
+                console.log('Переподключение успешно, сброс счетчика попыток');
                 retryAttempts.current = 0;
+                setRetryCount(0);
             } catch (err) {
                 console.error('Ошибка переподключения:', err);
                 if (retryAttempts.current < MAX_RETRIES) {
+                    console.log('Планируем следующую попытку переподключения');
                     resetConnection();
+                } else {
+                    console.error('Исчерпаны все попытки переподключения');
+                    setError('Не удалось восстановить соединение после максимального количества попыток');
+                    leaveRoom();
                 }
             }
         }, retryDelay);
