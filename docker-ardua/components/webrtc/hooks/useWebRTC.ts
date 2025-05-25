@@ -57,6 +57,11 @@ export const useWebRTC = (
 
     const [activeCodec, setActiveCodec] = useState<string | null>(null);
 
+
+    const [stream, setStream] = useState<MediaStream | null>(null);
+
+
+
     // Добавляем функцию для определения платформы
     const detectPlatform = () => {
         const ua = navigator.userAgent;
@@ -535,15 +540,17 @@ export const useWebRTC = (
                 remoteStream: !!remoteStream,
                 videoTracks: remoteStream?.getVideoTracks().length || 0,
                 firstTrackEnabled: remoteStream?.getVideoTracks()[0]?.enabled,
-                firstTrackReadyState: remoteStream?.getVideoTracks()[0]?.readyState
+                firstTrackReadyState: remoteStream?.getVideoTracks()[0]?.readyState,
             });
             const videoElement = document.querySelector('video');
             const hasVideoContent = videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0;
-            if (!remoteStream ||
+            if (
+                !remoteStream ||
                 remoteStream.getVideoTracks().length === 0 ||
                 !remoteStream.getVideoTracks()[0]?.enabled ||
                 remoteStream.getVideoTracks()[0]?.readyState !== 'live' ||
-                !hasVideoContent) {
+                !hasVideoContent
+            ) {
                 console.log(`Удаленное видео не получено или пустое в течение ${VIDEO_CHECK_TIMEOUT / 1000} секунд, перезапускаем соединение...`);
                 resetConnection();
             } else {
@@ -671,22 +678,27 @@ export const useWebRTC = (
                     console.log('Получена команда rejoin_and_offer для лидера');
                     if (pc.current && ws.current?.readyState === WebSocket.OPEN) {
                         try {
+                            const localStream = await initializeWebRTC();
+                            if (!localStream || localStream.getVideoTracks().length === 0) {
+                                console.error('Нет видеотрека для лидера после initializeWebRTC');
+                                throw new Error('Видеотрек отсутствует');
+                            }
                             const offer = await pc.current.createOffer({
                                 offerToReceiveAudio: true,
-                                offerToReceiveVideo: false
+                                offerToReceiveVideo: false,
                             });
                             const normalizedOffer = {
                                 ...offer,
-                                sdp: normalizeSdp(offer.sdp)
+                                sdp: normalizeSdp(offer.sdp),
                             };
                             await pc.current.setLocalDescription(normalizedOffer);
-                            ws.current.send(JSON.stringify({
+                            sendWebSocketMessage({
                                 type: 'offer',
                                 sdp: normalizedOffer,
                                 room: roomId,
                                 username,
-                                preferredCodec
-                            }));
+                                preferredCodec,
+                            });
                             console.log('Отправлен новый offer:', normalizedOffer);
                             startVideoCheckTimer();
                         } catch (err) {
@@ -697,166 +709,66 @@ export const useWebRTC = (
                     return;
                 }
 
-                // Устанавливаем isLeader и users при получении room_info
-                if (data.type === 'room_info') {
-                    const roomInfo = (data as RoomInfoMessage).data;
-                    console.log('Обработка room_info:', roomInfo);
-                    if (roomInfo) {
-                        setIsLeader(roomInfo.leader === username);
-                        setUsers(roomInfo.users || []);
-                        setIsInRoom(true);
-                    }
-                }
-
-                // Обработка switch_camera
-                if (data.type === 'switch_camera_ack') {
-                    console.log('Камера на Android успешно переключена');
-                }
-
-                // Обработка reconnect_request
-                if (data.type === 'reconnect_request') {
-                    console.log('Сервер запросил переподключение');
-                    setTimeout(() => {
-                        resetConnection();
-                    }, 1000);
-                    return;
-                }
-
-                if (data.type === 'force_disconnect') {
-                    console.log('Получена команда принудительного отключения');
-                    setError('Вы были отключены, так как подключился другой зритель');
-                    leaveRoom();
-                    return;
-                }
-
-                if (data.type === 'error') {
-                    setError(data.data || 'Ошибка от сервера');
-                    console.error('Ошибка от сервера:', data.data);
-                }
-
-                if (data.type === 'offer') {
-                    if (pc.current && ws.current?.readyState === WebSocket.OPEN && data.sdp) {
-                        try {
-                            if (isNegotiating.current) {
-                                console.log('Уже в процессе переговоров, игнорируем оффер');
-                                return;
-                            }
-
-                            isNegotiating.current = true;
-                            await pc.current.setRemoteDescription(
-                                new RTCSessionDescription(data.sdp)
-                            );
-
-                            const answer = await pc.current.createAnswer({
-                                offerToReceiveAudio: true,
-                                offerToReceiveVideo: true
+                switch (data.type) {
+                    case 'room_info':
+                        console.log('Обработка room_info:', data.data);
+                        setRoomInfo(data.data);
+                        if (data.data?.leader && data.data?.follower) {
+                            console.log('Получены данные комнаты:', {
+                                leader: data.data.leader,
+                                follower: data.data.follower,
                             });
+                            if (videoCheckTimeout.current) {
+                                clearTimeout(videoCheckTimeout.current);
+                                console.log('Таймер проверки видео очищен при получении room_info');
+                            }
+                            startVideoCheckTimer();
+                        }
+                        break;
 
+                    case 'offer':
+                        if (!isLeader && pc.current) {
+                            console.log('Получен offer:', data.sdp);
+                            await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            console.log('Состояние сигнализации изменилось: have-remote-offer');
+                            const answer = await pc.current.createAnswer();
                             const normalizedAnswer = {
                                 ...answer,
-                                sdp: normalizeSdp(answer.sdp)
+                                sdp: normalizeSdp(answer.sdp),
                             };
-
                             await pc.current.setLocalDescription(normalizedAnswer);
-
-                            // Extract codec from the answer SDP
-                            const codec = getVideoCodecFromSdp(normalizedAnswer.sdp);
-                            if (codec) {
-                                console.log(`Кодек трансляции: ${codec}`);
-                                setActiveCodec(codec);
-                                if (codec !== preferredCodec) {
-                                    console.warn(`Using codec ${codec} instead of preferred ${preferredCodec}`);
-                                    setError(`Используется кодек ${codec} вместо выбранного ${preferredCodec}`);
-                                }
-                            } else {
-                                console.warn('Кодек не найден в SDP ответа');
-                                setActiveCodec(null);
-                                setError('Не удалось определить кодек трансляции');
-                            }
-
                             sendWebSocketMessage({
                                 type: 'answer',
                                 sdp: normalizedAnswer,
                                 room: roomId,
                                 username,
-                                preferredCodec
+                                preferredCodec,
                             });
                             console.log('Отправлен answer:', normalizedAnswer);
-
-                            setIsCallActive(true);
-                            isNegotiating.current = false;
-                        } catch (err) {
-                            console.error('Ошибка обработки оффера:', err);
-                            setError('Ошибка обработки предложения соединения');
-                            isNegotiating.current = false;
                         }
-                    }
-                } else if (data.type === 'answer') {
-                    if (pc.current && data.sdp) {
-                        try {
-                            if (pc.current.signalingState !== 'have-local-offer') {
-                                console.log('Не в состоянии have-local-offer, игнорируем ответ');
-                                return;
-                            }
+                        break;
 
-                            const answerDescription: RTCSessionDescriptionInit = {
-                                type: 'answer',
-                                sdp: normalizeSdp(data.sdp.sdp)
-                            };
-
-                            console.log('Устанавливаем удаленное описание с ответом');
-                            await pc.current.setRemoteDescription(
-                                new RTCSessionDescription(answerDescription)
-                            );
-
-                            // Extract codec from the answer SDP
-                            const codec = getVideoCodecFromSdp(answerDescription.sdp);
-                            if (codec) {
-                                console.log(`Кодек трансляции: ${codec}`);
-                                setActiveCodec(codec); // Update active codec
-                            } else {
-                                console.warn('Кодек не найден в SDP ответа');
-                                setActiveCodec(null);
-                            }
-
-                            setIsCallActive(true);
-
-                            // Запускаем проверку получения видео
-                            startVideoCheckTimer();
-
-                            // Обрабатываем ожидающие кандидаты
-                            while (pendingIceCandidates.current.length > 0) {
-                                const candidate = pendingIceCandidates.current.shift();
-                                if (candidate) {
-                                    try {
-                                        await pc.current.addIceCandidate(candidate);
-                                    } catch (err) {
-                                        console.error('Ошибка добавления отложенного ICE кандидата:', err);
-                                    }
-                                }
-                            }
-                        } catch (err) {
-                            console.error('Ошибка установки ответа:', err);
-                            setError(`Ошибка установки ответа: ${err instanceof Error ? err.message : String(err)}`);
+                    case 'answer':
+                        if (isLeader && pc.current) {
+                            console.log('Получен answer:', data.sdp);
+                            await pc.current.setRemoteDescription(new RTCSessionDescription(data.sdp));
+                            console.log('Состояние сигнализации изменилось: stable');
                         }
-                    }
-                } else if (data.type === 'ice_candidate') {
-                    if (data.ice) {
-                        try {
-                            const candidate = new RTCIceCandidate(data.ice);
+                        break;
 
-                            if (pc.current && pc.current.remoteDescription) {
-                                await pc.current.addIceCandidate(candidate);
-                                console.log('Добавлен ICE кандидат:', candidate);
-                            } else {
-                                pendingIceCandidates.current.push(candidate);
-                                console.log('ICE кандидат добавлен в очередь:', candidate);
+                    case 'ice_candidate':
+                        if (pc.current) {
+                            console.log('ICE кандидат добавлен в очередь:', data.ice);
+                            try {
+                                await pc.current.addIceCandidate(new RTCIceCandidate(data.ice));
+                            } catch (err) {
+                                console.error('Ошибка добавления ICE-кандидата:', err);
                             }
-                        } catch (err) {
-                            console.error('Ошибка добавления ICE-кандидата:', err);
-                            setError('Ошибка добавления ICE-кандидата');
                         }
-                    }
+                        break;
+
+                    default:
+                        console.warn('Неизвестный тип сообщения:', data.type);
                 }
             } catch (err) {
                 console.error('Ошибка обработки сообщения:', err);
@@ -867,284 +779,157 @@ export const useWebRTC = (
         ws.current.onmessage = handleMessage;
     };
 
-    const initializeWebRTC = async () => {
-        try {
-            cleanup();
+    const initializeWebRTC = async (): Promise<MediaStream | null> => {
+        console.log('Инициализация WebRTC');
+        const isAndroid = /Android/i.test(navigator.userAgent);
 
-            const { isIOS, isSafari, isHuawei } = detectPlatform();
+        // Очистка предыдущих ресурсов
+        if (pc.current) {
+            pc.current.close();
+            pc.current = null;
+            console.log('Предыдущий PeerConnection закрыт');
+        }
+        if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            setStream(null);
+            console.log('Предыдущий локальный поток очищен');
+        }
+        if (remoteStream) {
+            setRemoteStream(null);
+            console.log('Предыдущий удаленный поток очищен');
+        }
 
-            const config: RTCConfiguration = {
-                iceServers: [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:ardua.site:3478' },
-                    {
-                        urls: 'turn:ardua.site:3478',
-                        username: 'user1',
-                        credential: 'pass1'
-                    }
-                ],
-                bundlePolicy: 'max-bundle',
-                rtcpMuxPolicy: 'require',
-                iceTransportPolicy: 'all',
-                iceCandidatePoolSize: 0,
-                // @ts-ignore - sdpSemantics is supported but not in TypeScript's types
-                sdpSemantics: 'unified-plan' as any,
-            };
+        // Создаем новый RTCPeerConnection
+        pc.current = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:ardua.site:3478' },
+                { urls: 'turn:ardua.site:3478', username: 'user1', credential: 'pass1' },
+            ],
+            iceTransportPolicy: 'all',
+        });
 
-            pc.current = new RTCPeerConnection(config);
-
-            if (isIOS || isSafari) {
-                // iOS требует более агрессивного управления ICE
-                pc.current.oniceconnectionstatechange = () => {
-                    if (!pc.current) return;
-
-                    console.log('iOS ICE state:', pc.current.iceConnectionState);
-
-                    if (pc.current.iceConnectionState === 'disconnected' ||
-                        pc.current.iceConnectionState === 'failed') {
-                        console.log('iOS: ICE failed, restarting connection');
-                        setTimeout(resetConnection, 1000);
-                    }
-                };
-
-                // iOS требует быстрой переотправки кандидатов
-                pc.current.onicegatheringstatechange = () => {
-                    if (pc.current?.iceGatheringState === 'complete') {
-                        console.log('iOS: ICE gathering complete');
-                    }
-                };
+        // Обработка ICE-событий
+        pc.current.oniceconnectionstatechange = () => {
+            if (!pc.current) return;
+            console.log('ICE connection state:', pc.current.iceConnectionState);
+            if (pc.current.iceConnectionState === 'disconnected' || pc.current.iceConnectionState === 'failed') {
+                console.log('ICE failed, restarting connection');
+                setTimeout(resetConnection, 1000);
             }
+        };
 
-            pc.current.addEventListener('icecandidate', event => {
-                if (event.candidate) {
-                    console.log('Using candidate type:', event.candidate.candidate.split(' ')[7]);
-                }
-            });
-
-            if (isHuawei) {
-                pc.current.oniceconnectionstatechange = () => {
-                    if (!pc.current) return;
-
-                    console.log('Huawei ICE состояние:', pc.current.iceConnectionState);
-
-                    // Более агрессивное восстановление для Huawei
-                    if (pc.current.iceConnectionState === 'disconnected' ||
-                        pc.current.iceConnectionState === 'failed') {
-                        console.log('Huawei: соединение прервано, переподключение...');
-                        setTimeout(resetConnection, 1000);
-                    }
-                };
-            }
-
-            // Обработчики событий WebRTC
-            pc.current.onnegotiationneeded = () => {
-                console.log('Требуется переговорный процесс');
-            };
-
-            pc.current.onsignalingstatechange = () => {
-                console.log('Состояние сигнализации изменилось:', pc.current?.signalingState);
-            };
-
-            pc.current.onicegatheringstatechange = () => {
-                console.log('Состояние сбора ICE изменилось:', pc.current?.iceGatheringState);
-            };
-
-            pc.current.onicecandidateerror = (event) => {
-                const ignorableErrors = [701, 702, 703]; // Игнорируем стандартные ошибки STUN
-                if (!ignorableErrors.includes(event.errorCode)) {
-                    console.error('Критическая ошибка ICE кандидата:', event);
-                    setError(`Ошибка ICE соединения: ${event.errorText}`);
-                }
-            };
-
-            // Получаем медиапоток с устройства
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: deviceIds.video ? {
-                    deviceId: { exact: deviceIds.video },
-                    ...getVideoConstraints(),
-                    ...(isIOS && !deviceIds.video ? { facingMode: 'user' } : {})
-                } : getVideoConstraints(),
-                audio: deviceIds.audio ? {
-                    deviceId: { exact: deviceIds.audio },
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: true
-                } : true
-            });
-
-            // Логируем состояние медиапотока
-            console.log('Получен медиапоток:', {
-                videoTracks: stream.getVideoTracks().length,
-                audioTracks: stream.getAudioTracks().length,
-                videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
-                videoTrackReadyState: stream.getVideoTracks()[0]?.readyState,
-                videoTrackLabel: stream.getVideoTracks()[0]?.label
-            });
-
-            // Проверяем наличие видеотрека для лидера
-            if (isLeader && stream.getVideoTracks().length === 0) {
-                throw new Error('Видеотрек не получен для лидера');
-            }
-
-            // Применяем настройки для Huawei
-            pc.current.getSenders().forEach(configureVideoSender);
-
-            setLocalStream(stream);
-            stream.getTracks().forEach(track => {
-                console.log(`Добавление ${track.kind} трека в PeerConnection:`, {
-                    trackId: track.id,
-                    enabled: track.enabled,
-                    readyState: track.readyState,
-                    label: track.label
+        pc.current.onicecandidate = (event) => {
+            if (event.candidate) {
+                console.log(`Using candidate type: ${event.candidate.type}`);
+                sendWebSocketMessage({
+                    type: 'ice_candidate',
+                    ice: event.candidate.toJSON(),
+                    room: roomId,
+                    preferredCodec,
+                    username,
                 });
-                pc.current?.addTrack(track, stream);
-            });
+            }
+        };
 
-            // Обработка ICE кандидатов
+        // Мониторинг TURN для Android
+        if (isAndroid) {
+            console.log('Android: Monitoring ICE candidates for TURN usage');
+            let hasRelayCandidate = false;
             pc.current.onicecandidate = (event) => {
-                if (event.candidate && ws.current?.readyState === WebSocket.OPEN) {
-                    try {
-                        // Фильтруем нежелательные кандидаты
-                        if (shouldSendIceCandidate(event.candidate)) {
-                            sendWebSocketMessage({
-                                type: 'ice_candidate',
-                                ice: event.candidate.toJSON(),
-                                room: roomId,
-                                preferredCodec,
-                                username
-                            });
-                        }
-                    } catch (err) {
-                        console.error('Ошибка отправки ICE кандидата:', err);
+                if (event.candidate && event.candidate.type === 'relay') {
+                    hasRelayCandidate = true;
+                    console.log('Android: TURN relay candidate generated');
+                }
+                if (!event.candidate) {
+                    if (!hasRelayCandidate) {
+                        console.warn('Android: No TURN relay candidates generated, possible TURN server issue');
+                        setTimeout(resetConnection, 2000);
                     }
                 }
             };
 
-            const shouldSendIceCandidate = (candidate: RTCIceCandidate) => {
-                const { isIOS, isSafari, isHuawei } = detectPlatform();
-
-                // Для Huawei отправляем только relay-кандидаты
-                if (isHuawei) {
-                    return candidate.candidate.includes('typ relay');
+            // Проверка ICE-соединения через 10 секунд
+            setTimeout(() => {
+                if (pc.current && pc.current.iceConnectionState !== 'connected' && pc.current.iceConnectionState !== 'completed') {
+                    console.warn('Android: ICE connection not established after 10s, restarting');
+                    resetConnection();
                 }
+            }, 10000);
+        }
 
-                // Для iOS/Safari отправляем только relay-кандидаты и srflx
-                if (isIOS || isSafari) {
-                    return candidate.candidate.includes('typ relay') ||
-                        candidate.candidate.includes('typ srflx');
+        // Получение медиапотока
+        let localStream: MediaStream | null = null;
+        try {
+            localStream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: true,
+            });
+            console.log('Получен медиапоток:', {
+                videoTracks: localStream.getVideoTracks().length,
+                audioTracks: localStream.getAudioTracks().length,
+                videoTrackEnabled: localStream.getVideoTracks()[0]?.enabled,
+                videoTrackReadyState: localStream.getVideoTracks()[0]?.readyState,
+            });
+
+            // Добавляем треки в PeerConnection
+            localStream.getTracks().forEach((track) => {
+                if (pc.current) {
+                    pc.current.addTrack(track, localStream!);
+                    console.log(`Добавлен ${track.kind} трек в PeerConnection:`, track.id);
                 }
+            });
 
-                return true;
-            };
+            setStream(localStream); // Обновляем состояние
+        } catch (err) {
+            console.error('Ошибка получения медиапотока:', err);
+            setError('Не удалось получить доступ к камере или микрофону');
+            return null;
+        }
 
-            // Обработка входящих медиапотоков
-            pc.current.ontrack = (event) => {
-                if (event.streams && event.streams[0]) {
-                    const stream = event.streams[0];
-                    console.log('Получен поток в ontrack:', {
-                        streamId: stream.id,
-                        videoTracks: stream.getVideoTracks().length,
-                        audioTracks: stream.getAudioTracks().length,
-                        videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
-                        videoTrackReadyState: stream.getVideoTracks()[0]?.readyState,
-                        videoTrackId: stream.getVideoTracks()[0]?.id
-                    });
+        // Обработка входящих треков
+        pc.current.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+                const stream = event.streams[0];
+                console.log('Получен поток в ontrack:', {
+                    streamId: stream.id,
+                    videoTracks: stream.getVideoTracks().length,
+                    audioTracks: stream.getAudioTracks().length,
+                    videoTrackEnabled: stream.getVideoTracks()[0]?.enabled,
+                    videoTrackReadyState: stream.getVideoTracks()[0]?.readyState,
+                    videoTrackId: stream.getVideoTracks()[0]?.id,
+                });
 
-                    const videoTrack = stream.getVideoTracks()[0];
-                    if (videoTrack && videoTrack.enabled && videoTrack.readyState === 'live') {
-                        console.log('Получен активный видеотрек:', videoTrack.id);
-                        if (!remoteStream || remoteStream.id !== stream.id) {
-                            const newRemoteStream = new MediaStream();
-                            stream.getTracks().forEach(track => {
-                                newRemoteStream.addTrack(track);
-                                console.log(`Добавлен ${track.kind} трек в remoteStream:`, track.id);
-                            });
-                            setRemoteStream(newRemoteStream);
-                            setIsCallActive(true);
-                            if (videoCheckTimeout.current) {
-                                clearTimeout(videoCheckTimeout.current);
-                                videoCheckTimeout.current = null;
-                                console.log('Таймер проверки видео очищен: получен активный видеотрек');
-                            }
-                        } else {
-                            console.log('Поток уже установлен, игнорируем дубликат');
+                const videoTrack = stream.getVideoTracks()[0];
+                if (videoTrack && videoTrack.enabled && videoTrack.readyState === 'live') {
+                    console.log('Получен активный видеотрек:', videoTrack.id);
+                    if (!remoteStream || remoteStream.id !== stream.id) {
+                        const newRemoteStream = new MediaStream();
+                        stream.getTracks().forEach((track) => {
+                            newRemoteStream.addTrack(track);
+                            console.log(`Добавлен ${track.kind} трек в remoteStream:`, track.id);
+                        });
+                        setRemoteStream(newRemoteStream);
+                        setIsCallActive(true);
+                        if (videoCheckTimeout.current) {
+                            clearTimeout(videoCheckTimeout.current);
+                            videoCheckTimeout.current = null;
+                            console.log('Таймер проверки видео очищен: получен активный видеотрек');
                         }
                     } else {
-                        console.warn('Входящий поток не содержит активного видеотрека');
-                        startVideoCheckTimer();
+                        console.log('Поток уже установлен, игнорируем дубликат');
                     }
                 } else {
-                    console.warn('Получен пустой поток в ontrack');
+                    console.warn('Входящий поток не содержит активного видеотрека');
                     startVideoCheckTimer();
                 }
-            };
+            } else {
+                console.warn('Получен пустой поток в ontrack');
+                startVideoCheckTimer();
+            }
+        };
 
-            // Обработка состояния ICE соединения
-            pc.current.oniceconnectionstatechange = () => {
-                if (!pc.current) return;
-
-                const { isHuawei } = detectPlatform();
-
-                if (pc.current.iceConnectionState === 'connected' && isHuawei) {
-                    // Сохраняем функцию остановки для cleanup
-                    const stopHuaweiMonitor = startHuaweiPerformanceMonitor();
-
-                    // Автоматическая остановка при разрыве
-                    pc.current.onconnectionstatechange = () => {
-                        if (pc.current?.connectionState === 'disconnected') {
-                            stopHuaweiMonitor();
-                        }
-                    };
-
-                    // Также останавливаем при ручной очистке
-                    const originalCleanup = cleanup;
-                    cleanup = () => {
-                        stopHuaweiMonitor();
-                        originalCleanup();
-                    };
-                }
-
-                if (isHuawei && pc.current.iceConnectionState === 'disconnected') {
-                    // Более агрессивный перезапуск для Huawei
-                    setTimeout(resetConnection, 1000);
-                }
-
-                console.log('Состояние ICE соединения:', pc.current.iceConnectionState);
-
-                switch (pc.current.iceConnectionState) {
-                    case 'failed':
-                        console.log('Ошибка ICE, перезапуск...');
-                        resetConnection();
-                        break;
-
-                    case 'disconnected':
-                        console.log('Соединение прервано...');
-                        setIsCallActive(false);
-                        resetConnection();
-                        break;
-
-                    case 'connected':
-                        console.log('Соединение установлено!');
-                        setIsCallActive(true);
-                        break;
-
-                    case 'closed':
-                        console.log('Соединение закрыто');
-                        setIsCallActive(false);
-                        break;
-                }
-            };
-
-            // Запускаем мониторинг статистики соединения
-            startConnectionMonitoring();
-
-            return true;
-        } catch (err) {
-            console.error('Ошибка инициализации WebRTC:', err);
-            setError(`Не удалось инициализировать WebRTC: ${err instanceof Error ? err.message : String(err)}`);
-            cleanup();
-            return false;
-        }
+        return localStream;
     };
 
     const adjustVideoQualityForSafari = (direction: 'higher' | 'lower') => {

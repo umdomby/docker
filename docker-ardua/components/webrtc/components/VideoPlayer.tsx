@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react';
 
 interface VideoPlayerProps {
     stream: MediaStream | null;
@@ -15,89 +15,92 @@ type VideoSettings = {
 };
 
 export const VideoPlayer = ({ stream, muted = false, className, transform, videoRef }: VideoPlayerProps) => {
-    const internalVideoRef = useRef<HTMLVideoElement>(null)
-    const [computedTransform, setComputedTransform] = useState<string>('')
-    const [isRotated, setIsRotated] = useState(false)
+    const internalVideoRef = useRef<HTMLVideoElement>(null);
+    const [computedTransform, setComputedTransform] = useState<string>('');
+    const [isRotated, setIsRotated] = useState(false);
 
-    const actualVideoRef = videoRef || internalVideoRef
+    const actualVideoRef = videoRef || internalVideoRef;
 
     useEffect(() => {
         if (typeof transform === 'string') {
-            setComputedTransform(transform)
-            setIsRotated(transform.includes('rotate(90deg') || transform.includes('rotate(270deg)'))
+            setComputedTransform(transform);
+            setIsRotated(transform.includes('rotate(90deg') || transform.includes('rotate(270deg)'));
         } else {
             try {
-                const saved = localStorage.getItem('videoSettings')
+                const saved = localStorage.getItem('videoSettings');
                 if (saved) {
-                    const { rotation, flipH, flipV } = JSON.parse(saved) as VideoSettings
-                    let fallbackTransform = ''
-                    if (rotation !== 0) fallbackTransform += `rotate(${rotation}deg) `
-                    fallbackTransform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`
-                    setComputedTransform(fallbackTransform)
-                    setIsRotated(rotation === 90 || rotation === 270)
+                    const { rotation, flipH, flipV } = JSON.parse(saved) as VideoSettings;
+                    let fallbackTransform = '';
+                    if (rotation !== 0) fallbackTransform += `rotate(${rotation}deg) `;
+                    fallbackTransform += `scaleX(${flipH ? -1 : 1}) scaleY(${flipV ? -1 : 1})`;
+                    setComputedTransform(fallbackTransform);
+                    setIsRotated(rotation === 90 || rotation === 270);
                 } else {
-                    setComputedTransform('')
-                    setIsRotated(false)
+                    setComputedTransform('');
+                    setIsRotated(false);
                 }
             } catch (e) {
-                console.error('Error parsing saved video settings:', e)
-                setComputedTransform('')
-                setIsRotated(false)
+                console.error('Error parsing saved video settings:', e);
+                setComputedTransform('');
+                setIsRotated(false);
             }
         }
-    }, [transform])
+    }, [transform]);
 
     useEffect(() => {
-        const video = actualVideoRef.current
-        if (!video) return
+        const video = actualVideoRef.current;
+        if (!video) return;
 
         console.log('Привязка потока к видеоэлементу:', {
             streamId: stream?.id,
             videoTracks: stream?.getVideoTracks().length,
             audioTracks: stream?.getAudioTracks().length,
             videoTrackEnabled: stream?.getVideoTracks()[0]?.enabled,
-            videoTrackReadyState: stream?.getVideoTracks()[0]?.readyState
-        })
+            videoTrackReadyState: stream?.getVideoTracks()[0]?.readyState,
+            videoTrackId: stream?.getVideoTracks()[0]?.id,
+        });
 
         const handleCanPlay = () => {
-            console.log('Видео готово к воспроизведению')
-            video.play().catch(e => {
-                console.error('Playback failed:', e)
-                video.muted = true
-                video.play().catch(e => console.error('Muted playback also failed:', e))
-            })
-        }
+            console.log('Видео готово к воспроизведению');
+            video.play().catch((e) => {
+                console.error('Playback failed:', e);
+                video.muted = true;
+                video.play().catch((e) => console.error('Muted playback also failed:', e));
+            });
+        };
 
         const handleError = () => {
-            console.error('Ошибка видеоэлемента:', video.error)
-        }
+            console.error('Ошибка видеоэлемента:', video.error);
+        };
 
         const handleLoadedMetadata = () => {
             console.log('Метаданные видео загружены:', {
                 videoWidth: video.videoWidth,
-                videoHeight: video.videoHeight
-            })
-        }
+                videoHeight: video.videoHeight,
+            });
+            if (video.videoWidth === 0 || video.videoHeight === 0) {
+                console.warn('Пустой видеотрек: размеры видео равны нулю');
+            }
+        };
 
-        video.addEventListener('canplay', handleCanPlay)
-        video.addEventListener('error', handleError)
-        video.addEventListener('loadedmetadata', handleLoadedMetadata)
+        video.addEventListener('canplay', handleCanPlay);
+        video.addEventListener('error', handleError);
+        video.addEventListener('loadedmetadata', handleLoadedMetadata);
 
         if (stream) {
-            video.srcObject = stream
-            // Принудительно запускаем воспроизведение для мобильных
-            video.play().catch(e => console.error('Initial play failed:', e))
+            video.srcObject = stream;
+            video.play().catch((e) => console.error('Initial play failed:', e));
         } else {
-            video.srcObject = null
+            video.srcObject = null;
         }
 
         return () => {
-            video.removeEventListener('canplay', handleCanPlay)
-            video.removeEventListener('error', handleError)
-            video.removeEventListener('loadedmetadata', handleLoadedMetadata)
-            video.srcObject = null
-        }
-    }, [stream, actualVideoRef])
+            video.removeEventListener('canplay', handleCanPlay);
+            video.removeEventListener('error', handleError);
+            video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+            video.srcObject = null;
+        };
+    }, [stream, actualVideoRef]);
 
     return (
         <video
@@ -112,8 +115,8 @@ export const VideoPlayer = ({ stream, muted = false, className, transform, video
                 // width: '100%',
                 // height: 'auto',
                 background: 'black',
-                objectFit: 'contain' // Для корректного отображения на мобильных
+                objectFit: 'contain',
             }}
         />
-    )
-}
+    );
+};
