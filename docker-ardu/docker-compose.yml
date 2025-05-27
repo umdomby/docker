@@ -10,7 +10,7 @@ services:
     volumes:
       - ./letsencrypt:/etc/letsencrypt
     env_file:
-      - .env
+      - ..env
     networks:
       - sharednetwork
     restart: always

@@ -9,7 +9,7 @@ services:
       - .:/app2
     command: ["yarn", "start"]
     env_file:
-      - .env
+      - ..env
     networks:
       - sharednetwork
     restart: always
