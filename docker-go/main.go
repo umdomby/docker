@@ -33,12 +33,20 @@ Follower string   `json:"follower"`
 }
 
 var (
-peers     = make(map[string]*Peer)
-rooms     = make(map[string]map[string]*Peer)
-mu        sync.Mutex
-// letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") // Не используется, но оставлено для вашего сведения
-webrtcAPI *webrtc.API // Глобальный API с настроенным MediaEngine
+    peers     = make(map[string]*Peer)
+    rooms     = make(map[string]map[string]*Peer)
+    mu        sync.Mutex
+    // letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") // Не используется, но оставлено для вашего сведения
+    webrtcAPI *webrtc.API // Глобальный API с настроенным MediaEngine
 )
+
+func isConnAlive(conn *websocket.Conn) bool {
+    if conn == nil {
+        return false
+    }
+    err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(2*time.Second))
+    return err == nil
+}
 
 func normalizeSdpForCodec(sdp, preferredCodec string) string {
     log.Printf("Normalizing SDP for codec: %s", preferredCodec)
@@ -239,17 +247,17 @@ func initializeMediaAPI() {
 
 // getWebRTCConfig осталась вашей функцией
 func getWebRTCConfig() webrtc.Configuration {
-return webrtc.Configuration{
-ICEServers: []webrtc.ICEServer{
-{URLs: []string{"stun:stun.l.google.com:19302"}},
-{URLs: []string{"stun:ardua.site:3478"}},
-{URLs: []string{"turn:ardua.site:3478"}, Username: "user1", Credential: "pass1"},
-},
-ICETransportPolicy: webrtc.ICETransportPolicyAll,
-BundlePolicy:       webrtc.BundlePolicyMaxBundle,
-RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
-SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
-}
+    return webrtc.Configuration{
+        ICEServers: []webrtc.ICEServer{
+        {URLs: []string{"stun:stun.l.google.com:19302"}},
+        {URLs: []string{"stun:ardua.site:3478"}},
+        {URLs: []string{"turn:ardua.site:3478"}, Username: "user1", Credential: "pass1"},
+        },
+        ICETransportPolicy: webrtc.ICETransportPolicyAll,
+        BundlePolicy:       webrtc.BundlePolicyMaxBundle,
+        RTCPMuxPolicy:      webrtc.RTCPMuxPolicyRequire,
+        SDPSemantics:       webrtc.SDPSemanticsUnifiedPlan,
+    }
 }
 
 // logStatus осталась вашей функцией
@@ -278,8 +286,8 @@ log.Printf("---------------------")
 
 // sendRoomInfo осталась вашей функцией
 func sendRoomInfo(room string) {
-mu.Lock()
-defer mu.Unlock()
+    mu.Lock()
+    defer mu.Unlock()
 
     roomPeers, exists := rooms[room]
     if !exists || roomPeers == nil {
@@ -344,13 +352,34 @@ peer.mu.Lock() // Блокируем конкретного пира
 }
 
 // handlePeerJoin осталась вашей функцией с изменениями для создания PeerConnection через webrtcAPI
-// handlePeerJoin обрабатывает присоединение пира к комнате
 func handlePeerJoin(room string, username string, isLeader bool, conn *websocket.Conn, preferredCodec string) (*Peer, error) {
-    mu.Lock() // Блокируем для работы с глобальными комнатами
+    mu.Lock()
+    defer mu.Unlock() // Гарантируем разблокировку мьютекса при выходе из функции
+
+    // Очистка устаревших пиров в комнате
+    if roomPeers, exists := rooms[room]; exists {
+        for uname, p := range roomPeers {
+            p.mu.Lock()
+            if p.conn == nil || p.pc == nil || p.pc.ConnectionState() == webrtc.PeerConnectionStateClosed {
+                log.Printf("Removing stale peer %s from room %s", uname, room)
+                delete(roomPeers, uname)
+                for addr, peer := range peers {
+                    if peer == p {
+                        delete(peers, addr)
+                        break
+                    }
+                }
+                go closePeerResources(p, "Stale peer cleanup")
+            }
+            p.mu.Unlock()
+        }
+        if len(roomPeers) == 0 {
+            delete(rooms, room)
+        }
+    }
 
     if _, exists := rooms[room]; !exists {
         if !isLeader {
-            mu.Unlock()
             _ = conn.WriteJSON(map[string]interface{}{"type": "error", "data": "Room does not exist. Leader must join first."})
             conn.Close()
             return nil, errors.New("room does not exist for follower")
@@ -358,7 +387,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         rooms[room] = make(map[string]*Peer)
     }
 
-    roomPeers := rooms[room] // Получаем ссылку на мапу пиров комнаты
+    roomPeers := rooms[room]
 
     // Логика замены ведомого
     if !isLeader {
@@ -370,14 +399,12 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
             }
         }
         if !hasLeader {
-            mu.Unlock()
             _ = conn.WriteJSON(map[string]interface{}{"type": "error", "data": "No leader in room"})
             conn.Close()
             return nil, errors.New("no leader in room")
         }
 
         var existingFollower *Peer
-        // Используем переданный preferredCodec, по умолчанию H.264
         codec := preferredCodec
         if codec == "" {
             codec = "H264"
@@ -385,7 +412,7 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         log.Printf("Follower %s prefers codec: %s in room %s", username, codec, room)
 
         for _, p := range roomPeers {
-            if !p.isLeader { // Ищем существующего ведомого
+            if !p.isLeader {
                 existingFollower = p
                 break
             }
@@ -393,7 +420,6 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
 
         if existingFollower != nil {
             log.Printf("Replacing old follower %s with new follower %s in room %s", existingFollower.username, username, room)
-            // Удаляем старого ведомого из комнаты и глобального списка peers
             delete(roomPeers, existingFollower.username)
             for addr, pItem := range peers {
                 if pItem == existingFollower {
@@ -401,8 +427,6 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
                     break
                 }
             }
-            mu.Unlock()
-            // Отправляем команду на отключение и закрываем ресурсы старого ведомого
             existingFollower.mu.Lock()
             if existingFollower.conn != nil {
                 _ = existingFollower.conn.WriteJSON(map[string]interface{}{
@@ -412,7 +436,6 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
             }
             existingFollower.mu.Unlock()
             go closePeerResources(existingFollower, "Replaced by new follower")
-            mu.Lock()
         }
 
         var leaderPeer *Peer
@@ -422,42 +445,57 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
                 break
             }
         }
-        if leaderPeer != nil {
+        if leaderPeer != nil && isConnAlive(leaderPeer.conn) {
             log.Printf("Sending rejoin_and_offer command to leader %s for new follower %s with codec %s", leaderPeer.username, username, codec)
             leaderPeer.mu.Lock()
-            leaderWsConn := leaderPeer.conn
+            err := leaderPeer.conn.WriteJSON(map[string]interface{}{
+                "type":           "rejoin_and_offer",
+                "room":           room,
+                "preferredCodec": codec,
+            })
             leaderPeer.mu.Unlock()
-
-            if leaderWsConn != nil {
-                mu.Unlock()
-                err := leaderWsConn.WriteJSON(map[string]interface{}{
-                    "type":           "rejoin_and_offer",
-                    "room":           room,
-                    "preferredCodec": codec,
-                })
-                mu.Lock()
-                if err != nil {
-                    log.Printf("Error sending rejoin_and_offer command to leader %s: %v", leaderPeer.username, err)
-                } else {
-                    log.Printf("Successfully sent rejoin_and_offer with codec %s to leader %s", codec, leaderPeer.username)
-                }
-            } else {
-                log.Printf("Leader %s has no active WebSocket connection to send rejoin_and_offer.", leaderPeer.username)
+            if err != nil {
+                log.Printf("Error sending rejoin_and_offer to leader %s: %v", leaderPeer.username, err)
             }
-        } else {
-            log.Printf("No leader found in room %s to send rejoin_and_offer.", room)
         }
     }
 
-    // Создаем PeerConnection с учетом preferredCodec
     mediaEngine := createMediaEngine(preferredCodec)
     peerAPI := webrtc.NewAPI(webrtc.WithMediaEngine(mediaEngine))
     peerConnection, err := peerAPI.NewPeerConnection(getWebRTCConfig())
     if err != nil {
-        mu.Unlock()
         return nil, fmt.Errorf("failed to create PeerConnection: %w", err)
     }
     log.Printf("PeerConnection created for %s with preferred codec %s", username, preferredCodec)
+
+    peerConnection.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
+        log.Printf("PeerConnection state changed for %s: %s", username, s.String())
+        if s == webrtc.PeerConnectionStateDisconnected || s == webrtc.PeerConnectionStateFailed {
+            log.Printf("PeerConnection for %s is disconnected or failed, closing resources", username)
+            tempPeer := &Peer{
+                conn:     conn,
+                pc:       peerConnection,
+                username: username,
+                room:     room,
+                isLeader: isLeader,
+            }
+            go closePeerResources(tempPeer, "PeerConnection failed or disconnected")
+            mu.Lock()
+            if roomPeers, exists := rooms[room]; exists {
+                log.Printf("Removing %s from room %s", username, room)
+                delete(roomPeers, username)
+                if len(roomPeers) == 0 {
+                    log.Printf("Room %s is empty, deleting", room)
+                    delete(rooms, room)
+                }
+            }
+            log.Printf("Removing %s from peers (addr: %s)", username, conn.RemoteAddr().String())
+            delete(peers, conn.RemoteAddr().String())
+            mu.Unlock()
+            log.Printf("Sending updated room info for %s", room)
+            sendRoomInfo(room)
+        }
+    })
 
     peer := &Peer{
         conn:     conn,
@@ -467,37 +505,36 @@ func handlePeerJoin(room string, username string, isLeader bool, conn *websocket
         isLeader: isLeader,
     }
 
-if isLeader {
-    videoTransceiver, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
-        Direction: webrtc.RTPTransceiverDirectionSendonly,
-    })
-    if err != nil {
-        log.Printf("Failed to add video transceiver for leader %s: %v", username, err)
-        mu.Unlock()
-        conn.WriteJSON(map[string]interface{}{
-            "type": "error",
-            "data": "Failed to add video transceiver",
+    if isLeader {
+        videoTransceiver, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeVideo, webrtc.RTPTransceiverInit{
+            Direction: webrtc.RTPTransceiverDirectionSendonly,
         })
-        conn.Close()
-        return nil, fmt.Errorf("failed to add video transceiver: %w", err)
-    }
-    go func() {
-        time.Sleep(5 * time.Second)
-        peer.mu.Lock()
-        defer peer.mu.Unlock()
-        if videoTransceiver.Sender() == nil || videoTransceiver.Sender().Track() == nil {
-            log.Printf("No video track added by leader %s in room %s", username, room)
-            if peer.conn != nil {
-                peer.conn.WriteJSON(map[string]interface{}{
-                    "type": "error",
-                    "data": "No video track detected. Please ensure camera is active.",
-                })
-            }
-        } else {
-            log.Printf("Video track confirmed for leader %s in room %s", username, room)
+        if err != nil {
+            log.Printf("Failed to add video transceiver for leader %s: %v", username, err)
+            conn.WriteJSON(map[string]interface{}{
+                "type": "error",
+                "data": "Failed to add video transceiver",
+            })
+            conn.Close()
+            return nil, fmt.Errorf("failed to add video transceiver: %w", err)
         }
-    }()
-}
+        go func() {
+            time.Sleep(5 * time.Second)
+            peer.mu.Lock()
+            defer peer.mu.Unlock()
+            if videoTransceiver.Sender() == nil || videoTransceiver.Sender().Track() == nil {
+                log.Printf("No video track added by leader %s in room %s", username, room)
+                if peer.conn != nil {
+                    peer.conn.WriteJSON(map[string]interface{}{
+                        "type": "error",
+                        "data": "No video track detected. Please ensure camera is active.",
+                    })
+                }
+            } else {
+                log.Printf("Video track confirmed for leader %s in room %s", username, room)
+            }
+        }()
+    }
 
     if _, err := peerConnection.AddTransceiverFromKind(webrtc.RTPCodecTypeAudio, webrtc.RTPTransceiverInit{
         Direction: webrtc.RTPTransceiverDirectionSendrecv,
@@ -505,17 +542,19 @@ if isLeader {
         log.Printf("Failed to add audio transceiver for %s: %v", username, err)
     }
 
-    // Настройка обработчиков ICE кандидатов и треков
     peerConnection.OnICECandidate(func(c *webrtc.ICECandidate) {
         if c == nil {
+            log.Printf("No more ICE candidates for %s", username)
             return
         }
+        log.Printf("ICE candidate for %s: %s", username, c.ToJSON().Candidate)
         peer.mu.Lock()
         defer peer.mu.Unlock()
-        if peer.conn != nil {
+        if peer.conn != nil && isConnAlive(peer.conn) {
             err := peer.conn.WriteJSON(map[string]interface{}{"type": "ice_candidate", "ice": c.ToJSON()})
             if err != nil {
                 log.Printf("Error sending ICE candidate to %s: %v", peer.username, err)
+                go closePeerResources(peer, "Failed to send ICE candidate")
             }
         }
     })
@@ -523,14 +562,13 @@ if isLeader {
     if !isLeader {
         peerConnection.OnTrack(func(track *webrtc.TrackRemote, receiver *webrtc.RTPReceiver) {
             log.Printf("Track received for follower %s in room %s: Codec %s",
-                peer.username, peer.room, track.Codec().MimeType)
+                username, room, track.Codec().MimeType)
         })
     }
 
     rooms[room][username] = peer
     peers[conn.RemoteAddr().String()] = peer
 
-    // Отправляем room_info клиенту
     err = conn.WriteJSON(map[string]interface{}{
         "type": "room_info",
         "data": map[string]interface{}{
@@ -545,14 +583,14 @@ if isLeader {
         log.Printf("Sent room_info to %s", username)
     }
 
-    mu.Unlock()
     return peer, nil
 }
 
 // main осталась вашей функцией
 func main() {
-// initializeMediaAPI() // Уже вызывается в init()
 
+    cleanupPeers()
+    initializeMediaAPI()
     http.HandleFunc("/wsgo", handleWebSocket)
     http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
         logStatus()
@@ -568,6 +606,18 @@ func main() {
     if err := http.ListenAndServe(":8085", nil); err != nil {
         log.Fatalf("Failed to start server: %v", err)
     }
+}
+
+func cleanupPeers() {
+    mu.Lock()
+    defer mu.Unlock()
+
+    for _, peer := range peers {
+        go closePeerResources(peer, "Server cleanup on restart")
+    }
+    peers = make(map[string]*Peer)
+    rooms = make(map[string]map[string]*Peer)
+    log.Println("All peers and rooms have been cleaned up")
 }
 
 // handleWebSocket осталась вашей функцией с минимальными изменениями для очистки
@@ -667,7 +717,6 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
             log.Printf("Received offer from %s: %s", currentPeer.username, string(msgBytes))
             if currentPeer.isLeader && targetPeer != nil && !targetPeer.isLeader {
                 log.Printf(">>> Forwarding Offer from %s to %s", currentPeer.username, targetPeer.username)
-                // Нормализуем SDP
                 preferredCodec, _ := data["preferredCodec"].(string)
                 if preferredCodec == "" {
                     preferredCodec = initData.PreferredCodec
@@ -682,10 +731,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
                 targetPeer.mu.Lock()
                 targetWsConn := targetPeer.conn
                 targetPeer.mu.Unlock()
-                if targetWsConn != nil {
+                if targetWsConn != nil && isConnAlive(targetWsConn) {
                     if err := targetWsConn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
                         log.Printf("!!! Error forwarding offer to %s: %v", targetPeer.username, err)
+                        go closePeerResources(targetPeer, "Failed to forward offer")
                     }
+                } else {
+                    log.Printf("Target WebSocket connection for %s is not alive, skipping offer forwarding", targetPeer.username)
                 }
             } else {
                 log.Printf("WARN: Received 'offer' from non-leader or no target.")
