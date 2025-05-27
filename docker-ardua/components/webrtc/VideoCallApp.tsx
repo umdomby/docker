@@ -529,7 +529,11 @@ export const VideoCallApp = () => {
                             )}
                         </div>
 
-                        {error && <div className={styles.error}>{error}</div>}
+                        {error && <div className={styles.error}>
+                            {error === 'Room does not exist. Leader must join first.'
+                                ? 'Ожидание создания комнаты ведущим... Повторная попытка через 5 секунд'
+                                : error}
+                        </div>}
 
                         <div className={styles.inputGroup}>
                             <div className="flex items-center space-x-2">

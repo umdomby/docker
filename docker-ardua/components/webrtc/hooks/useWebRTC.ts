@@ -1235,30 +1235,26 @@ export const useWebRTC = (
     };
 
     const joinRoom = async (uniqueUsername: string) => {
-        setError(null)
-        setIsInRoom(false)
-        setIsConnected(false)
-        setIsLeader(false)
+        setError(null);
+        setIsInRoom(false);
+        setIsConnected(false);
+        setIsLeader(false);
 
         try {
             if (!(await connectWebSocket())) {
-                throw new Error('Не удалось подключиться к WebSocket')
+                throw new Error('Не удалось подключиться к WebSocket');
             }
 
-            setupWebSocketListeners()
+            setupWebSocketListeners();
 
             if (!(await initializeWebRTC())) {
-                throw new Error('Не удалось инициализировать WebRTC')
+                throw new Error('Не удалось инициализировать WebRTC');
             }
-
-            // Используем переданный preferredCodec вместо определения по платформе
-            // const { isChrome } = detectPlatform()
-            // const preferredCodec = isChrome ? 'VP8' : 'H264'
 
             await new Promise<void>((resolve, reject) => {
                 if (!ws.current || ws.current.readyState !== WebSocket.OPEN) {
-                    reject(new Error('WebSocket не подключен'))
-                    return
+                    reject(new Error('WebSocket не подключен'));
+                    return;
                 }
 
                 const onMessage = (event: MessageEvent) => {
@@ -1274,7 +1270,22 @@ export const useWebRTC = (
                         } else if (data.type === 'error') {
                             console.error('Ошибка от сервера:', data.data);
                             cleanupEvents();
-                            reject(new Error(data.data || 'Ошибка входа в комнату'));
+                            // Проверяем конкретную ошибку
+                            if (data.data === 'Room does not exist. Leader must join first.') {
+                                if (retryAttempts.current < MAX_RETRIES) {
+                                    console.log('Комната не существует, повторная попытка через 5 секунд');
+                                    setTimeout(() => {
+                                        retryAttempts.current += 1;
+                                        setRetryCount(retryAttempts.current);
+                                        joinRoom(uniqueUsername).catch(console.error);
+                                    }, 5000); // Таймаут 5 секунд
+                                    return; // Прерываем выполнение, чтобы не завершать промис
+                                } else {
+                                    reject(new Error('Достигнуто максимальное количество попыток подключения'));
+                                }
+                            } else {
+                                reject(new Error(data.data || 'Ошибка входа в комнату'));
+                            }
                         }
                     } catch (err) {
                         console.error('Ошибка обработки сообщения:', err);
@@ -1284,52 +1295,63 @@ export const useWebRTC = (
                 };
 
                 const cleanupEvents = () => {
-                    ws.current?.removeEventListener('message', onMessage)
+                    ws.current?.removeEventListener('message', onMessage);
                     if (connectionTimeout.current) {
-                        clearTimeout(connectionTimeout.current)
-                        connectionTimeout.current = null
+                        clearTimeout(connectionTimeout.current);
+                        connectionTimeout.current = null;
                     }
-                }
+                };
 
                 connectionTimeout.current = setTimeout(() => {
-                    cleanupEvents()
-                    console.error('Таймаут ожидания ответа от сервера')
-                    setError('Таймаут ожидания ответа от сервера')
-                    reject(new Error('Таймаут ожидания ответа от сервера'))
-                }, 15000)
+                    cleanupEvents();
+                    console.error('Таймаут ожидания ответа от сервера');
+                    setError('Таймаут ожидания ответа от сервера');
+                    reject(new Error('Таймаут ожидания ответа от сервера'));
+                }, 15000);
 
-
-                ws.current.addEventListener('message', onMessage)
+                ws.current.addEventListener('message', onMessage);
 
                 sendWebSocketMessage({
-                    type: "join",
+                    type: 'join',
                     room: roomId,
                     username: uniqueUsername,
                     isLeader: false,
-                    preferredCodec
-                })
-                console.log('Отправлен запрос на подключение:', { action: "join", room: roomId, username: uniqueUsername, isLeader: false, preferredCodec })
-            })
+                    preferredCodec,
+                });
+                console.log('Отправлен запрос на подключение:', {
+                    action: 'join',
+                    room: roomId,
+                    username: uniqueUsername,
+                    isLeader: false,
+                    preferredCodec,
+                });
+            });
 
-            shouldCreateOffer.current = false
-            startVideoCheckTimer()
+            shouldCreateOffer.current = false;
+            startVideoCheckTimer();
         } catch (err) {
-            console.error('Ошибка входа в комнату:', err)
-            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`)
+            console.error('Ошибка входа в комнату:', err);
+            setError(`Ошибка входа в комнату: ${err instanceof Error ? err.message : String(err)}`);
 
-            cleanup()
+            cleanup();
             if (ws.current) {
-                ws.current.close()
-                ws.current = null
+                ws.current.close();
+                ws.current = null;
             }
 
             if (retryAttempts.current < MAX_RETRIES) {
+                console.log('Планируем повторную попытку через 5 секунд');
                 setTimeout(() => {
-                    joinRoom(uniqueUsername).catch(console.error)
-                }, 2000 * (retryAttempts.current + 1))
+                    retryAttempts.current += 1;
+                    setRetryCount(retryAttempts.current);
+                    joinRoom(uniqueUsername).catch(console.error);
+                }, 5000); // Фиксированный таймаут 5 секунд
+            } else {
+                console.error('Исчерпаны все попытки подключения');
+                setError('Не удалось подключиться после максимального количества попыток');
             }
         }
-    }
+    };
 
     useEffect(() => {
         return () => {
