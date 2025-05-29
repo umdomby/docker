@@ -6,7 +6,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
-      - "444:444"
+#      - "444:444"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf:ro
       - ./letsencrypt:/etc/letsencrypt
@@ -47,11 +47,9 @@ services:
       - "5349:5349/tcp"
       - "49152-49800:49152-49800/udp"
     volumes:
-      - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
-      - ./letsencrypt/live/ardua.site/fullchain.pem:/etc/coturn/certs/fullchain.pem:ro
-      - ./letsencrypt/live/ardua.site/privkey.pem:/etc/coturn/certs/privkey.pem:ro
-      - ./turn_logs:/var/log
-      - ./turn_logs:/var/log/coturn  # Убрано дублирование логов
+    - ./turnserver.conf:/etc/coturn/turnserver.conf:ro
+    - ./letsencrypt/live/ardua.site/:/etc/coturn/certs/:ro
+    - ./turn_logs:/var/log/coturn
     environment:
       - TURN_EXTERNAL_IP=213.184.249.66
       - TURN_REALM=ardua.site
